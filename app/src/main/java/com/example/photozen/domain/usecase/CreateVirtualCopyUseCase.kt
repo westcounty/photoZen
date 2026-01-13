@@ -1,6 +1,7 @@
 package com.example.photozen.domain.usecase
 
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.data.model.CropState
 import com.example.photozen.data.repository.PhotoRepository
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
@@ -20,13 +21,14 @@ class CreateVirtualCopyUseCase @Inject constructor(
     private val photoRepository: PhotoRepository
 ) {
     /**
-     * Create a new virtual copy of a photo.
+     * Create a new virtual copy of a photo with optional crop state.
      * 
      * @param photoId The ID of the original photo to copy
+     * @param cropState The crop state to apply to the virtual copy (uses current crop if null)
      * @return The ID of the newly created virtual copy
      */
-    suspend operator fun invoke(photoId: String): String {
-        return photoRepository.createVirtualCopy(photoId)
+    suspend operator fun invoke(photoId: String, cropState: CropState? = null): String {
+        return photoRepository.createVirtualCopy(photoId, cropState)
     }
     
     /**

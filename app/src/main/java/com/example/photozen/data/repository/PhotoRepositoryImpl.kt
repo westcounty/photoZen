@@ -191,7 +191,7 @@ class PhotoRepositoryImpl @Inject constructor(
     
     // ==================== WRITE - Virtual Copies ====================
     
-    override suspend fun createVirtualCopy(photoId: String): String {
+    override suspend fun createVirtualCopy(photoId: String, cropState: CropState?): String {
         val originalPhoto = photoDao.getById(photoId)
             ?: throw IllegalArgumentException("Photo not found: $photoId")
         
@@ -202,7 +202,7 @@ class PhotoRepositoryImpl @Inject constructor(
             isVirtualCopy = true,
             parentId = originalPhoto.id,
             status = PhotoStatus.UNSORTED,
-            cropState = CropState.DEFAULT,
+            cropState = cropState ?: originalPhoto.cropState,
             createdAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis()
         )
@@ -226,7 +226,10 @@ class PhotoRepositoryImpl @Inject constructor(
         scale: Float,
         offsetX: Float,
         offsetY: Float,
-        rotation: Float
+        rotation: Float,
+        aspectRatioId: String,
+        cropFrameWidth: Float,
+        cropFrameHeight: Float
     ) {
         val photo = photoDao.getById(photoId) ?: return
         val updatedPhoto = photo.copy(
@@ -234,7 +237,10 @@ class PhotoRepositoryImpl @Inject constructor(
                 scale = scale,
                 offsetX = offsetX,
                 offsetY = offsetY,
-                rotation = rotation
+                rotation = rotation,
+                aspectRatioId = aspectRatioId,
+                cropFrameWidth = cropFrameWidth,
+                cropFrameHeight = cropFrameHeight
             ),
             updatedAt = System.currentTimeMillis()
         )

@@ -3,6 +3,7 @@ package com.example.photozen.data.repository
 import androidx.paging.PagingData
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.local.entity.PhotoWithTags
+import com.example.photozen.data.model.CropState
 import com.example.photozen.data.model.PhotoStatus
 import kotlinx.coroutines.flow.Flow
 
@@ -153,9 +154,10 @@ interface PhotoRepository {
      * Create a virtual copy of a photo.
      * 
      * @param photoId Original photo ID
+     * @param cropState Optional crop state to apply to the virtual copy
      * @return ID of the new virtual copy
      */
-    suspend fun createVirtualCopy(photoId: String): String
+    suspend fun createVirtualCopy(photoId: String, cropState: CropState? = null): String
     
     /**
      * Delete a virtual copy.
@@ -167,7 +169,16 @@ interface PhotoRepository {
     /**
      * Update crop state for a photo.
      */
-    suspend fun updateCropState(photoId: String, scale: Float, offsetX: Float, offsetY: Float, rotation: Float)
+    suspend fun updateCropState(
+        photoId: String, 
+        scale: Float, 
+        offsetX: Float, 
+        offsetY: Float, 
+        rotation: Float,
+        aspectRatioId: String = "free",
+        cropFrameWidth: Float = 1f,
+        cropFrameHeight: Float = 1f
+    )
     
     /**
      * Reset crop state to default.

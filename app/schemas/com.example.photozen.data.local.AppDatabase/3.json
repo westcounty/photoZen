@@ -1,12 +1,12 @@
 {
   "formatVersion": 1,
   "database": {
-    "version": 1,
-    "identityHash": "554b67b94680f94818d1535b0350edb5",
+    "version": 3,
+    "identityHash": "e23d262eb3037c1ab39b55f4474927f3",
     "entities": [
       {
         "tableName": "photos",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `system_uri` TEXT NOT NULL, `status` TEXT NOT NULL, `is_virtual_copy` INTEGER NOT NULL, `parent_id` TEXT, `display_name` TEXT NOT NULL, `size` INTEGER NOT NULL, `width` INTEGER NOT NULL, `height` INTEGER NOT NULL, `mime_type` TEXT NOT NULL, `date_taken` INTEGER NOT NULL, `date_added` INTEGER NOT NULL, `date_modified` INTEGER NOT NULL, `camera_make` TEXT, `camera_model` TEXT, `is_synced` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `crop_scale` REAL NOT NULL, `crop_offset_x` REAL NOT NULL, `crop_offset_y` REAL NOT NULL, `crop_rotation` REAL NOT NULL, `crop_aspect_ratio` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `system_uri` TEXT NOT NULL, `status` TEXT NOT NULL, `is_virtual_copy` INTEGER NOT NULL, `parent_id` TEXT, `display_name` TEXT NOT NULL, `size` INTEGER NOT NULL, `width` INTEGER NOT NULL, `height` INTEGER NOT NULL, `mime_type` TEXT NOT NULL, `date_taken` INTEGER NOT NULL, `date_added` INTEGER NOT NULL, `date_modified` INTEGER NOT NULL, `camera_make` TEXT, `camera_model` TEXT, `is_synced` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `crop_scale` REAL NOT NULL, `crop_offset_x` REAL NOT NULL, `crop_offset_y` REAL NOT NULL, `crop_rotation` REAL NOT NULL, `crop_aspect_ratio` TEXT NOT NULL DEFAULT 'original', `crop_frame_width` REAL NOT NULL DEFAULT 1.0, `crop_frame_height` REAL NOT NULL DEFAULT 1.0, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -141,7 +141,22 @@
             "fieldPath": "cropState.aspectRatioId",
             "columnName": "crop_aspect_ratio",
             "affinity": "TEXT",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "'original'"
+          },
+          {
+            "fieldPath": "cropState.cropFrameWidth",
+            "columnName": "crop_frame_width",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "1.0"
+          },
+          {
+            "fieldPath": "cropState.cropFrameHeight",
+            "columnName": "crop_frame_height",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "1.0"
           }
         ],
         "primaryKey": {
@@ -334,7 +349,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '554b67b94680f94818d1535b0350edb5')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e23d262eb3037c1ab39b55f4474927f3')"
     ]
   }
 }

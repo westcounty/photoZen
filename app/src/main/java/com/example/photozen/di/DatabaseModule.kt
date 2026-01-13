@@ -32,7 +32,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME
         )
-            .fallbackToDestructiveMigration() // For development - use migrations in production
+            .fallbackToDestructiveMigration(dropAllTables = true) // For development - use migrations in production
             .build()
     }
     

@@ -17,10 +17,10 @@ class UpdateCropStateUseCase @Inject constructor(
      * Update crop state with individual parameters.
      * 
      * @param photoId Photo to update
-     * @param scale Zoom level (1.0 = original, 2.0 = 2x zoom)
-     * @param offsetX Horizontal pan offset (normalized 0-1)
-     * @param offsetY Vertical pan offset (normalized 0-1)
-     * @param rotation Rotation angle in degrees
+     * @param scale Zoom level (0.5 = half, 1.0 = original, up to 10.0 = 10x zoom)
+     * @param offsetX Horizontal pan offset in pixels
+     * @param offsetY Vertical pan offset in pixels
+     * @param rotation Rotation angle in degrees (-45 to 45)
      */
     suspend operator fun invoke(
         photoId: String,
@@ -39,7 +39,7 @@ class UpdateCropStateUseCase @Inject constructor(
     }
     
     /**
-     * Update crop state with CropState object.
+     * Update crop state with CropState object (includes aspect ratio and frame dimensions).
      */
     suspend fun update(photoId: String, cropState: CropState) {
         photoRepository.updateCropState(
@@ -47,7 +47,10 @@ class UpdateCropStateUseCase @Inject constructor(
             scale = cropState.scale,
             offsetX = cropState.offsetX,
             offsetY = cropState.offsetY,
-            rotation = cropState.rotation
+            rotation = cropState.rotation,
+            aspectRatioId = cropState.aspectRatioId,
+            cropFrameWidth = cropState.cropFrameWidth,
+            cropFrameHeight = cropState.cropFrameHeight
         )
     }
     

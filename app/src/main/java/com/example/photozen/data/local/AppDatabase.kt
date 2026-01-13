@@ -24,7 +24,7 @@ import com.example.photozen.data.local.entity.TagEntity
         TagEntity::class,
         PhotoTagCrossRef::class
     ],
-    version = 1,
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
