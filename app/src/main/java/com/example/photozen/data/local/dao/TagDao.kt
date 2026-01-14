@@ -129,6 +129,12 @@ interface TagDao {
      */
     @Query("SELECT EXISTS(SELECT 1 FROM photo_tag_cross_ref WHERE photo_id = :photoId AND tag_id = :tagId LIMIT 1)")
     suspend fun photoHasTag(photoId: String, tagId: String): Boolean
+
+    /**
+     * Check if a photo has any tag.
+     */
+    @Query("SELECT EXISTS(SELECT 1 FROM photo_tag_cross_ref WHERE photo_id = :photoId LIMIT 1)")
+    suspend fun photoHasAnyTag(photoId: String): Boolean
     
     // ==================== BUBBLE GRAPH QUERIES ====================
     

@@ -12,6 +12,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
@@ -113,23 +114,30 @@ class QuickTagViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             _isLoading.value = false
-            // Load tags for current photo
-            loadCurrentPhotoTags()
+            // Skip photos that already have tags on entry (and when list loads)
+            photoRepository.getKeepPhotos().collect { photos ->
+                if (photos.isNotEmpty() && cachedPhotos.isEmpty()) {
+                    cachedPhotos = photos
+                }
+                if (photos.isNotEmpty()) {
+                    moveToNextUntagged(_currentIndex.value)
+                } else {
+                    _currentIndex.value = 0
+                    loadTagsForPhoto(null)
+                }
+            }
         }
     }
     
     /**
      * Load tags for the current photo.
      */
-    private fun loadCurrentPhotoTags() {
-        viewModelScope.launch {
-            val currentPhoto = uiState.value.currentPhoto
-            if (currentPhoto != null) {
-                val tags = tagDao.getTagsForPhoto(currentPhoto.id).first()
-                _currentPhotoTags.value = tags
-            } else {
-                _currentPhotoTags.value = emptyList()
-            }
+    private suspend fun loadTagsForPhoto(photoId: String?) {
+        if (photoId != null) {
+            val tags = tagDao.getTagsForPhoto(photoId).first()
+            _currentPhotoTags.value = tags
+        } else {
+            _currentPhotoTags.value = emptyList()
         }
     }
     
@@ -149,7 +157,7 @@ class QuickTagViewModel @Inject constructor(
                 // Increment tag achievement count
                 preferencesRepository.incrementTaggedCount()
                 
-                // Move to next photo
+                // Move to next untagged photo
                 advanceToNext()
             } catch (e: Exception) {
                 _error.value = "标签添加失败: ${e.message}"
@@ -169,17 +177,21 @@ class QuickTagViewModel @Inject constructor(
      * Advance to the next photo.
      */
     private fun advanceToNext() {
-        _currentIndex.value++
-        loadCurrentPhotoTags()
+        val nextIndex = _currentIndex.value + 1
+        viewModelScope.launch {
+            moveToNextUntagged(nextIndex)
+        }
     }
     
     /**
      * Go back to previous photo.
      */
     fun goToPrevious() {
-        if (_currentIndex.value > 0) {
-            _currentIndex.value--
-            loadCurrentPhotoTags()
+        val previousIndex = _currentIndex.value - 1
+        if (previousIndex >= 0) {
+            viewModelScope.launch {
+                moveToPreviousUntagged(previousIndex)
+            }
         }
     }
     
@@ -188,5 +200,41 @@ class QuickTagViewModel @Inject constructor(
      */
     fun clearError() {
         _error.value = null
+    }
+
+    private suspend fun moveToNextUntagged(startIndex: Int) {
+        val photos = if (cachedPhotos.isNotEmpty()) cachedPhotos else uiState.value.photos
+        var index = startIndex
+        var skipped = 0
+        while (index < photos.size && tagDao.photoHasAnyTag(photos[index].id)) {
+            skipped++
+            index++
+        }
+        if (skipped > 0) {
+            _skippedCount.value += skipped
+        }
+        _currentIndex.value = index
+        loadTagsForPhoto(photos.getOrNull(index)?.id)
+    }
+
+    private suspend fun moveToPreviousUntagged(startIndex: Int) {
+        val photos = if (cachedPhotos.isNotEmpty()) cachedPhotos else uiState.value.photos
+        val fallbackIndex = _currentIndex.value
+        var index = startIndex
+        var skipped = 0
+        while (index >= 0 && tagDao.photoHasAnyTag(photos[index].id)) {
+            skipped++
+            index--
+        }
+        if (skipped > 0) {
+            _skippedCount.value += skipped
+        }
+        if (index < 0) {
+            _currentIndex.value = fallbackIndex
+            loadTagsForPhoto(photos.getOrNull(fallbackIndex)?.id)
+            return
+        }
+        _currentIndex.value = index
+        loadTagsForPhoto(photos.getOrNull(index)?.id)
     }
 }
