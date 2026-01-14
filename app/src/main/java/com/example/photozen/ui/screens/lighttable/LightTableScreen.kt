@@ -341,8 +341,8 @@ private fun ComparisonBottomBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Trash all
@@ -352,11 +352,14 @@ private fun ComparisonBottomBar(
                     containerColor = TrashRed.copy(alpha = 0.15f),
                     contentColor = TrashRed
                 ),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                contentPadding = ButtonDefaults.ContentPadding.let { 
+                    androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = it.calculateTopPadding())
+                }
             ) {
-                Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("全部删除")
+                Icon(Icons.Default.Delete, null, Modifier.size(20.dp))
+                Spacer(Modifier.width(2.dp))
+                Text("删除", maxLines = 1)
             }
             
             // Keep best (only if one selected)
@@ -366,11 +369,14 @@ private fun ComparisonBottomBar(
                 colors = ButtonDefaults.buttonColors(
                     containerColor = KeepGreen
                 ),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                contentPadding = ButtonDefaults.ContentPadding.let { 
+                    androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = it.calculateTopPadding())
+                }
             ) {
-                Icon(Icons.Default.Star, null, Modifier.size(18.dp), tint = Color.White)
-                Spacer(Modifier.width(4.dp))
-                Text("保留最佳", color = Color.White)
+                Icon(Icons.Default.Star, null, Modifier.size(20.dp), tint = Color.White)
+                Spacer(Modifier.width(2.dp))
+                Text("最佳", color = Color.White, maxLines = 1)
             }
             
             // Keep all
@@ -380,11 +386,14 @@ private fun ComparisonBottomBar(
                     containerColor = KeepGreen.copy(alpha = 0.15f),
                     contentColor = KeepGreen
                 ),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                contentPadding = ButtonDefaults.ContentPadding.let { 
+                    androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = it.calculateTopPadding())
+                }
             ) {
-                Icon(Icons.Default.Check, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("全部保留")
+                Icon(Icons.Default.Check, null, Modifier.size(20.dp))
+                Spacer(Modifier.width(2.dp))
+                Text("保留", maxLines = 1)
             }
         }
     }
