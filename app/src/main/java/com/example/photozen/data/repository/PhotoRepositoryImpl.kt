@@ -257,7 +257,13 @@ class PhotoRepositoryImpl @Inject constructor(
     }
     
     // ==================== DELETE ====================
-    
+
+    override suspend fun deletePhotosByIds(photoIds: List<String>) {
+        if (photoIds.isNotEmpty()) {
+            photoDao.deleteByIds(photoIds)
+        }
+    }
+
     override suspend fun emptyTrash() {
         photoDao.deleteAllTrashed()
     }

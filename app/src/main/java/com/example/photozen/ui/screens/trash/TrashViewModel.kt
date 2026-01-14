@@ -149,14 +149,16 @@ class TrashViewModel @Inject constructor(
                         }
                     }
                 } else {
-                    // Older versions: Just remove from our database
+                    // Older versions: Just remove selected photos from our database
                     // (actual file deletion not supported without special permissions)
-                    manageTrashUseCase.emptyTrash()
+                    val selectedIds = _internalState.value.selectedIds.toList()
+                    val count = selectedIds.size
+                    manageTrashUseCase.deletePhotos(selectedIds)
                     _internalState.update { 
                         it.copy(
                             selectedIds = emptySet(),
                             isDeleting = false,
-                            message = "已从整理记录中移除"
+                            message = "已从整理记录中移除 $count 张照片"
                         )
                     }
                 }
@@ -174,16 +176,15 @@ class TrashViewModel @Inject constructor(
     fun onDeleteComplete(success: Boolean) {
         viewModelScope.launch {
             if (success) {
-                // Remove deleted photos from our database
+                // Remove only the selected photos from our database
                 val selectedIds = _internalState.value.selectedIds.toList()
-                for (id in selectedIds) {
-                    manageTrashUseCase.emptyTrash() // This removes all trashed
-                }
+                val count = selectedIds.size
+                manageTrashUseCase.deletePhotos(selectedIds)
                 _internalState.update { 
                     it.copy(
                         selectedIds = emptySet(),
                         deleteIntentSender = null,
-                        message = "已彻底删除"
+                        message = "已彻底删除 $count 张照片"
                     )
                 }
             } else {

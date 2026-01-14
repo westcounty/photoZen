@@ -82,6 +82,12 @@ interface PhotoDao {
     suspend fun deleteById(photoId: String)
     
     /**
+     * Delete multiple photos by IDs.
+     */
+    @Query("DELETE FROM photos WHERE id IN (:photoIds)")
+    suspend fun deleteByIds(photoIds: List<String>)
+    
+    /**
      * Delete all photos with TRASH status (for "Empty Trash" feature).
      */
     @Query("DELETE FROM photos WHERE status = 'TRASH'")

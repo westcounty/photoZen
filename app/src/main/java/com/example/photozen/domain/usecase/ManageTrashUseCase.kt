@@ -32,6 +32,16 @@ class ManageTrashUseCase @Inject constructor(
     }
     
     /**
+     * Delete specific photos permanently from our database.
+     * 
+     * Note: This only removes records from PicZen's local database.
+     * Original files in MediaStore should be deleted via MediaStore API separately.
+     */
+    suspend fun deletePhotos(photoIds: List<String>) {
+        photoRepository.deletePhotosByIds(photoIds)
+    }
+    
+    /**
      * Empty trash - permanently delete all trashed photo records.
      * 
      * Note: This only removes records from PicZen's local database.

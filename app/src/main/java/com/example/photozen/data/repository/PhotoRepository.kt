@@ -188,6 +188,12 @@ interface PhotoRepository {
     // ==================== DELETE ====================
     
     /**
+     * Permanently delete specific photos by IDs.
+     * This removes from local DB only - actual file deletion requires MediaStore API.
+     */
+    suspend fun deletePhotosByIds(photoIds: List<String>)
+    
+    /**
      * Permanently delete all trashed photos.
      * This removes from local DB only - actual file deletion requires MediaStore API.
      */
