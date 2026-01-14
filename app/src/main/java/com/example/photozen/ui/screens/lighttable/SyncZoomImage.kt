@@ -8,10 +8,15 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -45,6 +50,7 @@ import com.example.photozen.ui.theme.KeepGreen
  * @param transformState Shared state for synchronized transformations
  * @param isSelected Whether this photo is selected as "best"
  * @param onSelect Callback when photo is tapped to select
+ * @param onFullscreenClick Callback when fullscreen button is clicked
  * @param onTransformGesture Callback when user performs zoom/pan gesture
  * @param modifier Modifier for the component
  */
@@ -54,6 +60,7 @@ fun SyncZoomImage(
     transformState: TransformState,
     isSelected: Boolean = false,
     onSelect: () -> Unit = {},
+    onFullscreenClick: (() -> Unit)? = null,
     onTransformGesture: (scale: Float, offset: Offset) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
@@ -128,11 +135,12 @@ fun SyncZoomImage(
                 }
         )
         
+        // Top row: Selection indicator (left) and Fullscreen button (right)
         // Selection indicator
         if (isSelected) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
+                    .align(Alignment.TopStart)
                     .padding(8.dp)
                     .clip(RoundedCornerShape(50))
                     .background(KeepGreen)
@@ -143,6 +151,27 @@ fun SyncZoomImage(
                     contentDescription = "已选中",
                     tint = Color.White,
                     modifier = Modifier.padding(2.dp)
+                )
+            }
+        }
+        
+        // Fullscreen button
+        if (onFullscreenClick != null) {
+            IconButton(
+                onClick = onFullscreenClick,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+                    .size(32.dp),
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = Color.Black.copy(alpha = 0.5f)
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Fullscreen,
+                    contentDescription = "全屏预览",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }

@@ -30,7 +30,7 @@ enum class LightTableMode {
 data class LightTableUiState(
     val allMaybePhotos: List<PhotoEntity> = emptyList(),
     val selectedForComparison: Set<String> = emptySet(),
-    val bestPhotoId: String? = null,
+    val selectedInComparison: Set<String> = emptySet(), // 对比模式中选中的照片（用于保留）
     val mode: LightTableMode = LightTableMode.SELECTION,
     val isLoading: Boolean = true,
     val error: String? = null
@@ -46,7 +46,14 @@ data class LightTableUiState(
         get() = selectedForComparison.size >= 2
     
     val maxSelectionReached: Boolean
-        get() = selectedForComparison.size >= 4
+        get() = selectedForComparison.size >= MAX_COMPARISON_PHOTOS
+    
+    val hasSelectedInComparison: Boolean
+        get() = selectedInComparison.isNotEmpty()
+    
+    companion object {
+        const val MAX_COMPARISON_PHOTOS = 6
+    }
 }
 
 /**
@@ -54,7 +61,7 @@ data class LightTableUiState(
  */
 private data class InternalState(
     val selectedForComparison: Set<String> = emptySet(),
-    val bestPhotoId: String? = null,
+    val selectedInComparison: Set<String> = emptySet(),
     val mode: LightTableMode = LightTableMode.SELECTION,
     val isLoading: Boolean = true,
     val error: String? = null
@@ -78,7 +85,7 @@ class LightTableViewModel @Inject constructor(
         LightTableUiState(
             allMaybePhotos = photos,
             selectedForComparison = internal.selectedForComparison,
-            bestPhotoId = internal.bestPhotoId,
+            selectedInComparison = internal.selectedInComparison,
             mode = internal.mode,
             isLoading = internal.isLoading && photos.isEmpty(),
             error = internal.error
@@ -101,7 +108,7 @@ class LightTableViewModel @Inject constructor(
             val newSelection = if (photoId in current) {
                 current - photoId
             } else {
-                if (current.size < 4) current + photoId else current
+                if (current.size < LightTableUiState.MAX_COMPARISON_PHOTOS) current + photoId else current
             }
             state.copy(selectedForComparison = newSelection)
         }
@@ -109,41 +116,57 @@ class LightTableViewModel @Inject constructor(
     
     fun clearSelection() {
         _internalState.update { 
-            it.copy(selectedForComparison = emptySet(), bestPhotoId = null) 
+            it.copy(selectedForComparison = emptySet(), selectedInComparison = emptySet()) 
         }
     }
     
     fun selectAll() {
-        val allIds = uiState.value.allMaybePhotos.take(4).map { it.id }.toSet()
+        val allIds = uiState.value.allMaybePhotos.take(LightTableUiState.MAX_COMPARISON_PHOTOS).map { it.id }.toSet()
         _internalState.update { it.copy(selectedForComparison = allIds) }
     }
     
     fun startComparison() {
         if (_internalState.value.selectedForComparison.size >= 2) {
-            _internalState.update { it.copy(mode = LightTableMode.COMPARISON) }
+            _internalState.update { it.copy(mode = LightTableMode.COMPARISON, selectedInComparison = emptySet()) }
         }
     }
     
     fun exitComparison() {
         _internalState.update { 
-            it.copy(mode = LightTableMode.SELECTION, bestPhotoId = null) 
+            it.copy(mode = LightTableMode.SELECTION, selectedInComparison = emptySet()) 
         }
     }
     
-    fun selectBestPhoto(photoId: String) {
+    /**
+     * 在对比模式中切换照片选中状态（多选）
+     */
+    fun toggleComparisonSelection(photoId: String) {
         _internalState.update { state ->
-            state.copy(bestPhotoId = if (state.bestPhotoId == photoId) null else photoId)
+            val current = state.selectedInComparison
+            val newSelection = if (photoId in current) {
+                current - photoId
+            } else {
+                current + photoId
+            }
+            state.copy(selectedInComparison = newSelection)
         }
     }
     
-    fun keepBestTrashRest() {
-        val best = _internalState.value.bestPhotoId ?: return
-        val others = _internalState.value.selectedForComparison - best
+    /**
+     * 保留选中的照片，丢弃未选中的
+     */
+    fun keepSelectedTrashRest() {
+        val selected = _internalState.value.selectedInComparison
+        if (selected.isEmpty()) return
+        
+        val others = _internalState.value.selectedForComparison - selected
         
         viewModelScope.launch {
             try {
-                sortPhotoUseCase.keepPhoto(best)
-                sortPhotoUseCase.batchUpdateStatus(others.toList(), PhotoStatus.TRASH)
+                sortPhotoUseCase.batchUpdateStatus(selected.toList(), PhotoStatus.KEEP)
+                if (others.isNotEmpty()) {
+                    sortPhotoUseCase.batchUpdateStatus(others.toList(), PhotoStatus.TRASH)
+                }
                 clearSelection()
                 _internalState.update { it.copy(mode = LightTableMode.SELECTION) }
             } catch (e: Exception) {
