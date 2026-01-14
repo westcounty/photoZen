@@ -90,24 +90,37 @@ fun BubbleGraphView(
             .pointerInput(nodes, onBubbleLongClick) {
                 detectTapGestures(
                     onTap = { offset ->
-                        // Find clicked bubble
-                        bubbleStates.forEachIndexed { _, state ->
-                            val distance = (offset - state.position).getDistance()
-                            if (distance <= state.node.radius) {
-                                onBubbleClick(state.node)
-                                return@detectTapGestures
+                        // Find clicked bubble - use expanded hit area for better touch responsiveness
+                        // Sort by distance to prefer the closest bubble
+                        val hitBubble = bubbleStates
+                            .map { state -> 
+                                val distance = (offset - state.position).getDistance()
+                                // Expanded hit area: radius + 15dp padding
+                                val hitRadius = state.node.radius + 15.dp.toPx()
+                                state to distance
                             }
+                            .filter { (state, distance) -> distance <= state.node.radius + 15.dp.toPx() }
+                            .minByOrNull { (_, distance) -> distance }
+                            ?.first
+                        
+                        if (hitBubble != null) {
+                            onBubbleClick(hitBubble.node)
                         }
                     },
                     onLongPress = { offset ->
                         // Find long-pressed bubble
                         if (onBubbleLongClick != null) {
-                            bubbleStates.forEachIndexed { _, state ->
-                                val distance = (offset - state.position).getDistance()
-                                if (distance <= state.node.radius) {
-                                    onBubbleLongClick(state.node)
-                                    return@detectTapGestures
+                            val hitBubble = bubbleStates
+                                .map { state -> 
+                                    val distance = (offset - state.position).getDistance()
+                                    state to distance
                                 }
+                                .filter { (state, distance) -> distance <= state.node.radius + 15.dp.toPx() }
+                                .minByOrNull { (_, distance) -> distance }
+                                ?.first
+                            
+                            if (hitBubble != null) {
+                                onBubbleLongClick(hitBubble.node)
                             }
                         }
                     }
