@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -32,8 +31,9 @@ import kotlin.math.roundToInt
 
 /**
  * Threshold for triggering a swipe action (as fraction of screen width/height)
+ * Lower value = more responsive, easier to trigger
  */
-private const val SWIPE_THRESHOLD = 0.35f
+private const val SWIPE_THRESHOLD = 0.25f
 
 /**
  * Rotation multiplier for card tilt during horizontal swipe
@@ -42,12 +42,17 @@ private const val ROTATION_MULTIPLIER = 15f
 
 /**
  * Swipeable photo card with gesture detection.
- * Supports horizontal swipes (left/right) and vertical swipe (up).
+ * 
+ * Gesture mapping:
+ * - Left/Right swipe → Keep (preserve)
+ * - Up swipe → Trash (delete)
+ * - Down swipe → Maybe (review later) with "sinking" animation
  * 
  * @param photo The photo to display
- * @param onSwipeLeft Called when swiped left (Trash)
+ * @param onSwipeLeft Called when swiped left (Keep)
  * @param onSwipeRight Called when swiped right (Keep)
- * @param onSwipeUp Called when swiped up (Maybe)
+ * @param onSwipeUp Called when swiped up (Trash)
+ * @param onSwipeDown Called when swiped down (Maybe)
  * @param onPhotoClick Called when photo is clicked (for fullscreen view)
  * @param enabled Whether swipe gestures are enabled
  * @param modifier Modifier for the card
@@ -58,6 +63,7 @@ fun SwipeablePhotoCard(
     onSwipeLeft: () -> Unit,
     onSwipeRight: () -> Unit,
     onSwipeUp: () -> Unit,
+    onSwipeDown: () -> Unit = {},
     onPhotoClick: () -> Unit = {},
     enabled: Boolean = true,
     modifier: Modifier = Modifier
@@ -79,14 +85,15 @@ fun SwipeablePhotoCard(
     // Track current swipe direction
     var currentDirection by remember(photo.id) { mutableStateOf(SwipeDirection.NONE) }
     
-    // Calculate normalized progress (-1 to 1 for X, 0 to -1 for Y)
+    // Calculate normalized progress (-1 to 1 for X and Y)
     val progressX = (offsetX.value / screenWidthPx).coerceIn(-1f, 1f)
-    val progressY = (offsetY.value / screenHeightPx).coerceIn(-1f, 0f)
+    val progressY = (offsetY.value / screenHeightPx).coerceIn(-1f, 1f)
     
     // Determine swipe direction based on offset
     LaunchedEffect(offsetX.value, offsetY.value) {
         currentDirection = when {
             abs(offsetY.value) > abs(offsetX.value) && offsetY.value < -50f -> SwipeDirection.UP
+            abs(offsetY.value) > abs(offsetX.value) && offsetY.value > 50f -> SwipeDirection.DOWN
             offsetX.value > 50f -> SwipeDirection.RIGHT
             offsetX.value < -50f -> SwipeDirection.LEFT
             else -> SwipeDirection.NONE
@@ -96,8 +103,16 @@ fun SwipeablePhotoCard(
     // Calculate rotation based on horizontal offset
     val rotation = (offsetX.value / screenWidthPx) * ROTATION_MULTIPLIER
     
-    // Calculate scale for "lifting" effect
-    val scale = 1f + (abs(offsetX.value) / screenWidthPx) * 0.05f
+    // Calculate scale - shrink for down swipe (sinking effect), lift for others
+    val scale = when {
+        offsetY.value > 0 -> 1f - (offsetY.value / screenHeightPx) * 0.3f // Shrink when swiping down
+        else -> 1f + (abs(offsetX.value) / screenWidthPx) * 0.05f // Lift for horizontal
+    }
+    
+    // Calculate alpha for sinking effect
+    val alpha = if (offsetY.value > 0) {
+        1f - (offsetY.value / screenHeightPx) * 0.5f
+    } else 1f
     
     Box(
         modifier = modifier
@@ -107,6 +122,7 @@ fun SwipeablePhotoCard(
                 rotationZ = rotation
                 scaleX = scale
                 scaleY = scale
+                this.alpha = alpha
             }
             .pointerInput(enabled, photo.id) {
                 if (!enabled) return@pointerInput
@@ -118,75 +134,91 @@ fun SwipeablePhotoCard(
                     },
                     onDragEnd = {
                         scope.launch {
-                            try {
-                                val thresholdX = screenWidthPx * SWIPE_THRESHOLD
-                                val thresholdY = screenHeightPx * SWIPE_THRESHOLD
-                                
-                                when {
-                                    // Swipe up detected
-                                    offsetY.value < -thresholdY && abs(offsetY.value) > abs(offsetX.value) -> {
-                                        // Strong haptic for action
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        // Call callback first, then animate
-                                        onSwipeUp()
-                                        // Animate off screen (fire and forget)
+                            val thresholdX = screenWidthPx * SWIPE_THRESHOLD
+                            val thresholdY = screenHeightPx * SWIPE_THRESHOLD
+                            
+                            when {
+                                // Swipe up detected → TRASH (delete)
+                                offsetY.value < -thresholdY && abs(offsetY.value) > abs(offsetX.value) -> {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    // Call callback first
+                                    onSwipeUp()
+                                    // Fire-and-forget animation
+                                    launch {
                                         try {
                                             offsetY.animateTo(
                                                 targetValue = -screenHeightPx * 1.5f,
-                                                animationSpec = tween(200)
+                                                animationSpec = tween(120)
                                             )
-                                        } catch (_: Exception) { /* Animation might be cancelled */ }
+                                        } catch (_: Exception) {}
                                     }
-                                    // Swipe right detected
-                                    offsetX.value > thresholdX -> {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        onSwipeRight()
+                                }
+                                // Swipe down detected → MAYBE (sinking into pool effect)
+                                offsetY.value > thresholdY && abs(offsetY.value) > abs(offsetX.value) -> {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    // Call callback first
+                                    onSwipeDown()
+                                    // Fire-and-forget sinking animation
+                                    launch {
+                                        try {
+                                            offsetY.animateTo(
+                                                targetValue = screenHeightPx * 0.6f,
+                                                animationSpec = tween(180)
+                                            )
+                                        } catch (_: Exception) {}
+                                    }
+                                }
+                                // Swipe right detected → KEEP
+                                offsetX.value > thresholdX -> {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onSwipeRight()
+                                    launch {
                                         try {
                                             offsetX.animateTo(
                                                 targetValue = screenWidthPx * 1.5f,
-                                                animationSpec = tween(200)
+                                                animationSpec = tween(120)
                                             )
-                                        } catch (_: Exception) { /* Animation might be cancelled */ }
+                                        } catch (_: Exception) {}
                                     }
-                                    // Swipe left detected
-                                    offsetX.value < -thresholdX -> {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        onSwipeLeft()
+                                }
+                                // Swipe left detected → KEEP (same as right)
+                                offsetX.value < -thresholdX -> {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onSwipeLeft()
+                                    launch {
                                         try {
                                             offsetX.animateTo(
                                                 targetValue = -screenWidthPx * 1.5f,
-                                                animationSpec = tween(200)
+                                                animationSpec = tween(120)
                                             )
-                                        } catch (_: Exception) { /* Animation might be cancelled */ }
-                                    }
-                                    // Snap back to center
-                                    else -> {
-                                        launch { 
-                                            try {
-                                                offsetX.animateTo(
-                                                    targetValue = 0f,
-                                                    animationSpec = spring(
-                                                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                        stiffness = Spring.StiffnessMedium
-                                                    )
-                                                )
-                                            } catch (_: Exception) {}
-                                        }
-                                        launch {
-                                            try {
-                                                offsetY.animateTo(
-                                                    targetValue = 0f,
-                                                    animationSpec = spring(
-                                                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                        stiffness = Spring.StiffnessMedium
-                                                    )
-                                                )
-                                            } catch (_: Exception) {}
-                                        }
+                                        } catch (_: Exception) {}
                                     }
                                 }
-                            } catch (_: Exception) {
-                                // Ignore exceptions during drag handling
+                                // Snap back to center
+                                else -> {
+                                    launch { 
+                                        try {
+                                            offsetX.animateTo(
+                                                targetValue = 0f,
+                                                animationSpec = spring(
+                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                    stiffness = Spring.StiffnessMedium
+                                                )
+                                            )
+                                        } catch (_: Exception) {}
+                                    }
+                                    launch {
+                                        try {
+                                            offsetY.animateTo(
+                                                targetValue = 0f,
+                                                animationSpec = spring(
+                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                    stiffness = Spring.StiffnessMedium
+                                                )
+                                            )
+                                        } catch (_: Exception) {}
+                                    }
+                                }
                             }
                         }
                     },
@@ -199,12 +231,9 @@ fun SwipeablePhotoCard(
                     onDrag = { change, dragAmount ->
                         change.consume()
                         scope.launch {
-                            // Allow free dragging in both directions
+                            // Allow free dragging in all directions
                             offsetX.snapTo(offsetX.value + dragAmount.x)
-                            // Only allow upward vertical drag
-                            if (offsetY.value + dragAmount.y < 0 || dragAmount.y < 0) {
-                                offsetY.snapTo((offsetY.value + dragAmount.y).coerceAtMost(0f))
-                            }
+                            offsetY.snapTo(offsetY.value + dragAmount.y)
                         }
                     }
                 )

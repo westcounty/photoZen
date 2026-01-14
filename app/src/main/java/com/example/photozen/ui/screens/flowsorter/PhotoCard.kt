@@ -231,6 +231,11 @@ private fun PhotoInfoOverlay(
 
 /**
  * Displays swipe direction indicators with animated opacity.
+ * 
+ * Gesture mapping:
+ * - LEFT/RIGHT → Keep (Green)
+ * - UP → Trash (Red)
+ * - DOWN → Maybe (Amber)
  */
 @Composable
 private fun SwipeIndicatorOverlay(
@@ -242,41 +247,54 @@ private fun SwipeIndicatorOverlay(
     
     Box(modifier = modifier) {
         // Keep indicator (right swipe) - Green
-        if (swipeDirection == SwipeDirection.RIGHT || swipeProgress > 0.1f) {
+        if (swipeDirection == SwipeDirection.RIGHT || (swipeDirection == SwipeDirection.NONE && swipeProgress > 0.1f)) {
             SwipeIndicatorBadge(
                 icon = Icons.Default.Check,
                 label = "保留",
                 color = KeepGreen,
                 alpha = if (swipeProgress > 0) absProgress else 0f,
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(32.dp)
-            )
-        }
-        
-        // Trash indicator (left swipe) - Red
-        if (swipeDirection == SwipeDirection.LEFT || swipeProgress < -0.1f) {
-            SwipeIndicatorBadge(
-                icon = Icons.Default.Close,
-                label = "删除",
-                color = TrashRed,
-                alpha = if (swipeProgress < 0) absProgress else 0f,
-                modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(32.dp)
             )
         }
         
-        // Maybe indicator (up swipe) - Amber
+        // Keep indicator (left swipe) - Green (same as right)
+        if (swipeDirection == SwipeDirection.LEFT || (swipeDirection == SwipeDirection.NONE && swipeProgress < -0.1f)) {
+            SwipeIndicatorBadge(
+                icon = Icons.Default.Check,
+                label = "保留",
+                color = KeepGreen,
+                alpha = if (swipeProgress < 0) absProgress else 0f,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(32.dp)
+            )
+        }
+        
+        // Trash indicator (up swipe) - Red
         if (swipeDirection == SwipeDirection.UP) {
             SwipeIndicatorBadge(
-                icon = Icons.Default.QuestionMark,
-                label = "待定",
-                color = MaybeAmber,
+                icon = Icons.Default.Close,
+                label = "删除",
+                color = TrashRed,
                 alpha = absProgress,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 32.dp)
+            )
+        }
+        
+        // Maybe indicator (down swipe) - Amber with "池" label
+        if (swipeDirection == SwipeDirection.DOWN) {
+            SwipeIndicatorBadge(
+                icon = Icons.Default.QuestionMark,
+                label = "待定池",
+                color = MaybeAmber,
+                alpha = absProgress,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 140.dp)
             )
         }
     }

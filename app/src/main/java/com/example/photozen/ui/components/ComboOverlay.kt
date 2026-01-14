@@ -1,29 +1,18 @@
 package com.example.photozen.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -36,16 +25,17 @@ import com.example.photozen.ui.screens.flowsorter.ComboLevel
 import com.example.photozen.ui.screens.flowsorter.ComboState
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
-import kotlinx.coroutines.delay
 
 /**
  * Combo overlay that displays the current combo count with animated effects.
+ * 
+ * Optimized for smooth, non-blocking animations during rapid swipes.
  * 
  * Visual feedback:
  * - x1-x4: White, normal size
  * - x5-x9: Light orange, slightly larger
  * - x10-x19: Orange, larger with glow
- * - x20+: Red/Fire effect, largest with pulsing
+ * - x20+: Red/Fire effect, largest
  */
 @Composable
 fun ComboOverlay(
@@ -57,17 +47,13 @@ fun ComboOverlay(
     AnimatedVisibility(
         visible = isVisible,
         enter = scaleIn(
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessMediumLow
-            )
-        ) + fadeIn(),
+            initialScale = 0.8f,
+            animationSpec = tween(80)
+        ) + fadeIn(animationSpec = tween(80)),
         exit = scaleOut(
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessMedium
-            )
-        ) + fadeOut(),
+            targetScale = 0.8f,
+            animationSpec = tween(100)
+        ) + fadeOut(animationSpec = tween(100)),
         modifier = modifier
     ) {
         ComboCounter(
@@ -86,28 +72,17 @@ private fun ComboCounter(
     val baseScale = when (level) {
         ComboLevel.NONE -> 1f
         ComboLevel.NORMAL -> 1f
-        ComboLevel.WARM -> 1.15f
-        ComboLevel.HOT -> 1.3f
-        ComboLevel.FIRE -> 1.5f
+        ComboLevel.WARM -> 1.1f
+        ComboLevel.HOT -> 1.2f
+        ComboLevel.FIRE -> 1.3f
     }
     
-    // Animated scale with bounce on change
-    var targetScale by remember { mutableFloatStateOf(baseScale) }
+    // Fast, non-blocking scale animation
     val animatedScale by animateFloatAsState(
-        targetValue = targetScale,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
+        targetValue = baseScale,
+        animationSpec = tween(50),
         label = "combo_scale"
     )
-    
-    // Trigger bounce animation on count change
-    LaunchedEffect(count) {
-        targetScale = baseScale * 1.3f
-        delay(100)
-        targetScale = baseScale
-    }
     
     // Color based on level
     val color = when (level) {
@@ -118,35 +93,23 @@ private fun ComboCounter(
         ComboLevel.FIRE -> TrashRed
     }
     
-    // Pulsing effect for FIRE level
-    var pulseAlpha by remember { mutableFloatStateOf(1f) }
-    if (level == ComboLevel.FIRE) {
-        LaunchedEffect(Unit) {
-            while (true) {
-                pulseAlpha = 0.7f
-                delay(300)
-                pulseAlpha = 1f
-                delay(300)
-            }
-        }
-    } else {
-        pulseAlpha = 1f
-    }
-    
-    // Font size based on level
+    // Font size based on level (smaller to be less intrusive)
     val fontSize = when (level) {
-        ComboLevel.NONE -> 32.sp
-        ComboLevel.NORMAL -> 36.sp
-        ComboLevel.WARM -> 42.sp
-        ComboLevel.HOT -> 48.sp
-        ComboLevel.FIRE -> 56.sp
+        ComboLevel.NONE -> 28.sp
+        ComboLevel.NORMAL -> 30.sp
+        ComboLevel.WARM -> 34.sp
+        ComboLevel.HOT -> 38.sp
+        ComboLevel.FIRE -> 44.sp
     }
     
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .scale(animatedScale)
-            .graphicsLayer { alpha = pulseAlpha }
+            .graphicsLayer { 
+                // Use hardware layer for smoother rendering
+                this.alpha = 0.9f
+            }
     ) {
         Text(
             text = "x$count",
@@ -154,22 +117,19 @@ private fun ComboCounter(
             fontWeight = FontWeight.Black,
             color = color,
             style = MaterialTheme.typography.displaySmall.copy(
-                // Add text shadow for visibility
                 shadow = androidx.compose.ui.graphics.Shadow(
                     color = color.copy(alpha = 0.5f),
                     offset = androidx.compose.ui.geometry.Offset(0f, 2f),
-                    blurRadius = 8f
+                    blurRadius = 6f
                 )
             )
         )
         
-        // Show "COMBO!" text for high combos
-        if (level == ComboLevel.HOT || level == ComboLevel.FIRE) {
+        // Only show emoji for FIRE level to reduce visual noise
+        if (level == ComboLevel.FIRE) {
             Text(
-                text = if (level == ComboLevel.FIRE) "🔥 COMBO!" else "COMBO!",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = color.copy(alpha = 0.8f)
+                text = "🔥",
+                fontSize = 16.sp
             )
         }
     }
@@ -185,8 +145,8 @@ fun ComboIndicator(
 ) {
     AnimatedVisibility(
         visible = comboState.count >= 1,
-        enter = fadeIn() + scaleIn(),
-        exit = fadeOut() + scaleOut(),
+        enter = fadeIn(animationSpec = tween(50)) + scaleIn(animationSpec = tween(50)),
+        exit = fadeOut(animationSpec = tween(50)) + scaleOut(animationSpec = tween(50)),
         modifier = modifier
     ) {
         val color = when (comboState.level) {

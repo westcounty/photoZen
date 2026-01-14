@@ -17,7 +17,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -60,7 +59,6 @@ fun TaggedPhotosScreen(
     tagId: String,
     onNavigateBack: () -> Unit,
     onNavigateToEditor: (String) -> Unit,
-    onNavigateToMap: (String) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: TaggedPhotosViewModel = hiltViewModel()
 ) {
@@ -97,17 +95,7 @@ fun TaggedPhotosScreen(
                         )
                     }
                 },
-                actions = {
-                    // Map view button
-                    if (uiState.photos.isNotEmpty()) {
-                        IconButton(onClick = { onNavigateToMap(tagId) }) {
-                            Icon(
-                                imageVector = Icons.Default.Map,
-                                contentDescription = "查看地图"
-                            )
-                        }
-                    }
-                },
+                actions = { },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 )

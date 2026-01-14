@@ -10,7 +10,6 @@ import com.example.photozen.ui.screens.editor.PhotoEditorScreen
 import com.example.photozen.ui.screens.flowsorter.FlowSorterScreen
 import com.example.photozen.ui.screens.home.HomeScreen
 import com.example.photozen.ui.screens.lighttable.LightTableScreen
-import com.example.photozen.ui.screens.map.MapScreen
 import com.example.photozen.ui.screens.photolist.PhotoListScreen
 import com.example.photozen.ui.screens.settings.SettingsScreen
 import com.example.photozen.ui.screens.tags.TagBubbleScreen
@@ -54,9 +53,6 @@ fun PicZenNavHost(
                 },
                 onNavigateToTagBubble = {
                     navController.navigate(Screen.TagBubble)
-                },
-                onNavigateToMap = {
-                    navController.navigate(Screen.PhotoMap)
                 }
             )
         }
@@ -145,33 +141,6 @@ fun PicZenNavHost(
                     navController.popBackStack()
                 },
                 onNavigateToEditor = { photoId ->
-                    navController.navigate(Screen.PhotoEditor(photoId))
-                },
-                onNavigateToMap = { tagId ->
-                    navController.navigate(Screen.PhotoMapByTag(tagId))
-                }
-            )
-        }
-        
-        composable<Screen.PhotoMapByTag> { backStackEntry ->
-            val route = backStackEntry.toRoute<Screen.PhotoMapByTag>()
-            MapScreen(
-                tagId = route.tagId,
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onNavigateToPhoto = { photoId ->
-                    navController.navigate(Screen.PhotoEditor(photoId))
-                }
-            )
-        }
-        
-        composable<Screen.PhotoMap> {
-            MapScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onNavigateToPhoto = { photoId ->
                     navController.navigate(Screen.PhotoEditor(photoId))
                 }
             )

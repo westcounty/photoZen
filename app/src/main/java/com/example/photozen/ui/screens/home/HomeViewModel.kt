@@ -3,7 +3,6 @@ package com.example.photozen.ui.screens.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.model.PhotoStatus
-import com.example.photozen.di.LocationScanScheduler
 import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -47,8 +46,7 @@ data class HomeUiState(
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val getPhotosUseCase: GetPhotosUseCase,
-    private val syncPhotosUseCase: SyncPhotosUseCase,
-    private val locationScanScheduler: LocationScanScheduler
+    private val syncPhotosUseCase: SyncPhotosUseCase
 ) : ViewModel() {
     
     private val _hasPermission = MutableStateFlow(false)
@@ -124,11 +122,6 @@ class HomeViewModel @Inject constructor(
                     "发现 ${result.newPhotosCount} 张新照片"
                 } else {
                     null
-                }
-                
-                // Trigger GPS location scan for new photos
-                if (result.newPhotosCount > 0 || result.isInitialSync) {
-                    locationScanScheduler.scheduleOneTimeScan()
                 }
             } catch (e: Exception) {
                 _error.value = "同步失败: ${e.message}"

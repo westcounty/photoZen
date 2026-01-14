@@ -40,7 +40,6 @@ import androidx.compose.material.icons.filled.SwipeRight
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Rocket
 import androidx.compose.material.icons.filled.Sell
-import androidx.compose.material.icons.filled.Map
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -91,7 +90,6 @@ fun HomeScreen(
     onNavigateToTrash: () -> Unit,
     onNavigateToWorkflow: () -> Unit,
     onNavigateToTagBubble: () -> Unit,
-    onNavigateToMap: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -270,16 +268,6 @@ fun HomeScreen(
                     iconTint = Color(0xFFA78BFA), // Purple
                     enabled = true,
                     onClick = onNavigateToTagBubble
-                )
-                
-                // Photo Map Card
-                ActionCard(
-                    title = "足迹地图",
-                    subtitle = "查看照片拍摄轨迹",
-                    icon = Icons.Default.Map,
-                    iconTint = Color(0xFF38BDF8), // Sky blue
-                    enabled = true,
-                    onClick = onNavigateToMap
                 )
             }
             

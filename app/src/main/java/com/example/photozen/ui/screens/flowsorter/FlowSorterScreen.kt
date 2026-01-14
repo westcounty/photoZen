@@ -35,10 +35,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -227,14 +225,22 @@ fun FlowSorterScreen(
                                 CardStack(
                                     uiState = uiState,
                                     onSwipeLeft = {
-                                        val combo = viewModel.trashCurrentPhoto()
+                                        // Left swipe = Keep
+                                        val combo = viewModel.keepCurrentPhoto()
                                         hapticManager.performSwipeFeedback(combo, uiState.combo.level)
                                     },
                                     onSwipeRight = {
+                                        // Right swipe = Keep
                                         val combo = viewModel.keepCurrentPhoto()
                                         hapticManager.performSwipeFeedback(combo, uiState.combo.level)
                                     },
                                     onSwipeUp = {
+                                        // Up swipe = Trash
+                                        val combo = viewModel.trashCurrentPhoto()
+                                        hapticManager.performSwipeFeedback(combo, uiState.combo.level)
+                                    },
+                                    onSwipeDown = {
+                                        // Down swipe = Maybe (sinking into pending pool)
                                         val combo = viewModel.maybeCurrentPhoto()
                                         hapticManager.performSwipeFeedback(combo, uiState.combo.level)
                                     },
@@ -255,30 +261,9 @@ fun FlowSorterScreen(
                     }
                 }
                 
-                // Action buttons (only show when there are photos and current photo exists)
+                // Gesture hints (only show when there are photos)
                 if (!uiState.isLoading && !uiState.isComplete && uiState.currentPhoto != null) {
-                    ActionButtons(
-                        onTrash = {
-                            // Check if there's still a photo to process
-                            if (uiState.currentPhoto != null) {
-                                val combo = viewModel.trashCurrentPhoto()
-                                hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                            }
-                        },
-                        onKeep = {
-                            if (uiState.currentPhoto != null) {
-                                val combo = viewModel.keepCurrentPhoto()
-                                hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                            }
-                        },
-                        onMaybe = {
-                            if (uiState.currentPhoto != null) {
-                                val combo = viewModel.maybeCurrentPhoto()
-                                hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                            }
-                        },
-                        modifier = Modifier.padding(bottom = 24.dp)
-                    )
+                    GestureHints(modifier = Modifier.padding(bottom = 16.dp))
                 }
             }
         }
@@ -315,6 +300,7 @@ private fun CardStack(
     onSwipeLeft: () -> Unit,
     onSwipeRight: () -> Unit,
     onSwipeUp: () -> Unit,
+    onSwipeDown: () -> Unit,
     onPhotoClick: (PhotoEntity) -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -333,6 +319,7 @@ private fun CardStack(
                 onSwipeLeft = onSwipeLeft,
                 onSwipeRight = onSwipeRight,
                 onSwipeUp = onSwipeUp,
+                onSwipeDown = onSwipeDown,
                 onPhotoClick = { onPhotoClick(currentPhoto) }
             )
         }
@@ -340,67 +327,55 @@ private fun CardStack(
 }
 
 /**
- * Bottom action buttons for sorting.
+ * Gesture hints showing users how to interact.
  */
 @Composable
-private fun ActionButtons(
-    onTrash: () -> Unit,
-    onKeep: () -> Unit,
-    onMaybe: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+private fun GestureHints(modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Trash button
-        FilledIconButton(
-            onClick = onTrash,
-            modifier = Modifier.size(64.dp),
-            colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = TrashRed.copy(alpha = 0.15f),
-                contentColor = TrashRed
-            )
-        ) {
-            Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "删除",
-                modifier = Modifier.size(32.dp)
-            )
-        }
-        
-        // Maybe button
-        FilledIconButton(
-            onClick = onMaybe,
-            modifier = Modifier.size(56.dp),
-            colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = MaybeAmber.copy(alpha = 0.15f),
-                contentColor = MaybeAmber
-            )
-        ) {
-            Icon(
-                imageVector = Icons.Default.QuestionMark,
-                contentDescription = "待定",
-                modifier = Modifier.size(28.dp)
-            )
-        }
-        
-        // Keep button
-        FilledIconButton(
-            onClick = onKeep,
-            modifier = Modifier.size(64.dp),
-            colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = KeepGreen.copy(alpha = 0.15f),
-                contentColor = KeepGreen
-            )
-        ) {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = "保留",
-                modifier = Modifier.size(32.dp)
-            )
-        }
+        GestureHint(
+            icon = Icons.Default.Check,
+            label = "← 保留 →",
+            color = KeepGreen
+        )
+        GestureHint(
+            icon = Icons.Default.Close,
+            label = "↑ 删除",
+            color = TrashRed
+        )
+        GestureHint(
+            icon = Icons.Default.QuestionMark,
+            label = "↓ 待定",
+            color = MaybeAmber
+        )
+    }
+}
+
+@Composable
+private fun GestureHint(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    color: Color
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = color.copy(alpha = 0.6f),
+            modifier = Modifier.size(20.dp)
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = color.copy(alpha = 0.6f)
+        )
     }
 }
 
@@ -643,16 +618,25 @@ fun FlowSorterContent(
                             CardStack(
                                 uiState = uiState,
                                 onSwipeLeft = {
-                                    val combo = viewModel.trashCurrentPhoto()
+                                    // Left swipe = Keep
+                                    val combo = viewModel.keepCurrentPhoto()
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                                    onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.TRASH, combo)
+                                    onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.KEEP, combo)
                                 },
                                 onSwipeRight = {
+                                    // Right swipe = Keep
                                     val combo = viewModel.keepCurrentPhoto()
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
                                     onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.KEEP, combo)
                                 },
                                 onSwipeUp = {
+                                    // Up swipe = Trash
+                                    val combo = viewModel.trashCurrentPhoto()
+                                    hapticManager.performSwipeFeedback(combo, uiState.combo.level)
+                                    onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.TRASH, combo)
+                                },
+                                onSwipeDown = {
+                                    // Down swipe = Maybe (sinking into pending pool)
                                     val combo = viewModel.maybeCurrentPhoto()
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
                                     onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.MAYBE, combo)
@@ -674,26 +658,9 @@ fun FlowSorterContent(
                 }
             }
             
-            // Action buttons
+            // Gesture hints
             if (!uiState.isLoading && !uiState.isComplete) {
-                ActionButtons(
-                    onTrash = {
-                        val combo = viewModel.trashCurrentPhoto()
-                        hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                        onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.TRASH, combo)
-                    },
-                    onKeep = {
-                        val combo = viewModel.keepCurrentPhoto()
-                        hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                        onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.KEEP, combo)
-                    },
-                    onMaybe = {
-                        val combo = viewModel.maybeCurrentPhoto()
-                        hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                        onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.MAYBE, combo)
-                    },
-                    modifier = Modifier.padding(bottom = 24.dp)
-                )
+                GestureHints(modifier = Modifier.padding(bottom = 16.dp))
             }
         }
         

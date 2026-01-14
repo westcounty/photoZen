@@ -72,17 +72,4 @@ sealed interface Screen {
      */
     @Serializable
     data class PhotoListByTag(val tagId: String) : Screen
-    
-    /**
-     * Map screen - displays photo locations on a map with trajectory.
-     */
-    @Serializable
-    data object PhotoMap : Screen
-    
-    /**
-     * Map screen for photos with a specific tag.
-     * @param tagId The ID of the tag to filter by
-     */
-    @Serializable
-    data class PhotoMapByTag(val tagId: String) : Screen
 }
