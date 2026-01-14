@@ -57,7 +57,8 @@ import java.util.Locale
  * Preserves the original aspect ratio of the photo.
  * 
  * @param photo The photo entity to display
- * @param swipeProgress Current swipe progress (-1 to 1 for horizontal, 0 to -1 for vertical)
+ * @param swipeProgress Current horizontal swipe progress (-1 to 1)
+ * @param swipeProgressY Current vertical swipe progress (-1 to 1)
  * @param swipeDirection Current swipe direction based on gesture
  * @param onPhotoClick Called when photo is clicked (for fullscreen view)
  * @param modifier Modifier for the card
@@ -66,6 +67,7 @@ import java.util.Locale
 fun PhotoCard(
     photo: PhotoEntity,
     swipeProgress: Float = 0f,
+    swipeProgressY: Float = 0f,
     swipeDirection: SwipeDirection = SwipeDirection.NONE,
     onPhotoClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -167,7 +169,8 @@ fun PhotoCard(
             // Swipe indicator overlays
             SwipeIndicatorOverlay(
                 swipeDirection = swipeDirection,
-                swipeProgress = swipeProgress,
+                swipeProgressX = swipeProgress,
+                swipeProgressY = swipeProgressY,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -231,6 +234,8 @@ private fun PhotoInfoOverlay(
 
 /**
  * Displays swipe direction indicators with animated opacity.
+ * All indicators are centered at top of the photo for better visibility.
+ * Icon only, no text label.
  * 
  * Gesture mapping:
  * - LEFT/RIGHT → Keep (Green)
@@ -240,103 +245,87 @@ private fun PhotoInfoOverlay(
 @Composable
 private fun SwipeIndicatorOverlay(
     swipeDirection: SwipeDirection,
-    swipeProgress: Float,
+    swipeProgressX: Float,
+    swipeProgressY: Float,
     modifier: Modifier = Modifier
 ) {
-    val absProgress = kotlin.math.abs(swipeProgress).coerceIn(0f, 1f)
+    // Consistent alpha for all indicators (0.85 = clearly visible)
+    val indicatorAlpha = 0.85f
     
     Box(modifier = modifier) {
         // Keep indicator (right swipe) - Green
-        if (swipeDirection == SwipeDirection.RIGHT || (swipeDirection == SwipeDirection.NONE && swipeProgress > 0.1f)) {
-            SwipeIndicatorBadge(
+        if (swipeDirection == SwipeDirection.RIGHT || (swipeDirection == SwipeDirection.NONE && swipeProgressX > 0.1f)) {
+            SwipeIndicatorIcon(
                 icon = Icons.Default.Check,
-                label = "保留",
                 color = KeepGreen,
-                alpha = if (swipeProgress > 0) absProgress else 0f,
+                alpha = indicatorAlpha,
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(32.dp)
+                    .align(Alignment.TopCenter)
+                    .padding(top = 80.dp)
             )
         }
         
         // Keep indicator (left swipe) - Green (same as right)
-        if (swipeDirection == SwipeDirection.LEFT || (swipeDirection == SwipeDirection.NONE && swipeProgress < -0.1f)) {
-            SwipeIndicatorBadge(
+        if (swipeDirection == SwipeDirection.LEFT || (swipeDirection == SwipeDirection.NONE && swipeProgressX < -0.1f)) {
+            SwipeIndicatorIcon(
                 icon = Icons.Default.Check,
-                label = "保留",
                 color = KeepGreen,
-                alpha = if (swipeProgress < 0) absProgress else 0f,
+                alpha = indicatorAlpha,
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(32.dp)
+                    .align(Alignment.TopCenter)
+                    .padding(top = 80.dp)
             )
         }
         
         // Trash indicator (up swipe) - Red
         if (swipeDirection == SwipeDirection.UP) {
-            SwipeIndicatorBadge(
+            SwipeIndicatorIcon(
                 icon = Icons.Default.Close,
-                label = "删除",
                 color = TrashRed,
-                alpha = absProgress,
+                alpha = indicatorAlpha,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = 32.dp)
+                    .padding(top = 80.dp)
             )
         }
         
-        // Maybe indicator (down swipe) - Amber with "池" label
+        // Maybe indicator (down swipe) - Amber
         if (swipeDirection == SwipeDirection.DOWN) {
-            SwipeIndicatorBadge(
+            SwipeIndicatorIcon(
                 icon = Icons.Default.QuestionMark,
-                label = "待定池",
                 color = MaybeAmber,
-                alpha = absProgress,
+                alpha = indicatorAlpha,
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 140.dp)
+                    .align(Alignment.TopCenter)
+                    .padding(top = 80.dp)
             )
         }
     }
 }
 
 /**
- * Individual swipe indicator badge.
+ * Individual swipe indicator icon (no text label).
  */
 @Composable
-private fun SwipeIndicatorBadge(
+private fun SwipeIndicatorIcon(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
     color: Color,
     alpha: Float,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier.graphicsLayer { this.alpha = alpha },
-        horizontalAlignment = Alignment.CenterHorizontally
+    Box(
+        modifier = modifier
+            .graphicsLayer { this.alpha = alpha }
+            .size(64.dp)
+            .clip(CircleShape)
+            .background(color.copy(alpha = 0.9f)),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier
-                .size(64.dp)
-                .clip(CircleShape)
-                .background(color.copy(alpha = 0.9f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = Color.White,
-                modifier = Modifier.size(32.dp)
-            )
-        }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            color = color
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(32.dp)
         )
     }
 }

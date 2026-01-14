@@ -63,7 +63,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.photozen.data.local.entity.PhotoEntity
-import com.example.photozen.ui.components.ComboIndicator
 import com.example.photozen.ui.components.ComboOverlay
 import com.example.photozen.ui.components.FullscreenPhotoViewer
 import com.example.photozen.ui.util.rememberHapticFeedbackManager
@@ -137,9 +136,6 @@ fun FlowSorterScreen(
                         }
                     },
                     actions = {
-                        // Combo indicator in top bar
-                        ComboIndicator(comboState = uiState.combo)
-                        
                         // Undo button
                         AnimatedVisibility(
                             visible = uiState.lastAction != null,
@@ -261,10 +257,6 @@ fun FlowSorterScreen(
                     }
                 }
                 
-                // Gesture hints (only show when there are photos)
-                if (!uiState.isLoading && !uiState.isComplete && uiState.currentPhoto != null) {
-                    GestureHints(modifier = Modifier.padding(bottom = 16.dp))
-                }
             }
         }
         
@@ -323,59 +315,6 @@ private fun CardStack(
                 onPhotoClick = { onPhotoClick(currentPhoto) }
             )
         }
-    }
-}
-
-/**
- * Gesture hints showing users how to interact.
- */
-@Composable
-private fun GestureHints(modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        GestureHint(
-            icon = Icons.Default.Check,
-            label = "← 保留 →",
-            color = KeepGreen
-        )
-        GestureHint(
-            icon = Icons.Default.Close,
-            label = "↑ 删除",
-            color = TrashRed
-        )
-        GestureHint(
-            icon = Icons.Default.QuestionMark,
-            label = "↓ 待定",
-            color = MaybeAmber
-        )
-    }
-}
-
-@Composable
-private fun GestureHint(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    color: Color
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = color.copy(alpha = 0.6f),
-            modifier = Modifier.size(20.dp)
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = color.copy(alpha = 0.6f)
-        )
     }
 }
 
@@ -658,10 +597,6 @@ fun FlowSorterContent(
                 }
             }
             
-            // Gesture hints
-            if (!uiState.isLoading && !uiState.isComplete) {
-                GestureHints(modifier = Modifier.padding(bottom = 16.dp))
-            }
         }
         
         // Fullscreen viewer

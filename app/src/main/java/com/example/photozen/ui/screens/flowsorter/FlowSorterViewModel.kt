@@ -9,10 +9,11 @@ import com.example.photozen.domain.usecase.GetUnsortedPhotosUseCase
 import com.example.photozen.domain.usecase.SortPhotoUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -116,6 +117,9 @@ class FlowSorterViewModel @Inject constructor(
     private val _counters = MutableStateFlow(SortCounters())
     private val _combo = MutableStateFlow(ComboState())
     
+    // Job for auto-hiding combo after timeout
+    private var comboTimeoutJob: Job? = null
+    
     /**
      * Counters for sorted photos by status.
      */
@@ -204,62 +208,64 @@ class FlowSorterViewModel @Inject constructor(
      */
     fun keepCurrentPhoto(): Int {
         val photo = uiState.value.currentPhoto ?: return 0
-        var comboCount = 0
+        // Update combo first for immediate feedback
+        val comboCount = updateCombo()
         viewModelScope.launch {
             try {
                 sortPhotoUseCase.keepPhoto(photo.id)
                 _lastAction.value = SortAction(photo.id, PhotoStatus.KEEP)
                 _counters.value = _counters.value.copy(keep = _counters.value.keep + 1)
-                comboCount = updateCombo()
                 // Increment cumulative sort count
                 preferencesRepository.incrementSortedCount()
             } catch (e: Exception) {
                 _error.value = "操作失败: ${e.message}"
             }
         }
-        return updateCombo() // Return immediately for haptic feedback
+        return comboCount
     }
     
     /**
-     * Trash the current photo (swipe left).
+     * Trash the current photo (swipe up).
      * @return The current combo count after sorting
      */
     fun trashCurrentPhoto(): Int {
         val photo = uiState.value.currentPhoto ?: return 0
+        // Update combo first for immediate feedback
+        val comboCount = updateCombo()
         viewModelScope.launch {
             try {
                 sortPhotoUseCase.trashPhoto(photo.id)
                 _lastAction.value = SortAction(photo.id, PhotoStatus.TRASH)
                 _counters.value = _counters.value.copy(trash = _counters.value.trash + 1)
-                updateCombo()
                 // Increment cumulative sort count
                 preferencesRepository.incrementSortedCount()
             } catch (e: Exception) {
                 _error.value = "操作失败: ${e.message}"
             }
         }
-        return updateCombo() // Return immediately for haptic feedback
+        return comboCount
     }
     
     /**
-     * Mark current photo as Maybe (swipe up).
+     * Mark current photo as Maybe (swipe down).
      * @return The current combo count after sorting
      */
     fun maybeCurrentPhoto(): Int {
         val photo = uiState.value.currentPhoto ?: return 0
+        // Update combo first for immediate feedback
+        val comboCount = updateCombo()
         viewModelScope.launch {
             try {
                 sortPhotoUseCase.maybePhoto(photo.id)
                 _lastAction.value = SortAction(photo.id, PhotoStatus.MAYBE)
                 _counters.value = _counters.value.copy(maybe = _counters.value.maybe + 1)
-                updateCombo()
                 // Increment cumulative sort count
                 preferencesRepository.incrementSortedCount()
             } catch (e: Exception) {
                 _error.value = "操作失败: ${e.message}"
             }
         }
-        return updateCombo() // Return immediately for haptic feedback
+        return comboCount
     }
     
     /**
@@ -295,6 +301,7 @@ class FlowSorterViewModel @Inject constructor(
     /**
      * Update combo state based on time since last swipe.
      * Called after each successful sort action.
+     * Starts auto-hide timer for combo display.
      * 
      * @return The new combo count (for haptic feedback intensity)
      */
@@ -318,13 +325,33 @@ class FlowSorterViewModel @Inject constructor(
             isActive = true
         )
         
+        // Cancel previous timeout and start new one
+        startComboTimeout()
+        
         return newCombo
+    }
+    
+    /**
+     * Start a timeout to auto-hide combo after COMBO_THRESHOLD_MS.
+     * If user doesn't continue swiping, combo will reset and hide.
+     */
+    private fun startComboTimeout() {
+        comboTimeoutJob?.cancel()
+        comboTimeoutJob = viewModelScope.launch {
+            delay(ComboState.COMBO_THRESHOLD_MS)
+            // Time expired without new swipe - hide combo
+            _combo.value = _combo.value.copy(isActive = false)
+            // After a brief moment, reset the count for next session
+            delay(300)
+            _combo.value = ComboState(maxCount = _combo.value.maxCount)
+        }
     }
     
     /**
      * Reset combo (e.g., when leaving the screen or after timeout).
      */
     fun resetCombo() {
+        comboTimeoutJob?.cancel()
         _combo.value = ComboState()
     }
     
@@ -337,4 +364,9 @@ class FlowSorterViewModel @Inject constructor(
      * Get the max combo achieved in this session.
      */
     fun getMaxCombo(): Int = _combo.value.maxCount
+    
+    override fun onCleared() {
+        super.onCleared()
+        comboTimeoutJob?.cancel()
+    }
 }

@@ -30,9 +30,11 @@ import com.example.photozen.ui.theme.TrashRed
  * Combo overlay that displays the current combo count with animated effects.
  * 
  * Optimized for smooth, non-blocking animations during rapid swipes.
+ * Only shows when combo count >= 2 (first swipe doesn't show combo).
+ * Auto-hides after timeout when no new swipes occur.
  * 
  * Visual feedback:
- * - x1-x4: White, normal size
+ * - x2-x4: White, normal size
  * - x5-x9: Light orange, slightly larger
  * - x10-x19: Orange, larger with glow
  * - x20+: Red/Fire effect, largest
@@ -42,7 +44,8 @@ fun ComboOverlay(
     comboState: ComboState,
     modifier: Modifier = Modifier
 ) {
-    val isVisible = comboState.count >= 1 && comboState.isActive
+    // Only show when combo >= 2 and active (first swipe doesn't show combo)
+    val isVisible = comboState.count >= 2 && comboState.isActive
     
     AnimatedVisibility(
         visible = isVisible,
@@ -52,8 +55,8 @@ fun ComboOverlay(
         ) + fadeIn(animationSpec = tween(80)),
         exit = scaleOut(
             targetScale = 0.8f,
-            animationSpec = tween(100)
-        ) + fadeOut(animationSpec = tween(100)),
+            animationSpec = tween(150)
+        ) + fadeOut(animationSpec = tween(150)),
         modifier = modifier
     ) {
         ComboCounter(
@@ -137,16 +140,18 @@ private fun ComboCounter(
 
 /**
  * Compact combo indicator for the top bar.
+ * Only shows when combo >= 2.
  */
 @Composable
 fun ComboIndicator(
     comboState: ComboState,
     modifier: Modifier = Modifier
 ) {
+    // Only show when combo >= 2 and active
     AnimatedVisibility(
-        visible = comboState.count >= 1,
+        visible = comboState.count >= 2 && comboState.isActive,
         enter = fadeIn(animationSpec = tween(50)) + scaleIn(animationSpec = tween(50)),
-        exit = fadeOut(animationSpec = tween(50)) + scaleOut(animationSpec = tween(50)),
+        exit = fadeOut(animationSpec = tween(100)) + scaleOut(animationSpec = tween(100)),
         modifier = modifier
     ) {
         val color = when (comboState.level) {

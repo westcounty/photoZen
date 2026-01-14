@@ -194,7 +194,7 @@ fun SwipeablePhotoCard(
                                         } catch (_: Exception) {}
                                     }
                                 }
-                                // Snap back to center
+                                // Snap back to center with bounce effect
                                 else -> {
                                     launch { 
                                         try {
@@ -224,8 +224,8 @@ fun SwipeablePhotoCard(
                     },
                     onDragCancel = {
                         scope.launch {
-                            launch { offsetX.animateTo(0f, spring()) }
-                            launch { offsetY.animateTo(0f, spring()) }
+                            launch { offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy)) }
+                            launch { offsetY.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy)) }
                         }
                     },
                     onDrag = { change, dragAmount ->
@@ -242,6 +242,7 @@ fun SwipeablePhotoCard(
         PhotoCard(
             photo = photo,
             swipeProgress = progressX,
+            swipeProgressY = progressY,
             swipeDirection = currentDirection,
             onPhotoClick = onPhotoClick
         )
@@ -250,7 +251,7 @@ fun SwipeablePhotoCard(
 
 /**
  * Preview card that shows behind the swipeable card.
- * Provides depth effect in the card stack.
+ * Shows at full size with no offset for instant, seamless transition.
  */
 @Composable
 fun PreviewPhotoCard(
@@ -258,16 +259,16 @@ fun PreviewPhotoCard(
     stackIndex: Int,
     modifier: Modifier = Modifier
 ) {
-    val scale = 1f - (stackIndex * 0.05f)
-    val offsetY = stackIndex * 16f
-    
+    // No offset, no scale - card is exactly the same size and position
+    // This ensures zero visual shift when front card is swiped away
     Box(
         modifier = modifier
             .fillMaxSize()
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                translationY = offsetY
+                scaleX = 1f
+                scaleY = 1f
+                translationY = 0f
+                alpha = 0.95f
             }
     ) {
         PhotoCard(

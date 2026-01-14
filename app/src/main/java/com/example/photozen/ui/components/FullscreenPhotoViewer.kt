@@ -1,17 +1,9 @@
 package com.example.photozen.ui.components
 
 import android.net.Uri
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -21,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -30,7 +21,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -55,37 +45,10 @@ fun FullscreenPhotoViewer(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Direct values without animation - instant response, no bounce
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
-    
-    // Animated scale for smooth transitions
-    val animatedScale by animateFloatAsState(
-        targetValue = scale,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "scale"
-    )
-    
-    val animatedOffsetX by animateFloatAsState(
-        targetValue = offsetX,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "offsetX"
-    )
-    
-    val animatedOffsetY by animateFloatAsState(
-        targetValue = offsetY,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "offsetY"
-    )
     
     Box(
         modifier = modifier
@@ -93,11 +56,11 @@ fun FullscreenPhotoViewer(
             .background(Color.Black)
             .pointerInput(Unit) {
                 detectTransformGestures { _, pan, zoom, _ ->
-                    // Apply zoom
+                    // Apply zoom directly - no animation delay
                     val newScale = (scale * zoom).coerceIn(0.5f, 5f)
                     scale = newScale
                     
-                    // Apply pan only when zoomed in
+                    // Apply pan only when zoomed in - direct response
                     if (newScale > 1f) {
                         offsetX += pan.x
                         offsetY += pan.y
@@ -133,8 +96,6 @@ fun FullscreenPhotoViewer(
                             offsetY = 0f
                         } else {
                             scale = 2.5f
-                            // Center zoom on tap position (rough approximation)
-                            // This could be improved with actual size calculations
                         }
                     }
                 )
@@ -150,10 +111,11 @@ fun FullscreenPhotoViewer(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    scaleX = animatedScale
-                    scaleY = animatedScale
-                    translationX = animatedOffsetX
-                    translationY = animatedOffsetY
+                    // Direct values - instant response, no bounce
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = offsetX
+                    translationY = offsetY
                 }
         )
         
