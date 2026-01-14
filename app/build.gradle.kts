@@ -96,6 +96,17 @@ dependencies {
     // Serialization (for type-safe navigation)
     implementation(libs.kotlinx.serialization.json)
 
+    // WorkManager (for background tasks)
+    implementation(libs.work.runtime.ktx)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.work.compiler) // AndroidX Hilt compiler for @HiltWorker
+
+    // Map (osmdroid for OpenStreetMap)
+    implementation(libs.osmdroid.android)
+
+    // Exif (for GPS extraction)
+    implementation(libs.exifinterface)
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

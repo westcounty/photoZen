@@ -10,9 +10,13 @@ import com.example.photozen.ui.screens.editor.PhotoEditorScreen
 import com.example.photozen.ui.screens.flowsorter.FlowSorterScreen
 import com.example.photozen.ui.screens.home.HomeScreen
 import com.example.photozen.ui.screens.lighttable.LightTableScreen
+import com.example.photozen.ui.screens.map.MapScreen
 import com.example.photozen.ui.screens.photolist.PhotoListScreen
 import com.example.photozen.ui.screens.settings.SettingsScreen
+import com.example.photozen.ui.screens.tags.TagBubbleScreen
+import com.example.photozen.ui.screens.tags.TaggedPhotosScreen
 import com.example.photozen.ui.screens.trash.TrashScreen
+import com.example.photozen.ui.screens.workflow.WorkflowScreen
 
 /**
  * Main navigation host for PicZen app.
@@ -44,6 +48,15 @@ fun PicZenNavHost(
                 },
                 onNavigateToTrash = {
                     navController.navigate(Screen.Trash)
+                },
+                onNavigateToWorkflow = {
+                    navController.navigate(Screen.Workflow)
+                },
+                onNavigateToTagBubble = {
+                    navController.navigate(Screen.TagBubble)
+                },
+                onNavigateToMap = {
+                    navController.navigate(Screen.PhotoMap)
                 }
             )
         }
@@ -101,6 +114,65 @@ fun PicZenNavHost(
             SettingsScreen(
                 onNavigateBack = {
                     navController.popBackStack()
+                }
+            )
+        }
+        
+        composable<Screen.Workflow> {
+            WorkflowScreen(
+                onExit = {
+                    navController.popBackStack()
+                }
+            )
+        }
+        
+        composable<Screen.TagBubble> {
+            TagBubbleScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToPhotoList = { tagId ->
+                    navController.navigate(Screen.PhotoListByTag(tagId))
+                }
+            )
+        }
+        
+        composable<Screen.PhotoListByTag> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.PhotoListByTag>()
+            TaggedPhotosScreen(
+                tagId = route.tagId,
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToEditor = { photoId ->
+                    navController.navigate(Screen.PhotoEditor(photoId))
+                },
+                onNavigateToMap = { tagId ->
+                    navController.navigate(Screen.PhotoMapByTag(tagId))
+                }
+            )
+        }
+        
+        composable<Screen.PhotoMapByTag> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.PhotoMapByTag>()
+            MapScreen(
+                tagId = route.tagId,
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToPhoto = { photoId ->
+                    navController.navigate(Screen.PhotoEditor(photoId))
+                }
+            )
+        }
+        
+        composable<Screen.PhotoMap> {
+            MapScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToPhoto = { photoId ->
+                    navController.navigate(Screen.PhotoEditor(photoId))
                 }
             )
         }

@@ -65,7 +65,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.ui.components.ComboIndicator
+import com.example.photozen.ui.components.ComboOverlay
 import com.example.photozen.ui.components.FullscreenPhotoViewer
+import com.example.photozen.ui.util.rememberHapticFeedbackManager
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
@@ -89,7 +92,7 @@ fun FlowSorterScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    val haptic = LocalHapticFeedback.current
+    val hapticManager = rememberHapticFeedbackManager()
     
     // Fullscreen viewer state
     var fullscreenPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
@@ -136,6 +139,9 @@ fun FlowSorterScreen(
                         }
                     },
                     actions = {
+                        // Combo indicator in top bar
+                        ComboIndicator(comboState = uiState.combo)
+                        
                         // Undo button
                         AnimatedVisibility(
                             visible = uiState.lastAction != null,
@@ -144,7 +150,7 @@ fun FlowSorterScreen(
                         ) {
                             IconButton(
                                 onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    hapticManager.performClick()
                                     viewModel.undoLastAction()
                                 }
                             ) {
@@ -216,34 +222,60 @@ fun FlowSorterScreen(
                             )
                         }
                         else -> {
-                            // Card stack
-                            CardStack(
-                                uiState = uiState,
-                                onSwipeLeft = { viewModel.trashCurrentPhoto() },
-                                onSwipeRight = { viewModel.keepCurrentPhoto() },
-                                onSwipeUp = { viewModel.maybeCurrentPhoto() },
-                                onPhotoClick = { photo ->
-                                    fullscreenPhoto = photo
-                                }
-                            )
+                            // Card stack with combo overlay
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                CardStack(
+                                    uiState = uiState,
+                                    onSwipeLeft = {
+                                        val combo = viewModel.trashCurrentPhoto()
+                                        hapticManager.performSwipeFeedback(combo, uiState.combo.level)
+                                    },
+                                    onSwipeRight = {
+                                        val combo = viewModel.keepCurrentPhoto()
+                                        hapticManager.performSwipeFeedback(combo, uiState.combo.level)
+                                    },
+                                    onSwipeUp = {
+                                        val combo = viewModel.maybeCurrentPhoto()
+                                        hapticManager.performSwipeFeedback(combo, uiState.combo.level)
+                                    },
+                                    onPhotoClick = { photo ->
+                                        fullscreenPhoto = photo
+                                    }
+                                )
+                                
+                                // Combo overlay - positioned at top center
+                                ComboOverlay(
+                                    comboState = uiState.combo,
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .padding(top = 32.dp)
+                                )
+                            }
                         }
                     }
                 }
                 
-                // Action buttons (only show when there are photos)
-                if (!uiState.isLoading && !uiState.isComplete) {
+                // Action buttons (only show when there are photos and current photo exists)
+                if (!uiState.isLoading && !uiState.isComplete && uiState.currentPhoto != null) {
                     ActionButtons(
                         onTrash = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.trashCurrentPhoto()
+                            // Check if there's still a photo to process
+                            if (uiState.currentPhoto != null) {
+                                val combo = viewModel.trashCurrentPhoto()
+                                hapticManager.performSwipeFeedback(combo, uiState.combo.level)
+                            }
                         },
                         onKeep = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.keepCurrentPhoto()
+                            if (uiState.currentPhoto != null) {
+                                val combo = viewModel.keepCurrentPhoto()
+                                hapticManager.performSwipeFeedback(combo, uiState.combo.level)
+                            }
                         },
                         onMaybe = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.maybeCurrentPhoto()
+                            if (uiState.currentPhoto != null) {
+                                val combo = viewModel.maybeCurrentPhoto()
+                                hapticManager.performSwipeFeedback(combo, uiState.combo.level)
+                            }
                         },
                         modifier = Modifier.padding(bottom = 24.dp)
                     )
@@ -513,5 +545,173 @@ private fun StatItem(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+/**
+ * Flow Sorter Content - Reusable content for both standalone and workflow modes.
+ * 
+ * @param isWorkflowMode When true, hides top bar and uses callback instead of navigation
+ * @param onPhotoSorted Callback when a photo is sorted (with status and current combo)
+ * @param onComplete Callback when all photos are sorted
+ * @param onNavigateBack Callback for navigation back (standalone mode only)
+ */
+@Composable
+fun FlowSorterContent(
+    isWorkflowMode: Boolean = false,
+    onPhotoSorted: ((com.example.photozen.data.model.PhotoStatus, Int) -> Unit)? = null,
+    onComplete: (() -> Unit)? = null,
+    onNavigateBack: () -> Unit,
+    viewModel: FlowSorterViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val hapticManager = rememberHapticFeedbackManager()
+    
+    var fullscreenPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
+    
+    // Handle back press in fullscreen
+    BackHandler(enabled = fullscreenPhoto != null) {
+        fullscreenPhoto = null
+    }
+    
+    // Notify workflow of completion
+    LaunchedEffect(uiState.isComplete) {
+        if (uiState.isComplete && isWorkflowMode) {
+            onComplete?.invoke()
+        }
+    }
+    
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Progress bar
+            if (uiState.totalCount > 0) {
+                LinearProgressIndicator(
+                    progress = { uiState.progress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp),
+                    color = KeepGreen,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            }
+            
+            // Main content
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                when {
+                    uiState.isLoading -> {
+                        LoadingContent()
+                    }
+                    uiState.isComplete -> {
+                        if (isWorkflowMode) {
+                            // In workflow mode, show minimal completion (will auto-advance)
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = KeepGreen,
+                                        modifier = Modifier.size(64.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        text = "整理完成",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        } else {
+                            CompletionContent(
+                                keepCount = uiState.keepCount,
+                                trashCount = uiState.trashCount,
+                                maybeCount = uiState.maybeCount,
+                                onNavigateToLightTable = { /* Not used in workflow */ },
+                                onGoBack = onNavigateBack
+                            )
+                        }
+                    }
+                    else -> {
+                        // Card stack with combo overlay
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            CardStack(
+                                uiState = uiState,
+                                onSwipeLeft = {
+                                    val combo = viewModel.trashCurrentPhoto()
+                                    hapticManager.performSwipeFeedback(combo, uiState.combo.level)
+                                    onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.TRASH, combo)
+                                },
+                                onSwipeRight = {
+                                    val combo = viewModel.keepCurrentPhoto()
+                                    hapticManager.performSwipeFeedback(combo, uiState.combo.level)
+                                    onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.KEEP, combo)
+                                },
+                                onSwipeUp = {
+                                    val combo = viewModel.maybeCurrentPhoto()
+                                    hapticManager.performSwipeFeedback(combo, uiState.combo.level)
+                                    onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.MAYBE, combo)
+                                },
+                                onPhotoClick = { photo ->
+                                    fullscreenPhoto = photo
+                                }
+                            )
+                            
+                            // Combo overlay
+                            ComboOverlay(
+                                comboState = uiState.combo,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 32.dp)
+                            )
+                        }
+                    }
+                }
+            }
+            
+            // Action buttons
+            if (!uiState.isLoading && !uiState.isComplete) {
+                ActionButtons(
+                    onTrash = {
+                        val combo = viewModel.trashCurrentPhoto()
+                        hapticManager.performSwipeFeedback(combo, uiState.combo.level)
+                        onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.TRASH, combo)
+                    },
+                    onKeep = {
+                        val combo = viewModel.keepCurrentPhoto()
+                        hapticManager.performSwipeFeedback(combo, uiState.combo.level)
+                        onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.KEEP, combo)
+                    },
+                    onMaybe = {
+                        val combo = viewModel.maybeCurrentPhoto()
+                        hapticManager.performSwipeFeedback(combo, uiState.combo.level)
+                        onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.MAYBE, combo)
+                    },
+                    modifier = Modifier.padding(bottom = 24.dp)
+                )
+            }
+        }
+        
+        // Fullscreen viewer
+        AnimatedContent(
+            targetState = fullscreenPhoto,
+            transitionSpec = {
+                (fadeIn() + scaleIn(initialScale = 0.92f))
+                    .togetherWith(fadeOut() + scaleOut(targetScale = 0.92f))
+            },
+            label = "fullscreen"
+        ) { photo ->
+            if (photo != null) {
+                FullscreenPhotoViewer(
+                    photo = photo,
+                    onDismiss = { fullscreenPhoto = null }
+                )
+            }
+        }
     }
 }

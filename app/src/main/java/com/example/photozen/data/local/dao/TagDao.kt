@@ -129,4 +129,91 @@ interface TagDao {
      */
     @Query("SELECT EXISTS(SELECT 1 FROM photo_tag_cross_ref WHERE photo_id = :photoId AND tag_id = :tagId LIMIT 1)")
     suspend fun photoHasTag(photoId: String, tagId: String): Boolean
+    
+    // ==================== BUBBLE GRAPH QUERIES ====================
+    
+    /**
+     * Get all tags with their photo counts for bubble graph.
+     */
+    @Query("""
+        SELECT t.*, COUNT(ptc.photo_id) as photo_count
+        FROM tags t
+        LEFT JOIN photo_tag_cross_ref ptc ON t.id = ptc.tag_id
+        GROUP BY t.id
+        ORDER BY photo_count DESC, t.name ASC
+    """)
+    fun getTagsWithPhotoCount(): Flow<List<TagWithCount>>
+    
+    /**
+     * Get root tags with their photo counts.
+     */
+    @Query("""
+        SELECT t.*, COUNT(ptc.photo_id) as photo_count
+        FROM tags t
+        LEFT JOIN photo_tag_cross_ref ptc ON t.id = ptc.tag_id
+        WHERE t.parent_id IS NULL
+        GROUP BY t.id
+        ORDER BY photo_count DESC, t.name ASC
+    """)
+    fun getRootTagsWithPhotoCount(): Flow<List<TagWithCount>>
+    
+    /**
+     * Get child tags with their photo counts.
+     */
+    @Query("""
+        SELECT t.*, COUNT(ptc.photo_id) as photo_count
+        FROM tags t
+        LEFT JOIN photo_tag_cross_ref ptc ON t.id = ptc.tag_id
+        WHERE t.parent_id = :parentId
+        GROUP BY t.id
+        ORDER BY photo_count DESC, t.name ASC
+    """)
+    fun getChildTagsWithPhotoCount(parentId: String): Flow<List<TagWithCount>>
+    
+    /**
+     * Get total photo count for a tag including all descendants.
+     */
+    @Query("SELECT COUNT(DISTINCT ptc.photo_id) FROM photo_tag_cross_ref ptc WHERE ptc.tag_id = :tagId")
+    suspend fun getTotalPhotoCountForTag(tagId: String): Int
+    
+    /**
+     * Check if a tag has any child tags.
+     */
+    @Query("SELECT EXISTS(SELECT 1 FROM tags WHERE parent_id = :tagId LIMIT 1)")
+    suspend fun hasChildTags(tagId: String): Boolean
+    
+    /**
+     * Get count of child tags for a parent.
+     */
+    @Query("SELECT COUNT(*) FROM tags WHERE parent_id = :tagId")
+    suspend fun getChildTagCount(tagId: String): Int
+}
+
+/**
+ * Data class for tags with their photo counts.
+ */
+data class TagWithCount(
+    @androidx.room.ColumnInfo(name = "id")
+    val id: String,
+    @androidx.room.ColumnInfo(name = "name")
+    val name: String,
+    @androidx.room.ColumnInfo(name = "parent_id")
+    val parentId: String?,
+    @androidx.room.ColumnInfo(name = "color")
+    val color: Int,
+    @androidx.room.ColumnInfo(name = "sort_order")
+    val sortOrder: Int,
+    @androidx.room.ColumnInfo(name = "created_at")
+    val createdAt: Long,
+    @androidx.room.ColumnInfo(name = "photo_count")
+    val photoCount: Int
+) {
+    fun toTagEntity() = TagEntity(
+        id = id,
+        name = name,
+        parentId = parentId,
+        color = color,
+        sortOrder = sortOrder,
+        createdAt = createdAt
+    )
 }

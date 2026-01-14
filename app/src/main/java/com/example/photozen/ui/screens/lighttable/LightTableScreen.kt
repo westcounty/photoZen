@@ -466,3 +466,132 @@ private fun EmptyContent(
         }
     }
 }
+
+/**
+ * Light Table Content - Reusable content for both standalone and workflow modes.
+ * 
+ * @param isWorkflowMode When true, auto-completes when all photos are processed
+ * @param onComplete Callback when all "Maybe" photos have been processed
+ * @param onNavigateBack Callback for navigation back (standalone mode only)
+ */
+@Composable
+fun LightTableContent(
+    isWorkflowMode: Boolean = false,
+    onComplete: (() -> Unit)? = null,
+    onNavigateBack: () -> Unit,
+    viewModel: LightTableViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val haptic = LocalHapticFeedback.current
+    val transformState = rememberTransformState()
+    
+    // Handle back press in comparison mode
+    BackHandler(enabled = uiState.mode == LightTableMode.COMPARISON) {
+        viewModel.exitComparison()
+        transformState.reset()
+    }
+    
+    // Auto-complete when no more "Maybe" photos in workflow mode
+    LaunchedEffect(uiState.allMaybePhotos.isEmpty(), uiState.isLoading) {
+        if (isWorkflowMode && !uiState.isLoading && uiState.allMaybePhotos.isEmpty()) {
+            onComplete?.invoke()
+        }
+    }
+    
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Main content
+            Box(modifier = Modifier.weight(1f)) {
+                when {
+                    uiState.isLoading -> {
+                        LoadingContent()
+                    }
+                    uiState.allMaybePhotos.isEmpty() -> {
+                        if (isWorkflowMode) {
+                            // In workflow mode, show completion message
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = KeepGreen,
+                                        modifier = Modifier.size(64.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        text = "对比完成",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        } else {
+                            EmptyContent(onNavigateBack = onNavigateBack)
+                        }
+                    }
+                    else -> {
+                        AnimatedContent(
+                            targetState = uiState.mode,
+                            transitionSpec = {
+                                fadeIn() + scaleIn(initialScale = 0.95f) togetherWith
+                                    fadeOut() + scaleOut(targetScale = 0.95f)
+                            },
+                            label = "mode_transition"
+                        ) { mode ->
+                            when (mode) {
+                                LightTableMode.SELECTION -> {
+                                    PhotoThumbnailGrid(
+                                        photos = uiState.allMaybePhotos,
+                                        selectedIds = uiState.selectedForComparison,
+                                        onToggleSelection = { viewModel.toggleSelection(it) }
+                                    )
+                                }
+                                LightTableMode.COMPARISON -> {
+                                    ComparisonGrid(
+                                        photos = uiState.comparisonPhotos,
+                                        transformState = transformState,
+                                        selectedPhotoId = uiState.bestPhotoId,
+                                        onSelectPhoto = { viewModel.selectBestPhoto(it) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Bottom bar (only when there are photos)
+            if (!uiState.isLoading && uiState.allMaybePhotos.isNotEmpty()) {
+                when (uiState.mode) {
+                    LightTableMode.SELECTION -> SelectionBottomBar(
+                        selectionCount = uiState.selectionCount,
+                        canCompare = uiState.canCompare,
+                        onClearSelection = { viewModel.clearSelection() },
+                        onStartComparison = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.startComparison()
+                        }
+                    )
+                    LightTableMode.COMPARISON -> ComparisonBottomBar(
+                        hasBestSelected = uiState.bestPhotoId != null,
+                        onKeepBest = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.keepBestTrashRest()
+                        },
+                        onKeepAll = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.keepAllSelected()
+                        },
+                        onTrashAll = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.trashAllSelected()
+                        }
+                    )
+                }
+            }
+        }
+    }
+}

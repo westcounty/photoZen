@@ -231,4 +231,66 @@ interface PhotoDao {
      */
     @Query("SELECT system_uri FROM photos WHERE is_virtual_copy = 0")
     suspend fun getAllSystemUris(): List<String>
+    
+    // ==================== QUERY - GPS/Location ====================
+    
+    /**
+     * Get photos that haven't been scanned for GPS data yet.
+     * Limited to avoid memory issues with large batches.
+     */
+    @Query("SELECT * FROM photos WHERE gps_scanned = 0 AND is_virtual_copy = 0 LIMIT :limit")
+    suspend fun getPhotosNeedingGpsScan(limit: Int = 100): List<PhotoEntity>
+    
+    /**
+     * Update GPS coordinates for a photo.
+     */
+    @Query("""
+        UPDATE photos 
+        SET latitude = :latitude, longitude = :longitude, gps_scanned = 1, updated_at = :updatedAt 
+        WHERE id = :photoId
+    """)
+    suspend fun updateGpsLocation(
+        photoId: String, 
+        latitude: Double?, 
+        longitude: Double?,
+        updatedAt: Long = System.currentTimeMillis()
+    )
+    
+    /**
+     * Mark photo as GPS scanned (even if no GPS data found).
+     */
+    @Query("UPDATE photos SET gps_scanned = 1, updated_at = :updatedAt WHERE id = :photoId")
+    suspend fun markGpsScanned(photoId: String, updatedAt: Long = System.currentTimeMillis())
+    
+    /**
+     * Get photos with GPS coordinates, sorted by date taken.
+     * Used for trajectory map visualization.
+     */
+    @Query("""
+        SELECT * FROM photos 
+        WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND is_virtual_copy = 0 
+        ORDER BY date_taken ASC
+    """)
+    fun getPhotosWithGps(): Flow<List<PhotoEntity>>
+    
+    /**
+     * Get count of photos with GPS data.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM photos 
+        WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND is_virtual_copy = 0
+    """)
+    fun getPhotosWithGpsCount(): Flow<Int>
+    
+    /**
+     * Get count of photos pending GPS scan.
+     */
+    @Query("SELECT COUNT(*) FROM photos WHERE gps_scanned = 0 AND is_virtual_copy = 0")
+    fun getPendingGpsScanCount(): Flow<Int>
+    
+    /**
+     * Get count of photos pending GPS scan (synchronous version for Worker).
+     */
+    @Query("SELECT COUNT(*) FROM photos WHERE gps_scanned = 0 AND is_virtual_copy = 0")
+    suspend fun getPendingGpsScanCountSync(): Int
 }

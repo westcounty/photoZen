@@ -1,64 +1,43 @@
-# PicZen Implementation Plan
+# PicZen V1.1 Implementation Plan (Flow & Achievement)
 
-## Project Status ✅ ALL PHASES COMPLETE
+## Phase 1: Infrastructure - Map & Graph ✅
+- [x] **Dependencies**: Add `osmdroid-android` (Map) and custom Compose Canvas physics to `libs.versions.toml`.
+- [x] **Data Model**: Updated `PhotoEntity` with `latitude`, `longitude`, `gpsScanned` fields.
+- [x] **Exif Scanner**: Implemented `LocationScannerWorker` to extract GPS data from photos.
 
-- [x] **Phase 1: Project Setup & Infrastructure**
-    - [x] Initialize Android project (Empty Compose Activity).
-    - [x] Configure `libs.versions.toml` with Hilt, Room, Coil, Navigation, Coroutines.
-    - [x] Setup Hilt (Application class, @HiltAndroidApp, MainActivity setup).
-    - [x] Setup Navigation Host structure.
+## Phase 2: The Workflow Engine (Refactoring Home) ✅
+- [x] **Task Dashboard**: Redesigned Home Screen with "Mission Card" for Flow experience.
+- [x] **Flow Controller**: Created `WorkflowViewModel` managing state transition: `Swipe -> Compare -> Victory`.
+- [x] **Navigation**: Implemented sequential navigation logic (The Tunnel) with `WorkflowScreen`.
 
-## Phase 2: Data Layer (The Foundation)
-- [x] **Database**: Create `PhotoEntity`, `TagEntity`, and `AppDatabase` (Room).
-- [x] **Repository**: Create `PhotoRepository` interface and implementation.
-- [x] **MediaStore**: Implement logic to fetch photos from system gallery (handle permissions).
-- [x] **Paging**: Implement PagingSource for efficient photo loading.
+## Phase 3: Gamification (The Juice) ✅
+- [x] **Combo System**: Added combo tracking in `FlowSorterViewModel` with `ComboState` and visual overlay.
+- [x] **Haptics**: Created `HapticFeedbackManager` with variable vibration intensity based on combo level.
+- [x] **Victory Screen**: Created `VictoryScreen` with trophy animation and workflow stats.
 
-## Phase 3: Domain Layer (Business Logic)
-- [x] Create UseCase: `GetPhotosUseCase`.
-- [x] Create UseCase: `MovePhotoToTrashUseCase` / `KeepPhotoUseCase`.
-- [x] Create UseCase: `CreateVirtualCopyUseCase`.
+## Phase 4: Hierarchy & Graph UI ✅
+- [x] **Bubble View**: Implemented `BubbleGraphView` using Canvas with spring physics simulation.
+- [x] **Physics Engine**: Created `BubblePhysicsEngine` with center attraction, repulsion, and boundary forces.
+- [x] **Tag Screen**: Created `TagBubbleScreen` for hierarchical tag visualization.
 
-## Phase 4: UI - Flow Sorter (The Tinder Swipe)
-- [x] Create `PhotoCard` Composable (UI only).
-- [x] Implement `Swipeable` logic (Gestures).
-- [x] Connect ViewModel to Swipe UI (State management).
-- [x] Add Haptic Feedback and Animations.
+## Phase 5: Collection Map (Osmdroid) ✅
+- [x] **Map Screen**: Created `MapScreen` using `MapView` (AndroidView in Compose).
+- [x] **Trajectory**: Draw `Polyline` connecting markers based on timestamp.
+- [x] **Markers**: Created circular markers with smart selection (500m+ distance threshold).
 
-## Phase 5: UI - Light Table (The Comparison)
-- [x] Create Grid View for "Maybe" photos.
-- [x] Implement `SyncZoomLayout` (The core complex feature).
-- [x] Add logic to select "Best" photo.
-
-## Phase 6: UI - Polish & Glue
-- [x] Implement Navigation between screens.
-- [x] Add "Camera Collection" Achievement UI.
-- [x] Final Testing & Bug Fixes.
+## Phase 6: Polish ✅
+- [x] **Performance**: Optimized Bubble Physics to 60fps throttle for battery efficiency.
+- [x] **Auto GPS Scan**: Added LocationScanner auto-trigger on photo sync.
+- [x] **Documentation**: Updated README with V1.1 features.
 
 ---
 
-## 📱 MVP Feature Summary
+## V1.1 Complete! 🎉
 
-### Core Workflow
-1. **Home** → View statistics, request permissions, start sorting
-2. **Flow Sorter** → Swipe photos: Left (Trash), Right (Keep), Up (Maybe)
-3. **Light Table** → Select 2-4 "Maybe" photos, sync zoom to compare, keep best
-4. **Settings** → Empty trash, view achievements
-
-### Technical Stack
-- **Language**: Kotlin
-- **UI**: Jetpack Compose + Material 3
-- **DI**: Hilt
-- **Database**: Room
-- **Image Loading**: Coil 3
-- **Navigation**: Compose Navigation (Type-safe)
-- **Async**: Coroutines + Flow
-
-### Key Features Implemented
-- ✅ Tinder-style swipe sorting with haptic feedback
-- ✅ Synchronized zoom/pan for photo comparison
-- ✅ Non-destructive photo management
-- ✅ Virtual copies support
-- ✅ Android 13+ permission handling
-- ✅ Dark theme optimized for photo viewing
-- ✅ Gamification (Camera Collection achievements)
+All planned features have been implemented:
+- Flow Workflow Tunnel (immersive sorting experience)
+- Combo System with visual/haptic feedback
+- Victory Screen with stats and animations
+- Tag Bubble Graph with physics simulation
+- Photo Map with trajectory visualization
+- GPS location extraction via WorkManager

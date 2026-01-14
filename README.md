@@ -38,6 +38,21 @@ PicZen（图禅）是一款专为摄影爱好者设计的 Android 照片整理�
 - 长按照片快速切换状态或编辑
 - 回收站支持多选和系统级彻底删除
 
+### 🚀 Flow 工作流 (V1.1)
+- **沉浸式整理** - 一键进入 Flow 隧道，顺序完成：滑动 → 对比 → 胜利
+- **连击系统** - 快速滑动累积 Combo，视觉反馈和触感随等级变化
+- **胜利庆祝** - 完成整理后展示统计数据和动画效果
+
+### 🏷️ 标签气泡 (V1.1)
+- **物理模拟** - 可拖拽的气泡图，标签大小反映照片数量
+- **层级浏览** - 支持父子标签结构，点击进入下一层
+- **快速创建** - 可视化添加和管理标签
+
+### 🗺️ 足迹地图 (V1.1)
+- **轨迹展示** - 在 OpenStreetMap 上绘制照片拍摄轨迹
+- **GPS 扫描** - 后台自动提取照片 EXIF 位置信息
+- **智能标记** - 只在距离变化 > 500m 处显示标记点
+
 ### 🏆 成就系统
 - 累计整理数成就徽章
 - 整理进度永久记录，不会因删除照片而减少
@@ -64,13 +79,16 @@ app/src/main/java/com/example/photozen/
 │   │   └── converter/     # 类型转换器
 │   ├── model/              # 数据模型
 │   ├── repository/         # 仓库实现
-│   └── source/             # 数据源 (MediaStore)
+│   ├── source/             # 数据源 (MediaStore)
+│   ├── util/               # 工具类 (ImageSaver)
+│   └── worker/             # WorkManager 任务
 ├── di/                      # Hilt 依赖注入模块
 ├── domain/                  # 领域层
 │   └── usecase/            # 用例
 ├── navigation/              # 导航配置
 └── ui/                      # UI 层
     ├── components/         # 通用组件
+    │   └── bubble/        # 气泡图组件
     ├── screens/            # 各屏幕
     │   ├── flowsorter/    # 滑动整理
     │   ├── lighttable/    # 照片对比
@@ -78,7 +96,11 @@ app/src/main/java/com/example/photozen/
     │   ├── photolist/     # 照片列表
     │   ├── trash/         # 回收站
     │   ├── home/          # 首页
-    │   └── settings/      # 设置
+    │   ├── settings/      # 设置
+    │   ├── workflow/      # Flow 工作流
+    │   ├── tags/          # 标签气泡
+    │   └── map/           # 足迹地图
+    ├── util/               # UI 工具
     └── theme/              # 主题配置
 ```
 
@@ -115,6 +137,7 @@ cd photoZen
 
 ## 📋 开发计划
 
+### V1.0 ✅
 - [x] Flow Sorter 滑动整理
 - [x] Light Table 照片对比
 - [x] 非破坏性裁切
@@ -122,7 +145,18 @@ cd photoZen
 - [x] 回收站管理
 - [x] 成就系统
 - [x] 照片导出（虚拟副本导出为新图片）
-- [ ] 智能标签
+
+### V1.1 ✅
+- [x] Flow 工作流隧道（沉浸式整理体验）
+- [x] 连击系统（Combo 视觉与触感反馈）
+- [x] 胜利庆祝屏幕
+- [x] 标签气泡图（物理模拟）
+- [x] 标签层级结构
+- [x] 足迹地图（Osmdroid）
+- [x] GPS 位置扫描（WorkManager 后台任务）
+
+### V1.2 🔜
+- [ ] 照片标签批量管理
 - [ ] 云端同步
 - [ ] 相机收藏徽章
 

@@ -22,7 +22,9 @@ import com.example.photozen.data.model.PhotoStatus
         Index(value = ["system_uri"], unique = false),
         Index(value = ["status"]),
         Index(value = ["parent_id"]),
-        Index(value = ["date_added"])
+        Index(value = ["date_added"]),
+        Index(value = ["latitude", "longitude"]),
+        Index(value = ["gps_scanned"])
     ]
 )
 data class PhotoEntity(
@@ -127,6 +129,27 @@ data class PhotoEntity(
      */
     @ColumnInfo(name = "camera_model")
     val cameraModel: String? = null,
+    
+    /**
+     * GPS Latitude (from EXIF)
+     * Null if no GPS data available
+     */
+    @ColumnInfo(name = "latitude", defaultValue = "NULL")
+    val latitude: Double? = null,
+    
+    /**
+     * GPS Longitude (from EXIF)
+     * Null if no GPS data available
+     */
+    @ColumnInfo(name = "longitude", defaultValue = "NULL")
+    val longitude: Double? = null,
+    
+    /**
+     * Whether GPS data has been scanned for this photo
+     * Used to avoid re-scanning photos without GPS data
+     */
+    @ColumnInfo(name = "gps_scanned", defaultValue = "0")
+    val gpsScanned: Boolean = false,
     
     /**
      * Whether the photo has been synced from MediaStore

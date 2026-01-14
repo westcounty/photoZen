@@ -37,6 +37,10 @@ import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwipeRight
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Rocket
+import androidx.compose.material.icons.filled.Sell
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -85,6 +89,9 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToPhotoList: (PhotoStatus) -> Unit,
     onNavigateToTrash: () -> Unit,
+    onNavigateToWorkflow: () -> Unit,
+    onNavigateToTagBubble: () -> Unit,
+    onNavigateToMap: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -217,9 +224,19 @@ fun HomeScreen(
             
             // Action Cards
             if (!uiState.isLoading) {
-                // Flow Sorter Card
+                // Mission Card - Start Flow (The main workflow experience)
+                if (uiState.unsortedCount > 0) {
+                    MissionCard(
+                        unsortedCount = uiState.unsortedCount,
+                        totalCount = uiState.totalPhotos,
+                        maybeCount = uiState.maybeCount,
+                        onStartFlow = onNavigateToWorkflow
+                    )
+                }
+                
+                // Quick Action: Flow Sorter (standalone)
                 ActionCard(
-                    title = "开始整理",
+                    title = "快速整理",
                     subtitle = if (uiState.unsortedCount > 0) {
                         "${uiState.unsortedCount} 张照片待整理"
                     } else {
@@ -243,6 +260,26 @@ fun HomeScreen(
                     iconTint = MaybeAmber,
                     enabled = uiState.maybeCount > 0,
                     onClick = onNavigateToLightTable
+                )
+                
+                // Tag Bubble Card
+                ActionCard(
+                    title = "标签气泡",
+                    subtitle = "可视化浏览和管理标签",
+                    icon = Icons.Default.Sell,
+                    iconTint = Color(0xFFA78BFA), // Purple
+                    enabled = true,
+                    onClick = onNavigateToTagBubble
+                )
+                
+                // Photo Map Card
+                ActionCard(
+                    title = "足迹地图",
+                    subtitle = "查看照片拍摄轨迹",
+                    icon = Icons.Default.Map,
+                    iconTint = Color(0xFF38BDF8), // Sky blue
+                    enabled = true,
+                    onClick = onNavigateToMap
                 )
             }
             
@@ -447,6 +484,144 @@ private fun StatChip(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+/**
+ * Mission Card - The main "Start Flow" card for beginning a workflow session.
+ * 
+ * Shows:
+ * - Task progress (X / Y photos)
+ * - Big "Start Flow" button
+ * - Visual indicator of pending work
+ */
+@Composable
+private fun MissionCard(
+    unsortedCount: Int,
+    totalCount: Int,
+    maybeCount: Int,
+    onStartFlow: () -> Unit
+) {
+    val progress = if (totalCount > 0) {
+        1f - (unsortedCount.toFloat() / totalCount)
+    } else 0f
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+        ),
+        shape = RoundedCornerShape(20.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Rocket,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "整理任务",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "沉浸式整理体验",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                // Progress percentage
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "${(progress * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Progress bar
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                color = KeepGreen,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // Task details
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "$unsortedCount 张待整理",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (maybeCount > 0) {
+                    Text(
+                        text = "+ $maybeCount 张待对比",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaybeAmber
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Start Flow button
+            Button(
+                onClick = onStartFlow,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "开始 Flow",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
