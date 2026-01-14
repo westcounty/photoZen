@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.WorkspacePremium
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -57,8 +58,12 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -584,6 +589,7 @@ private fun AchievementBadgeSmall(
 @Composable
 fun AchievementBadge(
     achievement: Achievement,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val scale by animateFloatAsState(
@@ -598,7 +604,14 @@ fun AchievementBadge(
                 scaleX = scale
                 scaleY = scale
                 alpha = if (achievement.isUnlocked) 1f else 0.5f
-            },
+            }
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(onClick = onClick)
+                } else {
+                    Modifier
+                }
+            ),
         colors = CardDefaults.cardColors(
             containerColor = if (achievement.isUnlocked) {
                 achievement.color.copy(alpha = 0.15f)
@@ -713,6 +726,7 @@ fun AchievementGrid(
     modifier: Modifier = Modifier
 ) {
     val groupedAchievements = achievements.groupBy { it.category }
+    var selectedAchievement by remember { mutableStateOf<Achievement?>(null) }
     
     Column(modifier = modifier) {
         groupedAchievements.forEach { (category, categoryAchievements) ->
@@ -749,11 +763,173 @@ fun AchievementGrid(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 categoryAchievements.forEach { achievement ->
-                    AchievementBadge(achievement = achievement)
+                    AchievementBadge(
+                        achievement = achievement,
+                        onClick = { selectedAchievement = achievement }
+                    )
                 }
             }
             
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
+    
+    // Achievement detail dialog
+    selectedAchievement?.let { achievement ->
+        AchievementDetailDialog(
+            achievement = achievement,
+            onDismiss = { selectedAchievement = null }
+        )
+    }
+}
+
+/**
+ * Dialog showing achievement details.
+ */
+@Composable
+private fun AchievementDetailDialog(
+    achievement: Achievement,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (achievement.isUnlocked) {
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    achievement.color,
+                                    achievement.color.copy(alpha = 0.7f)
+                                )
+                            )
+                        } else {
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    Color.Gray,
+                                    Color.Gray.copy(alpha = 0.7f)
+                                )
+                            )
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    achievement.icon,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+        },
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = achievement.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = achievement.rarity.color.copy(alpha = 0.2f)
+                ) {
+                    Text(
+                        text = achievement.rarity.displayName,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = achievement.rarity.color,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Description / unlock condition
+                Text(
+                    text = "🎯 获得条件",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = achievement.description,
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Progress
+                if (achievement.isUnlocked) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF4CAF50).copy(alpha = 0.1f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = null,
+                                tint = Color(0xFF4CAF50),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "已解锁",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color(0xFF4CAF50),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                } else {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "当前进度",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = { achievement.progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            color = achievement.color,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "${achievement.currentValue} / ${achievement.targetValue}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = achievement.color
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
 }

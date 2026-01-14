@@ -82,6 +82,7 @@ fun TagBubbleScreen(
     
     // Dialog state
     var showAddTagDialog by remember { mutableStateOf(false) }
+    var tagToDelete by remember { mutableStateOf<BubbleNode?>(null) }
     
     // Show error messages
     LaunchedEffect(uiState.error) {
@@ -154,7 +155,7 @@ fun TagBubbleScreen(
                     Column(modifier = Modifier.fillMaxSize()) {
                         // Simple hint text
                         Text(
-                            text = "💡 点击气泡查看该标签的照片",
+                            text = "💡 点击查看照片，长按删除标签",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
@@ -169,7 +170,10 @@ fun TagBubbleScreen(
                                 // Tap = view photos for this tag
                                 onNavigateToPhotoList(node.id)
                             },
-                            onBubbleLongClick = null, // Disable long press for now
+                            onBubbleLongClick = { node ->
+                                // Long press = delete tag
+                                tagToDelete = node
+                            },
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
@@ -187,6 +191,19 @@ fun TagBubbleScreen(
             onConfirm = { name, color ->
                 viewModel.createTag(name, color)
                 showAddTagDialog = false
+            }
+        )
+    }
+    
+    // Delete tag confirmation dialog
+    tagToDelete?.let { node ->
+        DeleteTagDialog(
+            tagName = node.label,
+            photoCount = node.photoCount,
+            onDismiss = { tagToDelete = null },
+            onConfirm = {
+                viewModel.deleteTag(node.id)
+                tagToDelete = null
             }
         )
     }
@@ -248,6 +265,49 @@ private fun EmptyContent(
             }
         }
     }
+}
+
+/**
+ * Dialog for confirming tag deletion.
+ */
+@Composable
+private fun DeleteTagDialog(
+    tagName: String,
+    photoCount: Int,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("删除标签")
+        },
+        text = {
+            Column {
+                Text("确定要删除标签「$tagName」吗？")
+                if (photoCount > 0) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "该标签下有 $photoCount 张照片，删除后照片不会被删除，仅移除标签关联。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm
+            ) {
+                Text("删除", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
 }
 
 /**

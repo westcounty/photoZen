@@ -477,14 +477,14 @@ private fun StatChip(
                 )
             }
             
-            // Arrow positioned at top-right corner
+            // Arrow positioned at right center
             Icon(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = null,
                 tint = color.copy(alpha = 0.5f),
                 modifier = Modifier
                     .size(16.dp)
-                    .align(Alignment.TopEnd)
+                    .align(Alignment.CenterEnd)
             )
         }
     }
