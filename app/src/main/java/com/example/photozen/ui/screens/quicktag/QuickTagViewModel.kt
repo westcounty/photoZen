@@ -202,6 +202,22 @@ class QuickTagViewModel @Inject constructor(
         _error.value = null
     }
 
+    fun createTag(name: String, color: Int) {
+        viewModelScope.launch {
+            try {
+                val tag = TagEntity(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = name,
+                    parentId = null,
+                    color = color
+                )
+                tagDao.insert(tag)
+            } catch (e: Exception) {
+                _error.value = "创建标签失败: ${e.message}"
+            }
+        }
+    }
+
     private suspend fun moveToNextUntagged(startIndex: Int) {
         val photos = if (cachedPhotos.isNotEmpty()) cachedPhotos else uiState.value.photos
         var index = startIndex

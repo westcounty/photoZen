@@ -102,6 +102,7 @@ fun QuickTagScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val haptic = LocalHapticFeedback.current
+    var showAddTagDialog by remember { mutableStateOf(false) }
     
     Scaffold(
         modifier = modifier,
@@ -178,18 +179,30 @@ fun QuickTagScreen(
                         onTagClick = { tag ->
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             viewModel.tagCurrentPhotoAndNext(tag)
-                        }
+                        },
+                        onCreateTag = { showAddTagDialog = true }
                     )
                 }
             }
         }
+    }
+
+    if (showAddTagDialog) {
+        AddTagDialog(
+            onDismiss = { showAddTagDialog = false },
+            onConfirm = { name, color ->
+                viewModel.createTag(name, color)
+                showAddTagDialog = false
+            }
+        )
     }
 }
 
 @Composable
 private fun QuickTagContent(
     uiState: QuickTagUiState,
-    onTagClick: (TagEntity) -> Unit
+    onTagClick: (TagEntity) -> Unit,
+    onCreateTag: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize()
@@ -238,7 +251,8 @@ private fun QuickTagContent(
         TagSelectionPanel(
             tags = uiState.tags,
             currentPhotoTags = uiState.currentPhotoTags,
-            onTagClick = onTagClick
+            onTagClick = onTagClick,
+            onCreateTag = onCreateTag
         )
     }
 }
@@ -336,7 +350,8 @@ private fun PhotoCard(
 private fun TagSelectionPanel(
     tags: List<TagEntity>,
     currentPhotoTags: List<TagEntity>,
-    onTagClick: (TagEntity) -> Unit
+    onTagClick: (TagEntity) -> Unit,
+    onCreateTag: () -> Unit
 ) {
     val currentTagIds = currentPhotoTags.map { it.id }.toSet()
     
@@ -381,12 +396,24 @@ private fun TagSelectionPanel(
                         .padding(24.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "暂无标签，请先在标签气泡页面创建标签",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "暂无标签，先创建一个吧",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        FilledTonalButton(onClick = onCreateTag) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("创建标签")
+                        }
+                    }
                 }
             } else {
                 FlowRow(
@@ -400,6 +427,22 @@ private fun TagSelectionPanel(
                             isSelected = isAlreadyTagged,
                             onClick = { if (!isAlreadyTagged) onTagClick(tag) }
                         )
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onCreateTag) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("新建标签")
                     }
                 }
             }
@@ -610,6 +653,122 @@ private fun CompletionState(
                     text = "完成",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddTagDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, color: Int) -> Unit
+) {
+    var tagName by remember { mutableStateOf("") }
+    var selectedColorIndex by remember { mutableStateOf(0) }
+
+    val colors = listOf(
+        0xFF5EEAD4.toInt(),
+        0xFFF472B6.toInt(),
+        0xFFFBBF24.toInt(),
+        0xFF60A5FA.toInt(),
+        0xFFA78BFA.toInt(),
+        0xFF34D399.toInt(),
+        0xFFFB7185.toInt(),
+        0xFF38BDF8.toInt()
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("创建新标签") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = tagName,
+                    onValueChange = { tagName = it },
+                    label = { Text("标签名称") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "选择颜色",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    colors.forEachIndexed { index, color ->
+                        ColorOption(
+                            color = Color(color),
+                            isSelected = index == selectedColorIndex,
+                            onClick = { selectedColorIndex = index },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (tagName.isNotBlank()) {
+                        onConfirm(tagName.trim(), colors[selectedColorIndex])
+                    }
+                },
+                enabled = tagName.isNotBlank()
+            ) {
+                Text("创建")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ColorOption(
+    color: Color,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(color)
+            .then(
+                if (isSelected) {
+                    Modifier.background(
+                        Color.White.copy(alpha = 0.3f),
+                        CircleShape
+                    )
+                } else Modifier
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        IconButton(onClick = onClick) {
+            AnimatedVisibility(
+                visible = isSelected,
+                enter = scaleIn() + fadeIn(),
+                exit = scaleOut() + fadeOut()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }

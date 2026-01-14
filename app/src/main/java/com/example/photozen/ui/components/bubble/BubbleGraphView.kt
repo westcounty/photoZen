@@ -315,7 +315,7 @@ private fun DrawScope.drawBubble(
         val textPaint = android.graphics.Paint().apply {
             this.color = android.graphics.Color.WHITE
             textAlign = android.graphics.Paint.Align.CENTER
-            textSize = (radius * 0.35f).coerceIn(24f, 48f)
+            textSize = (radius * 0.45f).coerceIn(28f, 64f)
             isFakeBoldText = true
             isAntiAlias = true
             setShadowLayer(4f, 0f, 2f, android.graphics.Color.argb(100, 0, 0, 0))
@@ -332,7 +332,7 @@ private fun DrawScope.drawBubble(
         // Photo count (smaller, below label)
         if (node.photoCount > 0) {
             val countPaint = android.graphics.Paint(textPaint).apply {
-                textSize = textPaint.textSize * 0.6f
+                textSize = textPaint.textSize * 0.7f
                 alpha = 200
             }
             drawText(
