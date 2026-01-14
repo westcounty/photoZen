@@ -42,8 +42,8 @@ class TagBubbleViewModel @Inject constructor(
     
     companion object {
         // Bubble size constants - increased for better touch targets
-        private const val MIN_BUBBLE_RADIUS = 60f
-        private const val MAX_BUBBLE_RADIUS = 100f
+        private const val MIN_BUBBLE_RADIUS = 80f
+        private const val MAX_BUBBLE_RADIUS = 140f
     }
     
     private val _uiState = MutableStateFlow(TagBubbleUiState())

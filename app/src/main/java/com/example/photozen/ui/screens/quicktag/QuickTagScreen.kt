@@ -39,7 +39,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.EmojiEvents
@@ -179,9 +178,6 @@ fun QuickTagScreen(
                         onTagClick = { tag ->
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             viewModel.tagCurrentPhotoAndNext(tag)
-                        },
-                        onPrevious = {
-                            viewModel.goToPrevious()
                         }
                     )
                 }
@@ -193,8 +189,7 @@ fun QuickTagScreen(
 @Composable
 private fun QuickTagContent(
     uiState: QuickTagUiState,
-    onTagClick: (TagEntity) -> Unit,
-    onPrevious: () -> Unit
+    onTagClick: (TagEntity) -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize()
@@ -237,25 +232,6 @@ private fun QuickTagContent(
                 )
             }
             
-            // Previous button overlay
-            if (uiState.currentIndex > 0) {
-                IconButton(
-                    onClick = onPrevious,
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(8.dp)
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.5f))
-                ) {
-                    Icon(
-                        Icons.Default.ChevronLeft,
-                        contentDescription = "上一张",
-                        tint = Color.White,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-            }
         }
         
         // Tag selection area

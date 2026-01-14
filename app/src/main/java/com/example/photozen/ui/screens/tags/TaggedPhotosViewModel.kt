@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.dao.TagDao
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.data.local.entity.PhotoTagCrossRef
+import com.example.photozen.data.local.entity.TagEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +23,7 @@ data class TaggedPhotosUiState(
     val tagId: String? = null,
     val tagName: String? = null,
     val photos: List<PhotoEntity> = emptyList(),
+    val allTags: List<TagEntity> = emptyList(),
     val error: String? = null
 )
 
@@ -35,6 +38,14 @@ class TaggedPhotosViewModel @Inject constructor(
     
     private val _uiState = MutableStateFlow(TaggedPhotosUiState())
     val uiState: StateFlow<TaggedPhotosUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            tagDao.getAllTags().collect { tags ->
+                _uiState.update { it.copy(allTags = tags) }
+            }
+        }
+    }
     
     /**
      * Load photos for the given tag.
@@ -74,6 +85,22 @@ class TaggedPhotosViewModel @Inject constructor(
                     ) 
                 }
             }
+        }
+    }
+
+    fun removeTagFromPhoto(photoId: String) {
+        val currentTagId = _uiState.value.tagId ?: return
+        viewModelScope.launch {
+            tagDao.removeTagFromPhoto(photoId, currentTagId)
+        }
+    }
+
+    fun changeTagForPhoto(photoId: String, newTagId: String) {
+        val currentTagId = _uiState.value.tagId ?: return
+        if (newTagId == currentTagId) return
+        viewModelScope.launch {
+            tagDao.removeTagFromPhoto(photoId, currentTagId)
+            tagDao.addTagToPhoto(PhotoTagCrossRef(photoId, newTagId))
         }
     }
 }
