@@ -16,6 +16,8 @@ import com.example.photozen.ui.screens.tags.TagBubbleScreen
 import com.example.photozen.ui.screens.tags.TaggedPhotosScreen
 import com.example.photozen.ui.screens.trash.TrashScreen
 import com.example.photozen.ui.screens.workflow.WorkflowScreen
+import com.example.photozen.ui.screens.quicktag.QuickTagScreen
+import com.example.photozen.ui.screens.achievements.AchievementsScreen
 
 /**
  * Main navigation host for PicZen app.
@@ -53,6 +55,9 @@ fun PicZenNavHost(
                 },
                 onNavigateToTagBubble = {
                     navController.navigate(Screen.TagBubble)
+                },
+                onNavigateToAchievements = {
+                    navController.navigate(Screen.Achievements)
                 }
             )
         }
@@ -83,6 +88,9 @@ fun PicZenNavHost(
                 },
                 onNavigateToEditor = { photoId ->
                     navController.navigate(Screen.PhotoEditor(photoId))
+                },
+                onNavigateToQuickTag = {
+                    navController.navigate(Screen.QuickTag)
                 }
             )
         }
@@ -142,6 +150,22 @@ fun PicZenNavHost(
                 },
                 onNavigateToEditor = { photoId ->
                     navController.navigate(Screen.PhotoEditor(photoId))
+                }
+            )
+        }
+        
+        composable<Screen.QuickTag> {
+            QuickTagScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+        
+        composable<Screen.Achievements> {
+            AchievementsScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
                 }
             )
         }

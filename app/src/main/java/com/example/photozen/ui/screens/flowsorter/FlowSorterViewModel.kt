@@ -215,8 +215,9 @@ class FlowSorterViewModel @Inject constructor(
                 sortPhotoUseCase.keepPhoto(photo.id)
                 _lastAction.value = SortAction(photo.id, PhotoStatus.KEEP)
                 _counters.value = _counters.value.copy(keep = _counters.value.keep + 1)
-                // Increment cumulative sort count
+                // Increment cumulative sort count and keep count
                 preferencesRepository.incrementSortedCount()
+                preferencesRepository.incrementKeepCount()
             } catch (e: Exception) {
                 _error.value = "操作失败: ${e.message}"
             }
@@ -237,8 +238,9 @@ class FlowSorterViewModel @Inject constructor(
                 sortPhotoUseCase.trashPhoto(photo.id)
                 _lastAction.value = SortAction(photo.id, PhotoStatus.TRASH)
                 _counters.value = _counters.value.copy(trash = _counters.value.trash + 1)
-                // Increment cumulative sort count
+                // Increment cumulative sort count and trash count
                 preferencesRepository.incrementSortedCount()
+                preferencesRepository.incrementTrashCount()
             } catch (e: Exception) {
                 _error.value = "操作失败: ${e.message}"
             }
@@ -259,8 +261,9 @@ class FlowSorterViewModel @Inject constructor(
                 sortPhotoUseCase.maybePhoto(photo.id)
                 _lastAction.value = SortAction(photo.id, PhotoStatus.MAYBE)
                 _counters.value = _counters.value.copy(maybe = _counters.value.maybe + 1)
-                // Increment cumulative sort count
+                // Increment cumulative sort count and maybe count
                 preferencesRepository.incrementSortedCount()
+                preferencesRepository.incrementMaybeCount()
             } catch (e: Exception) {
                 _error.value = "操作失败: ${e.message}"
             }
@@ -318,12 +321,19 @@ class FlowSorterViewModel @Inject constructor(
             1
         }
         
+        val newMaxCombo = maxOf(_combo.value.maxCount, newCombo)
+        
         _combo.value = _combo.value.copy(
             count = newCombo,
-            maxCount = maxOf(_combo.value.maxCount, newCombo),
+            maxCount = newMaxCombo,
             lastSwipeTime = currentTime,
             isActive = true
         )
+        
+        // Update global max combo achievement
+        viewModelScope.launch {
+            preferencesRepository.updateMaxCombo(newMaxCombo)
+        }
         
         // Cancel previous timeout and start new one
         startComboTimeout()

@@ -72,6 +72,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.ui.components.AchievementSummaryCard
+import com.example.photozen.ui.components.generateAchievements
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
@@ -90,6 +92,7 @@ fun HomeScreen(
     onNavigateToTrash: () -> Unit,
     onNavigateToWorkflow: () -> Unit,
     onNavigateToTagBubble: () -> Unit,
+    onNavigateToAchievements: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -268,6 +271,13 @@ fun HomeScreen(
                     iconTint = Color(0xFFA78BFA), // Purple
                     enabled = true,
                     onClick = onNavigateToTagBubble
+                )
+                
+                // Achievement Card
+                val achievements = generateAchievements(uiState.achievementData)
+                AchievementSummaryCard(
+                    achievements = achievements,
+                    onClick = onNavigateToAchievements
                 )
             }
             

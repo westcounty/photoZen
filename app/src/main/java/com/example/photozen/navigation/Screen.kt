@@ -72,4 +72,17 @@ sealed interface Screen {
      */
     @Serializable
     data class PhotoListByTag(val tagId: String) : Screen
+    
+    /**
+     * Quick Tag screen - Flow-style quick tagging for kept photos.
+     * Click tag to assign and auto-advance to next photo.
+     */
+    @Serializable
+    data object QuickTag : Screen
+    
+    /**
+     * Achievements screen - displays all achievements and progress.
+     */
+    @Serializable
+    data object Achievements : Screen
 }

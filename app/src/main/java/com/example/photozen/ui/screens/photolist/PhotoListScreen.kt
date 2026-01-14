@@ -25,12 +25,15 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -73,6 +76,7 @@ import com.example.photozen.ui.theme.TrashRed
 fun PhotoListScreen(
     onNavigateBack: () -> Unit,
     onNavigateToEditor: (String) -> Unit = {},
+    onNavigateToQuickTag: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: PhotoListViewModel = hiltViewModel()
 ) {
@@ -117,6 +121,22 @@ fun PhotoListScreen(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
             )
+        },
+        floatingActionButton = {
+            // Show Quick Tag FAB only for KEEP status
+            if (uiState.status == PhotoStatus.KEEP && uiState.photos.isNotEmpty()) {
+                ExtendedFloatingActionButton(
+                    onClick = onNavigateToQuickTag,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ) {
+                    Icon(Icons.Default.Label, contentDescription = null)
+                    Text(
+                        text = "快速分类",
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+            }
         }
     ) { paddingValues ->
         Box(

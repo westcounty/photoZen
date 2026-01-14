@@ -3,6 +3,8 @@ package com.example.photozen.ui.screens.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.data.repository.AchievementData
+import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -27,7 +29,8 @@ data class HomeUiState(
     val isLoading: Boolean = true,
     val isSyncing: Boolean = false,
     val syncResult: String? = null,
-    val error: String? = null
+    val error: String? = null,
+    val achievementData: AchievementData = AchievementData()
 ) {
     val sortedCount: Int
         get() = keepCount + trashCount + maybeCount
@@ -46,7 +49,8 @@ data class HomeUiState(
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val getPhotosUseCase: GetPhotosUseCase,
-    private val syncPhotosUseCase: SyncPhotosUseCase
+    private val syncPhotosUseCase: SyncPhotosUseCase,
+    private val preferencesRepository: PreferencesRepository
 ) : ViewModel() {
     
     private val _hasPermission = MutableStateFlow(false)
@@ -68,9 +72,12 @@ class HomeViewModel @Inject constructor(
         _isLoading,
         _isSyncing,
         _syncResult,
-        _error
+        combine(_error, preferencesRepository.getAllAchievementData()) { error, achievementData ->
+            Pair(error, achievementData)
+        }
     ) { values ->
         @Suppress("UNCHECKED_CAST")
+        val errorAndAchievement = values[9] as Pair<String?, AchievementData>
         HomeUiState(
             totalPhotos = values[0] as Int,
             unsortedCount = values[1] as Int,
@@ -81,13 +88,21 @@ class HomeViewModel @Inject constructor(
             isLoading = values[6] as Boolean,
             isSyncing = values[7] as Boolean,
             syncResult = values[8] as String?,
-            error = values[9] as String?
+            error = errorAndAchievement.first,
+            achievementData = errorAndAchievement.second
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = HomeUiState()
     )
+    
+    init {
+        // Update consecutive days tracking on app launch
+        viewModelScope.launch {
+            preferencesRepository.updateConsecutiveDays()
+        }
+    }
     
     /**
      * Called when permission is granted.
