@@ -51,7 +51,8 @@ class TrashViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val getPhotosUseCase: GetPhotosUseCase,
     private val manageTrashUseCase: ManageTrashUseCase,
-    private val sortPhotoUseCase: SortPhotoUseCase
+    private val sortPhotoUseCase: SortPhotoUseCase,
+    private val preferencesRepository: com.example.photozen.data.repository.PreferencesRepository
 ) : ViewModel() {
     
     private val _internalState = MutableStateFlow(InternalState())
@@ -180,6 +181,14 @@ class TrashViewModel @Inject constructor(
                 val selectedIds = _internalState.value.selectedIds.toList()
                 val count = selectedIds.size
                 manageTrashUseCase.deletePhotos(selectedIds)
+                
+                // Update achievement progress - "清洁工" and "清理大师" achievements
+                // Only count if all selected photos were deleted (full trash clear or selection clear)
+                val allSelected = uiState.value.allSelected
+                if (allSelected && count > 0) {
+                    preferencesRepository.incrementTrashEmptied()
+                }
+                
                 _internalState.update { 
                     it.copy(
                         selectedIds = emptySet(),

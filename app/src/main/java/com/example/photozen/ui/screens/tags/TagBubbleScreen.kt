@@ -731,8 +731,7 @@ private fun ColorOption(
 
 /**
  * Dialog for linking a tag to a system album.
- * Default: Create new album
- * Secondary option: Link existing album
+ * Simplified: Only supports creating new album.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -744,11 +743,8 @@ private fun LinkAlbumDialog(
     onCreateNewAlbum: (albumName: String, copyMode: AlbumCopyMode) -> Unit,
     onLinkExistingAlbum: (album: Album, copyMode: AlbumCopyMode) -> Unit
 ) {
-    var mode by remember { mutableStateOf(LinkMode.CREATE_NEW) }
     var albumName by remember { mutableStateOf(tagName) }
-    var selectedAlbum by remember { mutableStateOf<Album?>(null) }
     var copyMode by remember { mutableStateOf(AlbumCopyMode.COPY) }
-    var showExistingAlbumPicker by remember { mutableStateOf(false) }
     
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     
@@ -764,13 +760,13 @@ private fun LinkAlbumDialog(
         ) {
             // Title
             Text(
-                text = "关联系统相册",
+                text = "新建关联相册",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
             
             Text(
-                text = "将「$tagName」标签关联到系统相册，方便在其他应用中快速访问这些照片",
+                text = "为「$tagName」标签创建对应的系统相册，方便在其他应用中访问这些照片",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp)
@@ -778,87 +774,49 @@ private fun LinkAlbumDialog(
             
             Spacer(modifier = Modifier.height(24.dp))
             
-            // Mode selection
+            // Album name input
+            OutlinedTextField(
+                value = albumName,
+                onValueChange = { albumName = it },
+                label = { Text("相册名称") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Folder,
+                        contentDescription = null
+                    )
+                }
+            )
+            
+            Spacer(modifier = Modifier.height(20.dp))
+            
+            // Copy mode selection
             Text(
-                text = "选择关联方式",
+                text = "照片处理方式",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium
             )
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            // Create new album option (default, highlighted)
-            ModeCard(
-                icon = Icons.Default.CreateNewFolder,
-                title = "新建相册",
-                subtitle = "创建一个新的系统相册",
-                isSelected = mode == LinkMode.CREATE_NEW,
-                isRecommended = true,
-                onClick = { mode = LinkMode.CREATE_NEW }
+            CopyModeOption(
+                icon = Icons.Default.ContentCopy,
+                title = "复制照片",
+                subtitle = "复制到新相册，原照片移除此标签",
+                isSelected = copyMode == AlbumCopyMode.COPY,
+                onClick = { copyMode = AlbumCopyMode.COPY }
             )
             
             Spacer(modifier = Modifier.height(8.dp))
             
-            // Link existing album option
-            ModeCard(
-                icon = Icons.Default.PhotoAlbum,
-                title = "关联已有相册",
-                subtitle = if (selectedAlbum != null) "已选择: ${selectedAlbum?.name}" else "从现有系统相册中选择",
-                isSelected = mode == LinkMode.LINK_EXISTING,
-                onClick = { 
-                    mode = LinkMode.LINK_EXISTING
-                    showExistingAlbumPicker = true
-                }
+            CopyModeOption(
+                icon = Icons.Default.DriveFileMove,
+                title = "移动照片",
+                subtitle = "直接移动到新相册，不创建副本",
+                isSelected = copyMode == AlbumCopyMode.MOVE,
+                onClick = { copyMode = AlbumCopyMode.MOVE }
             )
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Mode-specific content
-            if (mode == LinkMode.CREATE_NEW) {
-                // Album name input
-                OutlinedTextField(
-                    value = albumName,
-                    onValueChange = { albumName = it },
-                    label = { Text("相册名称") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Folder,
-                            contentDescription = null
-                        )
-                    }
-                )
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Copy mode selection
-                Text(
-                    text = "照片处理方式",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium
-                )
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                CopyModeOption(
-                    icon = Icons.Default.ContentCopy,
-                    title = "复制照片",
-                    subtitle = "将照片复制到新相册，原照片保留在原位置",
-                    isSelected = copyMode == AlbumCopyMode.COPY,
-                    onClick = { copyMode = AlbumCopyMode.COPY }
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                CopyModeOption(
-                    icon = Icons.Default.DriveFileMove,
-                    title = "移动照片",
-                    subtitle = "将照片移动到新相册，原位置不再保留",
-                    isSelected = copyMode == AlbumCopyMode.MOVE,
-                    onClick = { copyMode = AlbumCopyMode.MOVE }
-                )
-            }
             
             Spacer(modifier = Modifier.height(24.dp))
             
@@ -876,55 +834,24 @@ private fun LinkAlbumDialog(
                 
                 FilledTonalButton(
                     onClick = {
-                        when (mode) {
-                            LinkMode.CREATE_NEW -> {
-                                if (albumName.isNotBlank()) {
-                                    onCreateNewAlbum(albumName.trim(), copyMode)
-                                }
-                            }
-                            LinkMode.LINK_EXISTING -> {
-                                selectedAlbum?.let { album ->
-                                    onLinkExistingAlbum(album, copyMode)
-                                }
-                            }
+                        if (albumName.isNotBlank()) {
+                            onCreateNewAlbum(albumName.trim(), copyMode)
                         }
                     },
-                    enabled = when (mode) {
-                        LinkMode.CREATE_NEW -> albumName.isNotBlank()
-                        LinkMode.LINK_EXISTING -> selectedAlbum != null
-                    },
+                    enabled = albumName.isNotBlank(),
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Link,
+                        imageVector = Icons.Default.CreateNewFolder,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("关联")
+                    Text("创建")
                 }
             }
         }
     }
-    
-    // Existing album picker dialog
-    if (showExistingAlbumPicker) {
-        AlbumPickerDialog(
-            albums = availableAlbums,
-            isLoading = isLoadingAlbums,
-            selectedAlbum = selectedAlbum,
-            onSelectAlbum = { album ->
-                selectedAlbum = album
-                showExistingAlbumPicker = false
-            },
-            onDismiss = { showExistingAlbumPicker = false }
-        )
-    }
-}
-
-private enum class LinkMode {
-    CREATE_NEW,
-    LINK_EXISTING
 }
 
 @Composable

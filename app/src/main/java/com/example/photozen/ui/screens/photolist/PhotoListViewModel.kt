@@ -46,7 +46,6 @@ private data class InternalState(
     val isLoading: Boolean = true,
     val message: String? = null,
     val defaultExternalApp: String? = null,
-    val untaggedCount: Int = 0,
     val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC
 )
 
@@ -73,10 +72,14 @@ class PhotoListViewModel @Inject constructor(
     // Random seed for consistent random sorting
     private var randomSeed = System.currentTimeMillis()
     
+    // Track untagged count separately to avoid blocking UI
+    private val _untaggedCount = MutableStateFlow(0)
+    
     val uiState: StateFlow<PhotoListUiState> = combine(
         getPhotosUseCase.getPhotosByStatus(status),
-        _internalState
-    ) { photos, internal ->
+        _internalState,
+        _untaggedCount
+    ) { photos, internal, untaggedCount ->
         // Apply sorting based on dateAdded (creation time)
         val sortedPhotos = applySortOrder(photos, internal.sortOrder)
         PhotoListUiState(
@@ -85,7 +88,7 @@ class PhotoListViewModel @Inject constructor(
             isLoading = internal.isLoading && photos.isEmpty(),
             message = internal.message,
             defaultExternalApp = internal.defaultExternalApp,
-            untaggedCount = internal.untaggedCount,
+            untaggedCount = untaggedCount,
             sortOrder = internal.sortOrder
         )
     }.stateIn(
@@ -103,17 +106,18 @@ class PhotoListViewModel @Inject constructor(
                 _internalState.update { it.copy(defaultExternalApp = app) }
             }
         }
-        // Count untagged photos for KEEP status
+        // Count untagged photos for KEEP status - reactive to photo list changes
         if (status == PhotoStatus.KEEP) {
             viewModelScope.launch {
                 getPhotosUseCase.getPhotosByStatus(PhotoStatus.KEEP).collect { photos ->
-                    var untaggedCount = 0
+                    // Calculate untagged count in background
+                    var count = 0
                     for (photo in photos) {
                         if (!tagDao.photoHasAnyTag(photo.id)) {
-                            untaggedCount++
+                            count++
                         }
                     }
-                    _internalState.update { it.copy(untaggedCount = untaggedCount) }
+                    _untaggedCount.value = count
                 }
             }
         }

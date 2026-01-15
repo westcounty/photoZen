@@ -183,6 +183,7 @@ fun PhotoListScreen(
                     else -> {
                         PhotoGrid(
                             photos = uiState.photos,
+                            sortOrder = uiState.sortOrder,
                             onPhotoLongPress = { photoId, photoUri ->
                                 selectedPhotoId = photoId
                                 selectedPhotoUri = photoUri
@@ -318,8 +319,10 @@ private fun QuickTagBanner(
 @Composable
 private fun PhotoGrid(
     photos: List<PhotoEntity>,
+    sortOrder: PhotoListSortOrder,
     onPhotoLongPress: (String, String) -> Unit // photoId, photoUri
 ) {
+    // Use sortOrder in key to force recomposition when sort changes
     LazyVerticalStaggeredGrid(
         columns = StaggeredGridCells.Fixed(2),
         contentPadding = PaddingValues(8.dp),
@@ -327,7 +330,11 @@ private fun PhotoGrid(
         verticalItemSpacing = 8.dp,
         modifier = Modifier.fillMaxSize()
     ) {
-        itemsIndexed(photos, key = { _, photo -> photo.id }) { _, photo ->
+        // Use index-based keys to ensure proper reordering when sort changes
+        itemsIndexed(
+            items = photos,
+            key = { index, photo -> "${sortOrder.name}_${index}_${photo.id}" }
+        ) { _, photo ->
             PhotoGridItem(
                 photo = photo,
                 onLongPress = { onPhotoLongPress(photo.id, photo.systemUri) }
