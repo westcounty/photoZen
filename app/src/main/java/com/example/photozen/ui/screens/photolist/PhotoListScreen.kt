@@ -26,11 +26,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Label
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.QuestionMark
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -131,6 +134,21 @@ fun PhotoListScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
                     }
                 },
+                actions = {
+                    // Sort button - only show when there are photos
+                    if (uiState.photos.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.cycleSortOrder() }) {
+                            Icon(
+                                imageVector = when (uiState.sortOrder) {
+                                    PhotoListSortOrder.DATE_DESC -> Icons.Default.ArrowDownward
+                                    PhotoListSortOrder.DATE_ASC -> Icons.Default.ArrowUpward
+                                    PhotoListSortOrder.RANDOM -> Icons.Default.Shuffle
+                                },
+                                contentDescription = "排序: ${uiState.sortOrder.displayName}"
+                            )
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
@@ -142,10 +160,10 @@ fun PhotoListScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Prominent Quick Tag Banner for KEEP status
-            if (uiState.status == PhotoStatus.KEEP && uiState.photos.isNotEmpty()) {
+            // Prominent Quick Tag Banner for KEEP status - show untagged count
+            if (uiState.status == PhotoStatus.KEEP && uiState.untaggedCount > 0) {
                 QuickTagBanner(
-                    photoCount = uiState.photos.size,
+                    photoCount = uiState.untaggedCount,
                     onClick = onNavigateToQuickTag
                 )
             }

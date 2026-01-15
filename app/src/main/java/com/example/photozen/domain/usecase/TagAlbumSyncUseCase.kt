@@ -132,20 +132,35 @@ class TagAlbumSyncUseCase @Inject constructor(
             
             // Get photos with this tag
             val photoIds = tagDao.getPhotoIdsWithTag(tagId).first()
-            var photosCopied = 0
+            var photosProcessed = 0
             var actualBucketId = tempBucketId
             
-            // Collect URIs of original photos for MOVE mode deletion
-            val originalUrisToDelete = mutableListOf<Uri>()
+            // Collect URIs of original photos that need deletion (for MOVE mode fallback)
+            val pendingDeleteUris = mutableListOf<Uri>()
             
-            // Always use copy first (for both COPY and MOVE modes)
             for (photoId in photoIds) {
                 val photo = photoDao.getById(photoId)
                 if (photo != null) {
                     val sourceUri = Uri.parse(photo.systemUri)
                     
-                    // Always copy first
-                    val newPhoto = mediaStoreDataSource.copyPhotoToAlbum(sourceUri, albumPath)
+                    val newPhoto = if (copyMode == AlbumCopyMode.MOVE) {
+                        // MOVE mode: Try direct move first, fall back to copy+delete
+                        val moveResult = mediaStoreDataSource.movePhotoToAlbumWithConfirmation(sourceUri, albumPath)
+                        when (moveResult) {
+                            is com.example.photozen.data.source.MediaStoreDataSource.MoveResult.Success -> {
+                                moveResult.newPhoto
+                            }
+                            is com.example.photozen.data.source.MediaStoreDataSource.MoveResult.RequiresDeleteConfirmation -> {
+                                // Photo was copied, need to delete original later
+                                pendingDeleteUris.add(moveResult.originalUri)
+                                moveResult.newPhoto
+                            }
+                            is com.example.photozen.data.source.MediaStoreDataSource.MoveResult.Failed -> null
+                        }
+                    } else {
+                        // COPY mode: Just copy the photo
+                        mediaStoreDataSource.copyPhotoToAlbum(sourceUri, albumPath)
+                    }
                     
                     if (newPhoto != null) {
                         // Save the new photo to our database
@@ -153,26 +168,21 @@ class TagAlbumSyncUseCase @Inject constructor(
                         // Add the tag to the new photo
                         tagDao.addTagToPhoto(PhotoTagCrossRef(newPhoto.id, tagId))
                         
-                        // Get the actual bucket_id from the first copied photo
-                        if (photosCopied == 0 && newPhoto.bucketId != null) {
+                        // Get the actual bucket_id from the first processed photo
+                        if (photosProcessed == 0 && newPhoto.bucketId != null) {
                             actualBucketId = newPhoto.bucketId
                         }
                         
-                        // Always remove the old photo-tag relationship to avoid duplicates
+                        // Remove the old photo-tag relationship to avoid duplicates
                         tagDao.removeTagFromPhoto(photoId, tagId)
                         
-                        // For MOVE mode, collect original URIs for deletion
-                        if (copyMode == AlbumCopyMode.MOVE) {
-                            originalUrisToDelete.add(sourceUri)
-                        }
-                        
-                        photosCopied++
+                        photosProcessed++
                     }
                 }
             }
             
-            // If we didn't copy any photos, try to find the album anyway
-            if (photosCopied == 0) {
+            // If we didn't process any photos, try to find the album anyway
+            if (photosProcessed == 0) {
                 val foundAlbum = mediaStoreDataSource.findAlbumByName(albumName)
                 if (foundAlbum != null) {
                     actualBucketId = foundAlbum.id
@@ -182,14 +192,14 @@ class TagAlbumSyncUseCase @Inject constructor(
             // Update the tag with album link
             tagDao.updateAlbumLink(tagId, actualBucketId, albumName, copyMode.name)
             
-            // For MOVE mode, request deletion of original photos
-            if (copyMode == AlbumCopyMode.MOVE && originalUrisToDelete.isNotEmpty()) {
-                when (val deleteResult = mediaStoreDataSource.deletePhotos(originalUrisToDelete)) {
+            // For MOVE mode, if there are pending deletions, request confirmation
+            if (copyMode == AlbumCopyMode.MOVE && pendingDeleteUris.isNotEmpty()) {
+                when (val deleteResult = mediaStoreDataSource.deletePhotos(pendingDeleteUris)) {
                     is DeleteResult.RequiresConfirmation -> {
                         CreateLinkAlbumResult.RequiresDeleteConfirmation(
                             albumId = actualBucketId,
                             albumName = albumName,
-                            photosAdded = photosCopied,
+                            photosAdded = photosProcessed,
                             intentSender = deleteResult.intentSender,
                             pendingDeleteUris = deleteResult.uris
                         )
@@ -198,16 +208,15 @@ class TagAlbumSyncUseCase @Inject constructor(
                         CreateLinkAlbumResult.Success(
                             albumId = actualBucketId,
                             albumName = albumName,
-                            photosAdded = photosCopied
+                            photosAdded = photosProcessed
                         )
                     }
                     is DeleteResult.Failed -> {
-                        // Photos copied but original deletion failed - still return success
-                        // User can manually delete originals
+                        // Photos moved/copied but original deletion failed - still return success
                         CreateLinkAlbumResult.Success(
                             albumId = actualBucketId,
                             albumName = albumName,
-                            photosAdded = photosCopied
+                            photosAdded = photosProcessed
                         )
                     }
                 }
@@ -215,7 +224,7 @@ class TagAlbumSyncUseCase @Inject constructor(
                 CreateLinkAlbumResult.Success(
                     albumId = actualBucketId,
                     albumName = albumName,
-                    photosAdded = photosCopied
+                    photosAdded = photosProcessed
                 )
             }
         } catch (e: Exception) {

@@ -37,8 +37,9 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material3.BottomAppBar
@@ -175,12 +176,12 @@ fun FlowSorterScreen(
                                 )
                             }
                         } else {
-                            // Sort order button
+                            // Sort order button - distinct icons for each mode
                             IconButton(onClick = { viewModel.cycleSortOrder() }) {
                                 Icon(
                                     imageVector = when (uiState.sortOrder) {
-                                        PhotoSortOrder.DATE_DESC -> Icons.Default.Sort
-                                        PhotoSortOrder.DATE_ASC -> Icons.Default.Sort
+                                        PhotoSortOrder.DATE_DESC -> Icons.Default.ArrowDownward
+                                        PhotoSortOrder.DATE_ASC -> Icons.Default.ArrowUpward
                                         PhotoSortOrder.RANDOM -> Icons.Default.Shuffle
                                     },
                                     contentDescription = "排序: ${uiState.sortOrder.displayName}"
@@ -850,7 +851,7 @@ fun FlowSorterContent(
                             )
                         }
                     } else {
-                        // Sort order button
+                        // Sort order button - distinct icons for each mode
                         IconButton(
                             onClick = { viewModel.cycleSortOrder() },
                             modifier = Modifier
@@ -859,8 +860,8 @@ fun FlowSorterContent(
                         ) {
                             Icon(
                                 imageVector = when (uiState.sortOrder) {
-                                    PhotoSortOrder.DATE_DESC -> Icons.Default.Sort
-                                    PhotoSortOrder.DATE_ASC -> Icons.Default.Sort
+                                    PhotoSortOrder.DATE_DESC -> Icons.Default.ArrowDownward
+                                    PhotoSortOrder.DATE_ASC -> Icons.Default.ArrowUpward
                                     PhotoSortOrder.RANDOM -> Icons.Default.Shuffle
                                 },
                                 contentDescription = "排序: ${uiState.sortOrder.displayName}",

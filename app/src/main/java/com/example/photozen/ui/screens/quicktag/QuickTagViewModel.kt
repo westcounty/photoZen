@@ -131,11 +131,13 @@ class QuickTagViewModel @Inject constructor(
     
     /**
      * Apply sort order to photos list.
+     * Uses dateAdded (creation time) for sorting, NOT dateModified or dateTaken.
      */
     private fun applySortOrder(photos: List<PhotoEntity>, sortOrder: QuickTagSortOrder): List<PhotoEntity> {
         return when (sortOrder) {
-            QuickTagSortOrder.DATE_DESC -> photos.sortedByDescending { it.dateTaken.takeIf { d -> d > 0 } ?: it.dateAdded * 1000 }
-            QuickTagSortOrder.DATE_ASC -> photos.sortedBy { it.dateTaken.takeIf { d -> d > 0 } ?: it.dateAdded * 1000 }
+            // Sort by dateAdded (creation time in seconds)
+            QuickTagSortOrder.DATE_DESC -> photos.sortedByDescending { it.dateAdded }
+            QuickTagSortOrder.DATE_ASC -> photos.sortedBy { it.dateAdded }
             QuickTagSortOrder.RANDOM -> photos.shuffled(kotlin.random.Random(randomSeed))
         }
     }

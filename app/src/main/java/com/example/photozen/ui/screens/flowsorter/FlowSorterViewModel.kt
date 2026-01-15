@@ -269,11 +269,13 @@ class FlowSorterViewModel @Inject constructor(
     
     /**
      * Apply sort order to photos list.
+     * Uses dateAdded (creation time) for sorting, NOT dateModified or dateTaken.
      */
     private fun applySortOrder(photos: List<PhotoEntity>, sortOrder: PhotoSortOrder): List<PhotoEntity> {
         return when (sortOrder) {
-            PhotoSortOrder.DATE_DESC -> photos.sortedByDescending { it.dateTaken.takeIf { d -> d > 0 } ?: it.dateAdded * 1000 }
-            PhotoSortOrder.DATE_ASC -> photos.sortedBy { it.dateTaken.takeIf { d -> d > 0 } ?: it.dateAdded * 1000 }
+            // Sort by dateAdded (creation time in seconds)
+            PhotoSortOrder.DATE_DESC -> photos.sortedByDescending { it.dateAdded }
+            PhotoSortOrder.DATE_ASC -> photos.sortedBy { it.dateAdded }
             PhotoSortOrder.RANDOM -> photos.shuffled(kotlin.random.Random(randomSeed))
         }
     }

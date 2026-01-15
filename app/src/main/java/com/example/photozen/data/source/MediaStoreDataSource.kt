@@ -966,6 +966,7 @@ class MediaStoreDataSource @Inject constructor(
     /**
      * Copy a photo to the same album, preserving all EXIF data and timestamps.
      * Creates a duplicate of the photo with a unique filename.
+     * CRITICAL: Must preserve DATE_TAKEN, DATE_ADDED, DATE_MODIFIED for proper sorting.
      * 
      * @param sourceUri Source content URI of the photo
      * @return New PhotoEntity with updated systemUri and id, or null if failed
@@ -1008,22 +1009,22 @@ class MediaStoreDataSource @Inject constructor(
                 originalName = "IMG_${System.currentTimeMillis()}.jpg"
             }
             
-            // Generate unique filename by appending timestamp
+            // Generate unique filename - use minimal suffix to keep similar name
             val baseName = originalName!!.substringBeforeLast(".")
             val extension = originalName!!.substringAfterLast(".", "jpg")
-            val timestamp = System.currentTimeMillis()
-            val newName = "${baseName}_copy_$timestamp.$extension"
+            val copyNum = (System.currentTimeMillis() % 10000).toInt()
+            val newName = "${baseName}_$copyNum.$extension"
             
             // Use same path or default to Pictures
             val targetPath = relativePath ?: "${android.os.Environment.DIRECTORY_PICTURES}/PicZen"
             
-            // Create new entry in MediaStore with preserved timestamps
+            // Create new entry in MediaStore
+            // Note: DATE_ADDED and DATE_MODIFIED are initially set by system,
+            // but we can update them after insertion on Android Q+
             val values = android.content.ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, newName)
                 put(MediaStore.Images.Media.MIME_TYPE, mimeType)
-                // Preserve original timestamps
-                dateAdded?.let { put(MediaStore.Images.Media.DATE_ADDED, it) }
-                dateModified?.let { put(MediaStore.Images.Media.DATE_MODIFIED, it) }
+                // Set DATE_TAKEN in initial insert
                 dateTaken?.let { put(MediaStore.Images.Media.DATE_TAKEN, it) }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     put(MediaStore.Images.Media.RELATIVE_PATH, targetPath)
@@ -1044,13 +1045,18 @@ class MediaStoreDataSource @Inject constructor(
                     }
                 }
                 
-                // Copy EXIF data to preserve all metadata
+                // Copy EXIF data to preserve all metadata including datetime
                 copyExifData(sourceUri, newUri)
                 
-                // Mark as not pending (Android 10+)
+                // Update timestamps AFTER file copy to preserve original times
+                // This is critical for proper sorting
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val updateValues = android.content.ContentValues().apply {
                         put(MediaStore.Images.Media.IS_PENDING, 0)
+                        // Update DATE_ADDED and DATE_MODIFIED to match original
+                        dateAdded?.let { put(MediaStore.Images.Media.DATE_ADDED, it) }
+                        dateModified?.let { put(MediaStore.Images.Media.DATE_MODIFIED, it) }
+                        dateTaken?.let { put(MediaStore.Images.Media.DATE_TAKEN, it) }
                     }
                     contentResolver.update(newUri, updateValues, null, null)
                 }
