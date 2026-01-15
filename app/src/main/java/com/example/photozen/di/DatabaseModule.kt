@@ -48,6 +48,25 @@ private val MIGRATION_4_5 = object : Migration(4, 5) {
 }
 
 /**
+ * Migration from version 5 to 6: Add album linking fields to tags table.
+ * - linked_album_id: MediaStore bucket ID of the linked system album
+ * - linked_album_name: Display name of the linked album
+ * - album_copy_mode: COPY or MOVE mode for syncing photos
+ */
+private val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Add linked_album_id column
+        db.execSQL("ALTER TABLE tags ADD COLUMN linked_album_id TEXT DEFAULT NULL")
+        // Add linked_album_name column
+        db.execSQL("ALTER TABLE tags ADD COLUMN linked_album_name TEXT DEFAULT NULL")
+        // Add album_copy_mode column
+        db.execSQL("ALTER TABLE tags ADD COLUMN album_copy_mode TEXT DEFAULT NULL")
+        // Create index for linked_album_id queries
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tags_linked_album_id ON tags (linked_album_id)")
+    }
+}
+
+/**
  * Hilt module for providing Room database and DAOs.
  */
 @Module
@@ -67,7 +86,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME
         )
-            .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .fallbackToDestructiveMigration(dropAllTables = true) // For development - use migrations in production
             .build()
     }

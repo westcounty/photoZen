@@ -22,6 +22,8 @@ import kotlin.math.sqrt
  * @param photoCount Number of photos with this tag
  * @param isCenter Whether this is the center/parent node
  * @param hasChildren Whether this tag has child tags (for navigation)
+ * @param linkedAlbumId MediaStore bucket ID if linked to an album
+ * @param linkedAlbumName Name of the linked album
  */
 @Stable
 data class BubbleNode(
@@ -31,8 +33,13 @@ data class BubbleNode(
     val color: Int,
     val photoCount: Int = 0,
     val isCenter: Boolean = false,
-    val hasChildren: Boolean = false
-)
+    val hasChildren: Boolean = false,
+    val linkedAlbumId: String? = null,
+    val linkedAlbumName: String? = null
+) {
+    val isLinkedToAlbum: Boolean
+        get() = linkedAlbumId != null
+}
 
 /**
  * Mutable state for a bubble's position and velocity.

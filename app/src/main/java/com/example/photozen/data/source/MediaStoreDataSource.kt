@@ -464,6 +464,210 @@ class MediaStoreDataSource @Inject constructor(
         )
     }
     
+    /**
+     * Create a new album (folder) in Pictures directory.
+     * Returns the bucket ID of the created album, or null if failed.
+     * 
+     * @param albumName Name of the album to create
+     * @return Pair of (bucketId, fullPath) or null if creation failed
+     */
+    suspend fun createAlbum(albumName: String): Pair<String, String>? = withContext(Dispatchers.IO) {
+        try {
+            val picturesDir = android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_PICTURES
+            )
+            val albumDir = java.io.File(picturesDir, albumName)
+            
+            if (!albumDir.exists()) {
+                if (!albumDir.mkdirs()) {
+                    return@withContext null
+                }
+            }
+            
+            // Create a placeholder file to register the album in MediaStore
+            // This ensures the album appears immediately
+            val placeholderFile = java.io.File(albumDir, ".nomedia_temp")
+            if (!placeholderFile.exists()) {
+                placeholderFile.createNewFile()
+                // Delete it immediately - we just needed it to create the directory
+                placeholderFile.delete()
+            }
+            
+            // The bucket_id is typically the hash of the directory path
+            val bucketId = albumDir.absolutePath.hashCode().toString()
+            Pair(bucketId, albumDir.absolutePath)
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    /**
+     * Copy a photo to a target album.
+     * Returns the new content URI and MediaStore ID, or null if failed.
+     * 
+     * @param sourceUri Source content URI of the photo
+     * @param targetAlbumPath Full path to the target album directory
+     * @param displayName Display name for the new file (if null, uses original name)
+     * @return New PhotoEntity with updated systemUri and id, or null if failed
+     */
+    suspend fun copyPhotoToAlbum(
+        sourceUri: Uri,
+        targetAlbumPath: String,
+        displayName: String? = null
+    ): PhotoEntity? = withContext(Dispatchers.IO) {
+        try {
+            // Get source file info
+            var originalName = displayName
+            var mimeType = "image/jpeg"
+            
+            contentResolver.query(
+                sourceUri,
+                arrayOf(
+                    MediaStore.Images.Media.DISPLAY_NAME,
+                    MediaStore.Images.Media.MIME_TYPE
+                ),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    if (originalName == null) {
+                        originalName = cursor.getString(0)
+                    }
+                    mimeType = cursor.getString(1) ?: "image/jpeg"
+                }
+            }
+            
+            if (originalName == null) {
+                originalName = "IMG_${System.currentTimeMillis()}.jpg"
+            }
+            
+            // Determine target file name (avoid duplicates)
+            val targetDir = java.io.File(targetAlbumPath)
+            var targetFile = java.io.File(targetDir, originalName)
+            var counter = 1
+            while (targetFile.exists()) {
+                val nameWithoutExt = originalName!!.substringBeforeLast(".")
+                val ext = originalName!!.substringAfterLast(".", "")
+                targetFile = java.io.File(targetDir, "${nameWithoutExt}_$counter.$ext")
+                counter++
+            }
+            
+            // Copy the file
+            contentResolver.openInputStream(sourceUri)?.use { input ->
+                java.io.FileOutputStream(targetFile).use { output ->
+                    input.copyTo(output)
+                }
+            } ?: return@withContext null
+            
+            // Add to MediaStore
+            val values = android.content.ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, targetFile.name)
+                put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis() / 1000)
+                put(MediaStore.Images.Media.DATE_MODIFIED, System.currentTimeMillis() / 1000)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Images.Media.RELATIVE_PATH, 
+                        "${android.os.Environment.DIRECTORY_PICTURES}/${targetDir.name}")
+                    put(MediaStore.Images.Media.IS_PENDING, 0)
+                } else {
+                    put(MediaStore.Images.Media.DATA, targetFile.absolutePath)
+                }
+            }
+            
+            val newUri = contentResolver.insert(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                values
+            ) ?: return@withContext null
+            
+            // Fetch the newly created photo entity
+            val mediaStoreId = android.content.ContentUris.parseId(newUri)
+            fetchPhotoById(mediaStoreId)
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    /**
+     * Move a photo to a target album (copy then delete original).
+     * Returns the new PhotoEntity, or null if failed.
+     */
+    suspend fun movePhotoToAlbum(
+        sourceUri: Uri,
+        targetAlbumPath: String,
+        displayName: String? = null
+    ): PhotoEntity? = withContext(Dispatchers.IO) {
+        val newPhoto = copyPhotoToAlbum(sourceUri, targetAlbumPath, displayName)
+        if (newPhoto != null) {
+            // Try to delete original
+            try {
+                contentResolver.delete(sourceUri, null, null)
+            } catch (e: Exception) {
+                // Ignore deletion errors - at least the copy succeeded
+            }
+        }
+        newPhoto
+    }
+    
+    /**
+     * Get photos from a specific album by bucket ID.
+     */
+    suspend fun getPhotosFromAlbum(bucketId: String): List<PhotoEntity> = withContext(Dispatchers.IO) {
+        fetchPhotosWithFilter(PhotoFilter(albumIds = listOf(bucketId)))
+    }
+    
+    /**
+     * Get all MediaStore IDs from a specific album.
+     */
+    suspend fun getPhotoIdsFromAlbum(bucketId: String): Set<String> = withContext(Dispatchers.IO) {
+        val ids = mutableSetOf<String>()
+        
+        contentResolver.query(
+            imageCollection,
+            arrayOf(MediaStore.Images.Media._ID),
+            "${MediaStore.Images.Media.BUCKET_ID} = ?",
+            arrayOf(bucketId),
+            null
+        )?.use { cursor ->
+            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+            while (cursor.moveToNext()) {
+                val mediaStoreId = cursor.getLong(idColumn)
+                ids.add("ms_$mediaStoreId")
+            }
+        }
+        
+        ids
+    }
+    
+    /**
+     * Check if an album exists by name and return its bucket ID.
+     */
+    suspend fun findAlbumByName(albumName: String): Album? = withContext(Dispatchers.IO) {
+        getAllAlbums().find { it.name.equals(albumName, ignoreCase = true) }
+    }
+    
+    /**
+     * Delete an album and all its photos.
+     * Returns true if successful.
+     */
+    suspend fun deleteAlbum(bucketId: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            // Delete all photos in the album
+            val selection = "${MediaStore.Images.Media.BUCKET_ID} = ?"
+            val selectionArgs = arrayOf(bucketId)
+            
+            contentResolver.delete(
+                imageCollection,
+                selection,
+                selectionArgs
+            )
+            
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
     companion object {
         /**
          * Generate a unique ID for a virtual copy.

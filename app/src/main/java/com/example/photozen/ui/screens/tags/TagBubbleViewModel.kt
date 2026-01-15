@@ -4,7 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.dao.TagDao
 import com.example.photozen.data.local.dao.TagWithCount
+import com.example.photozen.data.local.entity.AlbumCopyMode
 import com.example.photozen.data.local.entity.TagEntity
+import com.example.photozen.data.source.Album
+import com.example.photozen.domain.usecase.LinkAlbumResult
+import com.example.photozen.domain.usecase.TagAlbumSyncUseCase
 import com.example.photozen.ui.components.bubble.BubbleNode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -24,7 +28,10 @@ import javax.inject.Inject
 data class TagBubbleUiState(
     val isLoading: Boolean = true,
     val bubbleNodes: List<BubbleNode> = emptyList(),
-    val error: String? = null
+    val error: String? = null,
+    val availableAlbums: List<Album> = emptyList(),
+    val isLoadingAlbums: Boolean = false,
+    val message: String? = null
 ) {
     val currentTitle: String = "标签"
 }
@@ -37,7 +44,8 @@ data class TagBubbleUiState(
  */
 @HiltViewModel
 class TagBubbleViewModel @Inject constructor(
-    private val tagDao: TagDao
+    private val tagDao: TagDao,
+    private val tagAlbumSyncUseCase: TagAlbumSyncUseCase
 ) : ViewModel() {
     
     companion object {
@@ -53,6 +61,14 @@ class TagBubbleViewModel @Inject constructor(
     
     init {
         loadTags()
+        // Sync all linked tags on startup
+        viewModelScope.launch {
+            try {
+                tagAlbumSyncUseCase.syncAllLinkedTags()
+            } catch (e: Exception) {
+                // Ignore sync errors on startup
+            }
+        }
     }
     
     /**
@@ -103,11 +119,14 @@ class TagBubbleViewModel @Inject constructor(
     
     /**
      * Delete a tag.
+     * 
+     * @param tagId Tag ID to delete
+     * @param deleteLinkedAlbum Whether to also delete the linked album
      */
-    fun deleteTag(tagId: String) {
+    fun deleteTag(tagId: String, deleteLinkedAlbum: Boolean = false) {
         viewModelScope.launch {
             try {
-                tagDao.deleteById(tagId)
+                tagAlbumSyncUseCase.deleteTagWithAlbum(tagId, deleteLinkedAlbum)
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "删除标签失败: ${e.message}") }
             }
@@ -115,10 +134,110 @@ class TagBubbleViewModel @Inject constructor(
     }
     
     /**
+     * Load available albums for linking.
+     */
+    fun loadAvailableAlbums() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingAlbums = true) }
+            try {
+                val albums = tagAlbumSyncUseCase.getAvailableAlbums()
+                _uiState.update { it.copy(availableAlbums = albums, isLoadingAlbums = false) }
+            } catch (e: Exception) {
+                _uiState.update { 
+                    it.copy(
+                        isLoadingAlbums = false, 
+                        error = "加载相册失败: ${e.message}"
+                    ) 
+                }
+            }
+        }
+    }
+    
+    /**
+     * Create a new album and link it to a tag.
+     */
+    fun createAndLinkAlbum(tagId: String, albumName: String, copyMode: AlbumCopyMode) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            try {
+                when (val result = tagAlbumSyncUseCase.createAndLinkAlbum(tagId, albumName, copyMode)) {
+                    is LinkAlbumResult.Success -> {
+                        _uiState.update { 
+                            it.copy(
+                                isLoading = false,
+                                message = "已创建相册「${result.albumName}」并关联，已添加 ${result.photosAdded} 张照片"
+                            ) 
+                        }
+                    }
+                    is LinkAlbumResult.Error -> {
+                        _uiState.update { it.copy(isLoading = false, error = result.message) }
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoading = false, error = "关联相册失败: ${e.message}") }
+            }
+        }
+    }
+    
+    /**
+     * Link an existing album to a tag.
+     */
+    fun linkExistingAlbum(tagId: String, album: Album, copyMode: AlbumCopyMode) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            try {
+                when (val result = tagAlbumSyncUseCase.linkExistingAlbum(tagId, album, copyMode)) {
+                    is LinkAlbumResult.Success -> {
+                        _uiState.update { 
+                            it.copy(
+                                isLoading = false,
+                                message = "已关联相册「${result.albumName}」，已同步 ${result.photosAdded} 张照片"
+                            ) 
+                        }
+                    }
+                    is LinkAlbumResult.Error -> {
+                        _uiState.update { it.copy(isLoading = false, error = result.message) }
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoading = false, error = "关联相册失败: ${e.message}") }
+            }
+        }
+    }
+    
+    /**
+     * Unlink album from a tag.
+     */
+    fun unlinkAlbum(tagId: String) {
+        viewModelScope.launch {
+            try {
+                tagAlbumSyncUseCase.unlinkAlbum(tagId)
+                _uiState.update { it.copy(message = "已解除相册关联") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "解除关联失败: ${e.message}") }
+            }
+        }
+    }
+    
+    /**
+     * Get tag info by ID.
+     */
+    suspend fun getTagInfo(tagId: String): TagEntity? {
+        return tagDao.getById(tagId)
+    }
+    
+    /**
      * Clear error message.
      */
     fun clearError() {
         _uiState.update { it.copy(error = null) }
+    }
+    
+    /**
+     * Clear message.
+     */
+    fun clearMessage() {
+        _uiState.update { it.copy(message = null) }
     }
     
     /**
@@ -146,7 +265,9 @@ class TagBubbleViewModel @Inject constructor(
                 color = tag.color,
                 photoCount = tag.photoCount,
                 isCenter = false,
-                hasChildren = false
+                hasChildren = false,
+                linkedAlbumId = tag.linkedAlbumId,
+                linkedAlbumName = tag.linkedAlbumName
             )
         }
     }

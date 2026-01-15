@@ -193,6 +193,50 @@ interface TagDao {
      */
     @Query("SELECT COUNT(*) FROM tags WHERE parent_id = :tagId")
     suspend fun getChildTagCount(tagId: String): Int
+    
+    // ==================== ALBUM LINKING QUERIES ====================
+    
+    /**
+     * Update album linking for a tag.
+     */
+    @Query("""
+        UPDATE tags 
+        SET linked_album_id = :albumId, 
+            linked_album_name = :albumName, 
+            album_copy_mode = :copyMode 
+        WHERE id = :tagId
+    """)
+    suspend fun updateAlbumLink(tagId: String, albumId: String?, albumName: String?, copyMode: String?)
+    
+    /**
+     * Remove album link from a tag.
+     */
+    @Query("""
+        UPDATE tags 
+        SET linked_album_id = NULL, 
+            linked_album_name = NULL, 
+            album_copy_mode = NULL 
+        WHERE id = :tagId
+    """)
+    suspend fun removeAlbumLink(tagId: String)
+    
+    /**
+     * Get all tags that are linked to albums.
+     */
+    @Query("SELECT * FROM tags WHERE linked_album_id IS NOT NULL")
+    fun getAlbumLinkedTags(): Flow<List<TagEntity>>
+    
+    /**
+     * Get tag by linked album ID.
+     */
+    @Query("SELECT * FROM tags WHERE linked_album_id = :albumId LIMIT 1")
+    suspend fun getTagByLinkedAlbum(albumId: String): TagEntity?
+    
+    /**
+     * Check if an album is linked to any tag.
+     */
+    @Query("SELECT EXISTS(SELECT 1 FROM tags WHERE linked_album_id = :albumId LIMIT 1)")
+    suspend fun isAlbumLinked(albumId: String): Boolean
 }
 
 /**
@@ -212,14 +256,29 @@ data class TagWithCount(
     @androidx.room.ColumnInfo(name = "created_at")
     val createdAt: Long,
     @androidx.room.ColumnInfo(name = "photo_count")
-    val photoCount: Int
+    val photoCount: Int,
+    @androidx.room.ColumnInfo(name = "linked_album_id")
+    val linkedAlbumId: String? = null,
+    @androidx.room.ColumnInfo(name = "linked_album_name")
+    val linkedAlbumName: String? = null,
+    @androidx.room.ColumnInfo(name = "album_copy_mode")
+    val albumCopyMode: String? = null
 ) {
+    val isLinkedToAlbum: Boolean
+        get() = linkedAlbumId != null
+    
     fun toTagEntity() = TagEntity(
         id = id,
         name = name,
         parentId = parentId,
         color = color,
         sortOrder = sortOrder,
-        createdAt = createdAt
+        createdAt = createdAt,
+        linkedAlbumId = linkedAlbumId,
+        linkedAlbumName = linkedAlbumName,
+        albumCopyMode = albumCopyMode?.let { 
+            try { com.example.photozen.data.local.entity.AlbumCopyMode.valueOf(it) } 
+            catch (e: Exception) { null } 
+        }
     )
 }
