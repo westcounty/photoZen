@@ -9,6 +9,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -27,14 +29,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -43,8 +53,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import com.example.photozen.ui.components.SelectableStaggeredPhotoGrid
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -94,9 +106,12 @@ fun FlowSorterScreen(
     // Fullscreen viewer state
     var fullscreenPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
     
-    // Handle back press when in fullscreen mode
-    BackHandler(enabled = fullscreenPhoto != null) {
-        fullscreenPhoto = null
+    // Handle back press - exit selection mode first, then fullscreen, then navigate back
+    BackHandler(enabled = fullscreenPhoto != null || uiState.isSelectionMode) {
+        when {
+            fullscreenPhoto != null -> fullscreenPhoto = null
+            uiState.isSelectionMode -> viewModel.clearSelection()
+        }
     }
     
     // Show error messages
@@ -113,63 +128,96 @@ fun FlowSorterScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        Column {
+                        if (uiState.isSelectionMode) {
                             Text(
-                                text = "Flow Sorter",
+                                text = "已选择 ${uiState.selectedCount} 张",
                                 style = MaterialTheme.typography.titleLarge
                             )
-                            if (uiState.totalCount > 0) {
+                        } else {
+                            Column {
                                 Text(
-                                    text = "${uiState.sortedCount} / ${uiState.totalCount} 已整理",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    text = if (uiState.viewMode == FlowSorterViewMode.CARD) "Flow Sorter" else "列表整理",
+                                    style = MaterialTheme.typography.titleLarge
                                 )
+                                if (uiState.totalCount > 0) {
+                                    Text(
+                                        text = "${uiState.sortedCount} / ${uiState.totalCount} 已整理",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     },
                     navigationIcon = {
-                        IconButton(onClick = onNavigateBack) {
+                        IconButton(onClick = {
+                            if (uiState.isSelectionMode) {
+                                viewModel.clearSelection()
+                            } else {
+                                onNavigateBack()
+                            }
+                        }) {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回"
+                                imageVector = if (uiState.isSelectionMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = if (uiState.isSelectionMode) "取消选择" else "返回"
                             )
                         }
                     },
                     actions = {
-                        // Undo button
-                        AnimatedVisibility(
-                            visible = uiState.lastAction != null,
-                            enter = fadeIn() + scaleIn(),
-                            exit = fadeOut() + scaleOut()
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    hapticManager.performClick()
-                                    viewModel.undoLastAction()
-                                }
-                            ) {
+                        if (uiState.isSelectionMode) {
+                            // Select all button
+                            IconButton(onClick = { viewModel.selectAll() }) {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Undo,
-                                    contentDescription = "撤销"
+                                    imageVector = Icons.Default.SelectAll,
+                                    contentDescription = "全选"
                                 )
                             }
-                        }
-                        
-                        // Refresh button
-                        IconButton(
-                            onClick = { viewModel.syncPhotos() },
-                            enabled = !uiState.isSyncing
-                        ) {
-                            if (uiState.isSyncing) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
+                        } else {
+                            // View mode toggle
+                            IconButton(onClick = { viewModel.toggleViewMode() }) {
                                 Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = "刷新"
+                                    imageVector = if (uiState.viewMode == FlowSorterViewMode.CARD) 
+                                        Icons.Default.GridView else Icons.Default.ViewCarousel,
+                                    contentDescription = if (uiState.viewMode == FlowSorterViewMode.CARD)
+                                        "列表视图" else "卡片视图"
                                 )
+                            }
+                            
+                            // Undo button
+                            AnimatedVisibility(
+                                visible = uiState.lastAction != null && uiState.viewMode == FlowSorterViewMode.CARD,
+                                enter = fadeIn() + scaleIn(),
+                                exit = fadeOut() + scaleOut()
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        hapticManager.performClick()
+                                        viewModel.undoLastAction()
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Undo,
+                                        contentDescription = "撤销"
+                                    )
+                                }
+                            }
+                            
+                            // Refresh button
+                            IconButton(
+                                onClick = { viewModel.syncPhotos() },
+                                enabled = !uiState.isSyncing
+                            ) {
+                                if (uiState.isSyncing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "刷新"
+                                    )
+                                }
                             }
                         }
                     },
@@ -177,6 +225,21 @@ fun FlowSorterScreen(
                         containerColor = MaterialTheme.colorScheme.surface
                     )
                 )
+            },
+            bottomBar = {
+                // Batch action bar when in selection mode
+                AnimatedVisibility(
+                    visible = uiState.isSelectionMode,
+                    enter = slideInVertically { it },
+                    exit = slideOutVertically { it }
+                ) {
+                    BatchActionBar(
+                        selectedCount = uiState.selectedCount,
+                        onKeep = { viewModel.keepSelectedPhotos() },
+                        onTrash = { viewModel.trashSelectedPhotos() },
+                        onMaybe = { viewModel.maybeSelectedPhotos() }
+                    )
+                }
             }
         ) { paddingValues ->
             Column(
@@ -213,6 +276,20 @@ fun FlowSorterScreen(
                                 maybeCount = uiState.maybeCount,
                                 onNavigateToLightTable = onNavigateToLightTable,
                                 onGoBack = onNavigateBack
+                            )
+                        }
+                        uiState.viewMode == FlowSorterViewMode.LIST -> {
+                            // List view with staggered grid
+                            SelectableStaggeredPhotoGrid(
+                                photos = uiState.photos,
+                                selectedIds = uiState.selectedPhotoIds,
+                                onSelectionChanged = { viewModel.updateSelection(it) },
+                                onPhotoClick = { photoId, index ->
+                                    val photo = uiState.photos.find { it.id == photoId }
+                                    if (photo != null) {
+                                        fullscreenPhoto = photo
+                                    }
+                                }
                             )
                         }
                         else -> {
@@ -459,6 +536,80 @@ private fun StatItem(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+/**
+ * Bottom action bar for batch operations.
+ */
+@Composable
+private fun BatchActionBar(
+    selectedCount: Int,
+    onKeep: () -> Unit,
+    onTrash: () -> Unit,
+    onMaybe: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Keep button
+        FilledTonalButton(
+            onClick = onKeep,
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = KeepGreen.copy(alpha = 0.15f),
+                contentColor = KeepGreen
+            ),
+            modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("保留")
+        }
+        
+        // Trash button
+        FilledTonalButton(
+            onClick = onTrash,
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = TrashRed.copy(alpha = 0.15f),
+                contentColor = TrashRed
+            ),
+            modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("删除")
+        }
+        
+        // Maybe button
+        FilledTonalButton(
+            onClick = onMaybe,
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = MaybeAmber.copy(alpha = 0.15f),
+                contentColor = MaybeAmber
+            ),
+            modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.QuestionMark,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("待定")
+        }
     }
 }
 

@@ -129,15 +129,28 @@ fun openImageWithChooser(context: Context, imageUri: Uri) {
 
 /**
  * Share image using system share sheet.
+ * Handles content:// URIs properly for sharing.
  */
 fun shareImage(context: Context, imageUri: Uri) {
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "image/*"
-        putExtra(Intent.EXTRA_STREAM, imageUri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    try {
+        // Query the actual content URI to ensure we have the correct format
+        val contentUri = if (imageUri.scheme == "content") {
+            imageUri
+        } else {
+            // If not a content URI, try to convert it
+            Uri.parse(imageUri.toString())
+        }
+        
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/*"
+            putExtra(Intent.EXTRA_STREAM, contentUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val chooser = Intent.createChooser(intent, "分享图片")
+        context.startActivity(chooser)
+    } catch (e: Exception) {
+        Toast.makeText(context, "分享失败: ${e.message}", Toast.LENGTH_SHORT).show()
     }
-    val chooser = Intent.createChooser(intent, "分享图片")
-    context.startActivity(chooser)
 }
 
 /**

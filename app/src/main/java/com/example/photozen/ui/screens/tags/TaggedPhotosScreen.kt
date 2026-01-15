@@ -18,9 +18,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -289,11 +289,11 @@ private fun PhotoGrid(
     onPhotoClick: (String, Int) -> Unit,
     onPhotoLongPress: (String, String) -> Unit // photoId, photoUri
 ) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
-        contentPadding = PaddingValues(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+    LazyVerticalStaggeredGrid(
+        columns = StaggeredGridCells.Fixed(2),
+        contentPadding = PaddingValues(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalItemSpacing = 8.dp,
         modifier = Modifier.fillMaxSize()
     ) {
         itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
@@ -312,23 +312,34 @@ private fun PhotoGridItem(
     onClick: () -> Unit,
     onLongPress: () -> Unit
 ) {
+    val context = LocalContext.current
+    
+    // Calculate aspect ratio from photo dimensions
+    val aspectRatio = if (photo.width > 0 && photo.height > 0) {
+        photo.width.toFloat() / photo.height.toFloat()
+    } else {
+        1f // Default to square if dimensions unknown
+    }
+    
     Box(
         modifier = Modifier
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(4.dp))
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongPress
             )
     ) {
         AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
+            model = ImageRequest.Builder(context)
                 .data(photo.systemUri)
                 .crossfade(true)
                 .build(),
             contentDescription = photo.displayName,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(aspectRatio)
         )
     }
 }

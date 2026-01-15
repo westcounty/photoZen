@@ -18,9 +18,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -298,13 +298,14 @@ private fun PhotoGrid(
     photos: List<PhotoEntity>,
     onPhotoLongPress: (String, String) -> Unit // photoId, photoUri
 ) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
+    LazyVerticalStaggeredGrid(
+        columns = StaggeredGridCells.Fixed(2),
         contentPadding = PaddingValues(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalItemSpacing = 8.dp,
+        modifier = Modifier.fillMaxSize()
     ) {
-        items(photos, key = { it.id }) { photo ->
+        itemsIndexed(photos, key = { _, photo -> photo.id }) { _, photo ->
             PhotoGridItem(
                 photo = photo,
                 onLongPress = { onPhotoLongPress(photo.id, photo.systemUri) }
@@ -320,10 +321,18 @@ private fun PhotoGridItem(
     onLongPress: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
+    
+    // Calculate aspect ratio from photo dimensions
+    val aspectRatio = if (photo.width > 0 && photo.height > 0) {
+        photo.width.toFloat() / photo.height.toFloat()
+    } else {
+        1f // Default to square if dimensions unknown
+    }
     
     Box(
         modifier = Modifier
-            .aspectRatio(1f)
+            .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .combinedClickable(
                 onClick = { },
@@ -334,13 +343,15 @@ private fun PhotoGridItem(
             )
     ) {
         AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
+            model = ImageRequest.Builder(context)
                 .data(Uri.parse(photo.systemUri))
                 .crossfade(true)
                 .build(),
             contentDescription = photo.displayName,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(aspectRatio)
         )
     }
 }

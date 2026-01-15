@@ -61,6 +61,14 @@ enum class ComboLevel {
 }
 
 /**
+ * View mode for the flow sorter.
+ */
+enum class FlowSorterViewMode {
+    CARD,  // Single card swipe view
+    LIST   // Grid list with batch selection
+}
+
+/**
  * UI State for Flow Sorter screen.
  */
 data class FlowSorterUiState(
@@ -75,7 +83,9 @@ data class FlowSorterUiState(
     val maybeCount: Int = 0,
     val lastAction: SortAction? = null,
     val error: String? = null,
-    val combo: ComboState = ComboState()
+    val combo: ComboState = ComboState(),
+    val viewMode: FlowSorterViewMode = FlowSorterViewMode.CARD,
+    val selectedPhotoIds: Set<String> = emptySet()
 ) {
     val currentPhoto: PhotoEntity?
         get() = photos.getOrNull(currentIndex)
@@ -91,6 +101,12 @@ data class FlowSorterUiState(
     
     val progress: Float
         get() = if (totalCount > 0) sortedCount.toFloat() / totalCount else 0f
+    
+    val isSelectionMode: Boolean
+        get() = selectedPhotoIds.isNotEmpty()
+    
+    val selectedCount: Int
+        get() = selectedPhotoIds.size
 }
 
 /**
@@ -122,6 +138,8 @@ class FlowSorterViewModel @Inject constructor(
     private val _error = MutableStateFlow<String?>(null)
     private val _counters = MutableStateFlow(SortCounters())
     private val _combo = MutableStateFlow(ComboState())
+    private val _viewMode = MutableStateFlow(FlowSorterViewMode.CARD)
+    private val _selectedPhotoIds = MutableStateFlow<Set<String>>(emptySet())
     
     // Camera album IDs as StateFlow for reactive updates
     private val _cameraAlbumIds = MutableStateFlow<List<String>>(emptyList())
@@ -189,9 +207,9 @@ class FlowSorterViewModel @Inject constructor(
         _isSyncing,
         _currentIndex,
         _lastAction,
-        _error,
-        _counters,
-        _combo
+        combine(_error, _counters, _combo) { e, c, co -> Triple(e, c, co) },
+        _viewMode,
+        _selectedPhotoIds
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val photos = values[0] as List<PhotoEntity>
@@ -199,9 +217,13 @@ class FlowSorterViewModel @Inject constructor(
         val isSyncing = values[2] as Boolean
         val currentIndex = values[3] as Int
         val lastAction = values[4] as SortAction?
-        val error = values[5] as String?
-        val counters = values[6] as SortCounters
-        val combo = values[7] as ComboState
+        val combined = values[5] as Triple<String?, SortCounters, ComboState>
+        val viewMode = values[6] as FlowSorterViewMode
+        val selectedIds = values[7] as Set<String>
+        
+        val error = combined.first
+        val counters = combined.second
+        val combo = combined.third
         
         FlowSorterUiState(
             photos = photos,
@@ -215,7 +237,9 @@ class FlowSorterViewModel @Inject constructor(
             maybeCount = counters.maybe,
             lastAction = lastAction,
             error = error,
-            combo = combo
+            combo = combo,
+            viewMode = viewMode,
+            selectedPhotoIds = selectedIds
         )
     }.stateIn(
         scope = viewModelScope,
@@ -361,6 +385,103 @@ class FlowSorterViewModel @Inject constructor(
      */
     fun clearError() {
         _error.value = null
+    }
+    
+    /**
+     * Switch between card and list view mode.
+     */
+    fun toggleViewMode() {
+        _viewMode.value = if (_viewMode.value == FlowSorterViewMode.CARD) {
+            FlowSorterViewMode.LIST
+        } else {
+            FlowSorterViewMode.CARD
+        }
+        // Clear selection when switching modes
+        _selectedPhotoIds.value = emptySet()
+    }
+    
+    /**
+     * Update selected photo IDs.
+     */
+    fun updateSelection(selectedIds: Set<String>) {
+        _selectedPhotoIds.value = selectedIds
+    }
+    
+    /**
+     * Clear all selections.
+     */
+    fun clearSelection() {
+        _selectedPhotoIds.value = emptySet()
+    }
+    
+    /**
+     * Select all photos.
+     */
+    fun selectAll() {
+        _selectedPhotoIds.value = uiState.value.photos.map { it.id }.toSet()
+    }
+    
+    /**
+     * Batch keep selected photos.
+     */
+    fun keepSelectedPhotos() {
+        val selectedIds = _selectedPhotoIds.value.toList()
+        if (selectedIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            try {
+                selectedIds.forEach { photoId ->
+                    sortPhotoUseCase.keepPhoto(photoId)
+                }
+                _counters.value = _counters.value.copy(keep = _counters.value.keep + selectedIds.size)
+                preferencesRepository.incrementSortedCount(selectedIds.size)
+                _selectedPhotoIds.value = emptySet()
+            } catch (e: Exception) {
+                _error.value = "批量操作失败: ${e.message}"
+            }
+        }
+    }
+    
+    /**
+     * Batch trash selected photos.
+     */
+    fun trashSelectedPhotos() {
+        val selectedIds = _selectedPhotoIds.value.toList()
+        if (selectedIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            try {
+                selectedIds.forEach { photoId ->
+                    sortPhotoUseCase.trashPhoto(photoId)
+                }
+                _counters.value = _counters.value.copy(trash = _counters.value.trash + selectedIds.size)
+                preferencesRepository.incrementSortedCount(selectedIds.size)
+                _selectedPhotoIds.value = emptySet()
+            } catch (e: Exception) {
+                _error.value = "批量操作失败: ${e.message}"
+            }
+        }
+    }
+    
+    /**
+     * Batch maybe selected photos.
+     */
+    fun maybeSelectedPhotos() {
+        val selectedIds = _selectedPhotoIds.value.toList()
+        if (selectedIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            try {
+                selectedIds.forEach { photoId ->
+                    sortPhotoUseCase.maybePhoto(photoId)
+                }
+                _counters.value = _counters.value.copy(maybe = _counters.value.maybe + selectedIds.size)
+                preferencesRepository.incrementSortedCount(selectedIds.size)
+                _selectedPhotoIds.value = emptySet()
+            } catch (e: Exception) {
+                _error.value = "批量操作失败: ${e.message}"
+            }
+        }
     }
     
     /**
