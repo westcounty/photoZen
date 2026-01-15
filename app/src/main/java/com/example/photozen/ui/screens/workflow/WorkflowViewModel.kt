@@ -4,14 +4,23 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.data.repository.PhotoFilterMode
+import com.example.photozen.data.repository.PreferencesRepository
+import com.example.photozen.data.source.MediaStoreDataSource
 import com.example.photozen.domain.usecase.GetPhotosUseCase
+import com.example.photozen.domain.usecase.GetUnsortedPhotosUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -147,14 +156,96 @@ data class WorkflowUiState(
  */
 @HiltViewModel
 class WorkflowViewModel @Inject constructor(
-    private val getPhotosUseCase: GetPhotosUseCase
+    private val getPhotosUseCase: GetPhotosUseCase,
+    private val getUnsortedPhotosUseCase: GetUnsortedPhotosUseCase,
+    private val preferencesRepository: PreferencesRepository,
+    private val mediaStoreDataSource: MediaStoreDataSource
 ) : ViewModel() {
     
     private val _internalState = MutableStateFlow(InternalState())
     
+    // Camera album IDs for filtering
+    private val _cameraAlbumIds = MutableStateFlow<List<String>>(emptyList())
+    private val _cameraAlbumsLoaded = MutableStateFlow(false)
+    
+    init {
+        // Load camera album IDs for filtering
+        viewModelScope.launch {
+            loadCameraAlbumIds()
+        }
+    }
+    
+    /**
+     * Load camera album IDs from MediaStore.
+     */
+    private suspend fun loadCameraAlbumIds() {
+        try {
+            val albums = mediaStoreDataSource.getAllAlbums()
+            _cameraAlbumIds.value = albums.filter { it.isCamera }.map { it.id }
+        } catch (e: Exception) {
+            // Ignore errors, just use empty list
+        } finally {
+            _cameraAlbumsLoaded.value = true
+        }
+    }
+    
+    /**
+     * Get filtered unsorted count based on current filter mode.
+     * This matches the same filtering logic used in FlowSorterViewModel.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun getFilteredUnsortedCountFlow() = combine(
+        preferencesRepository.getPhotoFilterMode(),
+        _cameraAlbumIds,
+        _cameraAlbumsLoaded,
+        preferencesRepository.getSessionCustomFilterFlow()
+    ) { filterMode, cameraIds, loaded, sessionFilter ->
+        FilterParams(filterMode, cameraIds, loaded, sessionFilter)
+    }.flatMapLatest { params ->
+        when (params.filterMode) {
+            PhotoFilterMode.ALL -> getUnsortedPhotosUseCase.getCount()
+            PhotoFilterMode.CAMERA_ONLY -> {
+                if (!params.cameraLoaded) {
+                    flowOf(0)
+                } else if (params.cameraIds.isNotEmpty()) {
+                    getUnsortedPhotosUseCase.getCountByBuckets(params.cameraIds)
+                } else {
+                    flowOf(0)
+                }
+            }
+            PhotoFilterMode.EXCLUDE_CAMERA -> {
+                if (!params.cameraLoaded) {
+                    flowOf(0)
+                } else if (params.cameraIds.isNotEmpty()) {
+                    getUnsortedPhotosUseCase.getCountExcludingBuckets(params.cameraIds)
+                } else {
+                    getUnsortedPhotosUseCase.getCount()
+                }
+            }
+            PhotoFilterMode.CUSTOM -> {
+                val filter = params.sessionFilter
+                if (filter != null && !filter.albumIds.isNullOrEmpty()) {
+                    getUnsortedPhotosUseCase.getCountByBuckets(filter.albumIds)
+                } else {
+                    getUnsortedPhotosUseCase.getCount()
+                }
+            }
+        }
+    }
+    
+    /**
+     * Helper data class for filter parameters.
+     */
+    private data class FilterParams(
+        val filterMode: PhotoFilterMode,
+        val cameraIds: List<String>,
+        val cameraLoaded: Boolean,
+        val sessionFilter: com.example.photozen.data.repository.CustomFilterSession?
+    )
+    
     val uiState: StateFlow<WorkflowUiState> = combine(
         _internalState,
-        getPhotosUseCase.getCountByStatus(PhotoStatus.UNSORTED),
+        getFilteredUnsortedCountFlow(),
         getPhotosUseCase.getPhotosByStatus(PhotoStatus.MAYBE),
         getPhotosUseCase.getPhotosByStatus(PhotoStatus.KEEP)
     ) { internal, unsortedCount, maybePhotos, keepPhotos ->

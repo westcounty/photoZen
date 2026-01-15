@@ -99,20 +99,18 @@ class MediaStoreDataSource @Inject constructor(
      * - DCIM folder: DCIM
      * - Numbered folders: 100ANDRO, 100MEDIA, etc.
      * - Device-specific: OpenCamera, Gcam, etc.
+     * NOTE: Screenshots are NOT included as camera photos
      */
     private fun isCameraAlbum(albumName: String): Boolean {
         val lowerName = albumName.lowercase()
         return lowerName == "camera" || 
-               lowerName.contains("camera") ||  // More inclusive matching
+               lowerName.contains("camera") ||
                albumName == "相机" ||
                albumName.contains("相机") ||
                lowerName == "dcim" ||
                lowerName.startsWith("100") ||  // 100ANDRO, 100MEDIA, etc.
-               lowerName.startsWith("img") ||  // IMG_xxx folders
                lowerName == "opencamera" ||
-               lowerName == "gcam" ||
-               lowerName == "snapchat" ||
-               lowerName == "screenshots"  // Also include screenshots as camera photos
+               lowerName == "gcam"
     }
     
     /**

@@ -198,11 +198,12 @@ fun PicZenNavHost(
                     navController.popBackStack()
                     when (route.mode) {
                         "flow" -> navController.navigate(Screen.FlowSorter)
+                        "workflow" -> navController.navigate(Screen.Workflow)
                         "quicktag" -> navController.navigate(Screen.QuickTag)
                         else -> navController.navigate(Screen.FlowSorter)
                     }
-                    // Note: The filter parameters are stored in a shared ViewModel or PreferencesRepository
-                    // for use by FlowSorter/QuickTag
+                    // Note: The filter parameters are stored in PreferencesRepository
+                    // for use by FlowSorter/Workflow/QuickTag
                 }
             )
         }

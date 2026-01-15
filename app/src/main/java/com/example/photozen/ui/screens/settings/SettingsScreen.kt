@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
@@ -256,7 +257,7 @@ private fun FilterOption(
 }
 
 /**
- * Changelog dialog showing version history.
+ * App introduction dialog showing features and highlights.
  */
 @Composable
 private fun ChangelogDialog(onDismiss: () -> Unit) {
@@ -265,88 +266,99 @@ private fun ChangelogDialog(onDismiss: () -> Unit) {
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Default.History,
+                    imageVector = Icons.Default.AutoAwesome,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("更新日志")
+                Text("关于 PhotoZen")
             }
         },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Version 1.5.9 - Current
-                ChangelogVersion(
-                    version = "1.5.9",
-                    date = "2026-01-16",
-                    changes = listOf(
-                        "🔧 彻底修复筛选：首页正确显示筛选后的待整理数量",
-                        "⏳ 加载状态：相机相册加载完成前不显示错误数据",
-                        "📷 增强相机识别：覆盖更多设备和相册命名"
-                    )
+                // App positioning
+                Text(
+                    text = "📷 让整理照片变成一种享受",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "PhotoZen 是一款专为摄影爱好者设计的照片整理神器。告别繁琐的相册管理，用最自然的方式筛选你的照片。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 
-                // Version 1.5.8
-                ChangelogVersion(
-                    version = "1.5.8",
-                    date = "2026-01-16",
-                    changes = listOf(
-                        "🔧 彻底修复Flow筛选：自定义筛选条件改为响应式，实时生效",
-                        "🚀 CUSTOM模式正确导航：每次整理前选择会正确跳转到筛选界面"
-                    )
+                HorizontalDivider()
+                
+                // Core features
+                FeatureSection(
+                    title = "🎴 滑动整理",
+                    description = "像刷 Tinder 一样筛选照片！左右滑保留，上滑删除，下滑待定。丝滑动画 + 触感反馈，让整理变成解压游戏。"
+                )
+                
+                FeatureSection(
+                    title = "🔍 对比抉择",
+                    description = "纠结哪张更好？同时对比多张照片，同步缩放查看细节，轻松做出取舍。"
+                )
+                
+                FeatureSection(
+                    title = "🏷️ 标签气泡",
+                    description = "可拖拽的物理气泡图！标签越大说明照片越多，拖来拖去还有弹性碰撞，谁说管理标签不能好玩？"
+                )
+                
+                FeatureSection(
+                    title = "✂️ 无损编辑",
+                    description = "裁切照片不伤原图，还能创建虚拟副本。一张照片多种构图，随时恢复，尽情尝试。"
+                )
+                
+                FeatureSection(
+                    title = "🚀 心流模式",
+                    description = "一键进入沉浸式整理：滑动→对比→打标签→完成！连击系统让你越整理越上瘾。"
+                )
+                
+                FeatureSection(
+                    title = "🏆 成就系统",
+                    description = "50+ 成就等你解锁！从整理新手到传说大师，每一步都有惊喜。"
                 )
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("关闭")
+                Text("知道了")
             }
         }
     )
 }
 
 /**
- * Single version changelog entry.
+ * Feature section in the about dialog.
  */
 @Composable
-private fun ChangelogVersion(
-    version: String,
-    date: String,
-    changes: List<String>
+private fun FeatureSection(
+    title: String,
+    description: String
 ) {
     Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "v$version",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                text = date,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        changes.forEach { change ->
-            Text(
-                text = change,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(vertical = 2.dp)
-            )
-        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
+
 
 /**
  * Acknowledgement card for early testers.
@@ -436,16 +448,16 @@ private fun AboutCard(onVersionClick: () -> Unit) {
             
             // Clickable version number
             Text(
-                text = "版本 1.5.9",
+                text = "版本 1.0.0.001",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
                     .clickable(onClick = onVersionClick)
                     .padding(vertical = 4.dp)
             )
-            
+
             Text(
-                text = "点击查看更新日志",
+                text = "点击了解更多",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )

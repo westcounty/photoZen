@@ -216,7 +216,14 @@ fun HomeScreen(
                         totalCount = uiState.filteredTotal,
                         progress = uiState.filteredProgress,
                         filterMode = uiState.photoFilterMode,
-                        onStartFlow = onNavigateToWorkflow
+                        onStartFlow = {
+                            // Check if custom filter selection is needed before starting Flow
+                            if (uiState.needsFilterSelection) {
+                                onNavigateToFilterSelection("workflow")
+                            } else {
+                                onNavigateToWorkflow()
+                            }
+                        }
                     )
                 }
             }
@@ -488,7 +495,7 @@ private fun MissionCard(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "整理任务",
+                            text = "一站式整理",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
@@ -605,7 +612,7 @@ private fun MissionCard(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "开始 Flow",
+                    text = "进入心流",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
