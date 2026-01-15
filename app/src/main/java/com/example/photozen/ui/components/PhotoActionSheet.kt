@@ -129,23 +129,44 @@ fun openImageWithChooser(context: Context, imageUri: Uri) {
 
 /**
  * Share image using system share sheet.
- * Handles content:// URIs properly for sharing.
+ * Properly queries MIME type from MediaStore for correct sharing.
  */
 fun shareImage(context: Context, imageUri: Uri) {
     try {
-        // Query the actual content URI to ensure we have the correct format
         val contentUri = if (imageUri.scheme == "content") {
             imageUri
         } else {
-            // If not a content URI, try to convert it
             Uri.parse(imageUri.toString())
         }
         
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "image/*"
-            putExtra(Intent.EXTRA_STREAM, contentUri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        // Query the actual MIME type from MediaStore
+        var mimeType = "image/jpeg"
+        context.contentResolver.query(
+            contentUri,
+            arrayOf(android.provider.MediaStore.Images.Media.MIME_TYPE),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                mimeType = cursor.getString(0) ?: "image/jpeg"
+            }
         }
+        
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            // Set the specific MIME type instead of wildcard
+            type = mimeType
+            putExtra(Intent.EXTRA_STREAM, contentUri)
+            // Grant read permission to receiving app
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            // Add clip data for better compatibility
+            clipData = android.content.ClipData.newUri(
+                context.contentResolver,
+                "Image",
+                contentUri
+            )
+        }
+        
         val chooser = Intent.createChooser(intent, "分享图片")
         context.startActivity(chooser)
     } catch (e: Exception) {

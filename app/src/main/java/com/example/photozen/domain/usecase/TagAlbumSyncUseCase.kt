@@ -82,15 +82,16 @@ class TagAlbumSyncUseCase @Inject constructor(
                 return@withContext LinkAlbumResult.Error("相册「$albumName」已存在")
             }
             
-            // Create the album
+            // Get the relative path for the new album
             val albumInfo = mediaStoreDataSource.createAlbum(albumName)
-                ?: return@withContext LinkAlbumResult.Error("创建相册失败")
+                ?: return@withContext LinkAlbumResult.Error("无法创建相册路径")
             
-            val (bucketId, albumPath) = albumInfo
+            val (tempBucketId, albumPath) = albumInfo
             
             // Get photos with this tag
             val photoIds = tagDao.getPhotoIdsWithTag(tagId).first()
             var photosCopied = 0
+            var actualBucketId = tempBucketId
             
             // Copy/move each photo to the album
             for (photoId in photoIds) {
@@ -109,6 +110,11 @@ class TagAlbumSyncUseCase @Inject constructor(
                         // Add the tag to the new photo
                         tagDao.addTagToPhoto(PhotoTagCrossRef(newPhoto.id, tagId))
                         
+                        // Get the actual bucket_id from the first copied photo
+                        if (photosCopied == 0 && newPhoto.bucketId != null) {
+                            actualBucketId = newPhoto.bucketId
+                        }
+                        
                         if (copyMode == AlbumCopyMode.MOVE) {
                             // Remove the old photo-tag relationship
                             tagDao.removeTagFromPhoto(photoId, tagId)
@@ -119,10 +125,14 @@ class TagAlbumSyncUseCase @Inject constructor(
                 }
             }
             
-            // After copying, get the actual bucket_id from the album
-            // (It might be different from our calculated hash)
-            val actualAlbum = mediaStoreDataSource.findAlbumByName(albumName)
-            val actualBucketId = actualAlbum?.id ?: bucketId
+            // If we didn't copy any photos, try to find the album anyway
+            // (in case it was created by previous operations)
+            if (photosCopied == 0) {
+                val foundAlbum = mediaStoreDataSource.findAlbumByName(albumName)
+                if (foundAlbum != null) {
+                    actualBucketId = foundAlbum.id
+                }
+            }
             
             // Update the tag with album link
             tagDao.updateAlbumLink(tagId, actualBucketId, albumName, copyMode.name)

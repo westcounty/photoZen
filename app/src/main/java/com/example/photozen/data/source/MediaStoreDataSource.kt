@@ -466,47 +466,31 @@ class MediaStoreDataSource @Inject constructor(
     
     /**
      * Create a new album (folder) in Pictures directory.
-     * Returns the bucket ID of the created album, or null if failed.
+     * Returns the album name (used as relative path for Android 10+).
      * 
      * @param albumName Name of the album to create
-     * @return Pair of (bucketId, fullPath) or null if creation failed
+     * @return The album name/path for use in subsequent operations, or null if failed
      */
     suspend fun createAlbum(albumName: String): Pair<String, String>? = withContext(Dispatchers.IO) {
         try {
-            val picturesDir = android.os.Environment.getExternalStoragePublicDirectory(
-                android.os.Environment.DIRECTORY_PICTURES
-            )
-            val albumDir = java.io.File(picturesDir, albumName)
+            // For Android 10+, we don't need to create the directory manually
+            // It will be created automatically when we add the first file
+            // Just return the album name for use in RELATIVE_PATH
+            val relativePath = "${android.os.Environment.DIRECTORY_PICTURES}/$albumName"
             
-            if (!albumDir.exists()) {
-                if (!albumDir.mkdirs()) {
-                    return@withContext null
-                }
-            }
-            
-            // Create a placeholder file to register the album in MediaStore
-            // This ensures the album appears immediately
-            val placeholderFile = java.io.File(albumDir, ".nomedia_temp")
-            if (!placeholderFile.exists()) {
-                placeholderFile.createNewFile()
-                // Delete it immediately - we just needed it to create the directory
-                placeholderFile.delete()
-            }
-            
-            // The bucket_id is typically the hash of the directory path
-            val bucketId = albumDir.absolutePath.hashCode().toString()
-            Pair(bucketId, albumDir.absolutePath)
+            // Return a placeholder bucket_id (will be updated after first file is added)
+            // and the relative path for MediaStore operations
+            Pair(albumName.hashCode().toString(), relativePath)
         } catch (e: Exception) {
             null
         }
     }
     
     /**
-     * Copy a photo to a target album.
-     * Returns the new content URI and MediaStore ID, or null if failed.
+     * Copy a photo to a target album using MediaStore API (works on Android 10+).
      * 
      * @param sourceUri Source content URI of the photo
-     * @param targetAlbumPath Full path to the target album directory
+     * @param targetAlbumPath Relative path for the target album (e.g., "Pictures/MyAlbum")
      * @param displayName Display name for the new file (if null, uses original name)
      * @return New PhotoEntity with updated systemUri and id, or null if failed
      */
@@ -542,36 +526,15 @@ class MediaStoreDataSource @Inject constructor(
                 originalName = "IMG_${System.currentTimeMillis()}.jpg"
             }
             
-            // Determine target file name (avoid duplicates)
-            val targetDir = java.io.File(targetAlbumPath)
-            var targetFile = java.io.File(targetDir, originalName)
-            var counter = 1
-            while (targetFile.exists()) {
-                val nameWithoutExt = originalName!!.substringBeforeLast(".")
-                val ext = originalName!!.substringAfterLast(".", "")
-                targetFile = java.io.File(targetDir, "${nameWithoutExt}_$counter.$ext")
-                counter++
-            }
-            
-            // Copy the file
-            contentResolver.openInputStream(sourceUri)?.use { input ->
-                java.io.FileOutputStream(targetFile).use { output ->
-                    input.copyTo(output)
-                }
-            } ?: return@withContext null
-            
-            // Add to MediaStore
+            // Create new entry in MediaStore using proper API for Android 10+
             val values = android.content.ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, targetFile.name)
+                put(MediaStore.Images.Media.DISPLAY_NAME, originalName)
                 put(MediaStore.Images.Media.MIME_TYPE, mimeType)
                 put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis() / 1000)
                 put(MediaStore.Images.Media.DATE_MODIFIED, System.currentTimeMillis() / 1000)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(MediaStore.Images.Media.RELATIVE_PATH, 
-                        "${android.os.Environment.DIRECTORY_PICTURES}/${targetDir.name}")
-                    put(MediaStore.Images.Media.IS_PENDING, 0)
-                } else {
-                    put(MediaStore.Images.Media.DATA, targetFile.absolutePath)
+                    put(MediaStore.Images.Media.RELATIVE_PATH, targetAlbumPath)
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
                 }
             }
             
@@ -580,8 +543,29 @@ class MediaStoreDataSource @Inject constructor(
                 values
             ) ?: return@withContext null
             
+            // Copy the file content
+            try {
+                contentResolver.openInputStream(sourceUri)?.use { input ->
+                    contentResolver.openOutputStream(newUri)?.use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                
+                // Mark as not pending (Android 10+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val updateValues = android.content.ContentValues().apply {
+                        put(MediaStore.Images.Media.IS_PENDING, 0)
+                    }
+                    contentResolver.update(newUri, updateValues, null, null)
+                }
+            } catch (e: Exception) {
+                // Clean up on failure
+                contentResolver.delete(newUri, null, null)
+                return@withContext null
+            }
+            
             // Fetch the newly created photo entity
-            val mediaStoreId = android.content.ContentUris.parseId(newUri)
+            val mediaStoreId = ContentUris.parseId(newUri)
             fetchPhotoById(mediaStoreId)
         } catch (e: Exception) {
             null
