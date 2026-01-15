@@ -647,6 +647,46 @@ class MediaStoreDataSource @Inject constructor(
     }
     
     /**
+     * Get the relative path for an existing album by bucket ID.
+     * Returns the RELATIVE_PATH that can be used for copying/moving photos to this album.
+     */
+    suspend fun getAlbumPath(bucketId: String): String? = withContext(Dispatchers.IO) {
+        try {
+            // Query any photo in this album to get its RELATIVE_PATH
+            contentResolver.query(
+                imageCollection,
+                arrayOf(MediaStore.Images.Media.RELATIVE_PATH, MediaStore.Images.Media.BUCKET_DISPLAY_NAME),
+                "${MediaStore.Images.Media.BUCKET_ID} = ?",
+                arrayOf(bucketId),
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val pathColumn = cursor.getColumnIndex(MediaStore.Images.Media.RELATIVE_PATH)
+                    val nameColumn = cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
+                    
+                    if (pathColumn >= 0) {
+                        val path = cursor.getString(pathColumn)
+                        if (!path.isNullOrBlank()) {
+                            return@withContext path.trimEnd('/')
+                        }
+                    }
+                    
+                    // Fallback: construct path from bucket name
+                    if (nameColumn >= 0) {
+                        val albumName = cursor.getString(nameColumn)
+                        if (!albumName.isNullOrBlank()) {
+                            return@withContext "${android.os.Environment.DIRECTORY_PICTURES}/$albumName"
+                        }
+                    }
+                }
+            }
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    /**
      * Delete an album and all its photos.
      * On Android 10+, this may require user confirmation.
      * 

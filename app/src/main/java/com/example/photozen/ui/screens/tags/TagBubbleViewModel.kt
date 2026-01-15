@@ -11,7 +11,6 @@ import com.example.photozen.data.local.entity.TagEntity
 import com.example.photozen.data.source.Album
 import com.example.photozen.domain.usecase.CreateLinkAlbumResult
 import com.example.photozen.domain.usecase.DeleteTagResult
-import com.example.photozen.domain.usecase.LinkAlbumResult
 import com.example.photozen.domain.usecase.TagAlbumSyncUseCase
 import com.example.photozen.ui.components.bubble.BubbleNode
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -253,21 +252,35 @@ class TagBubbleViewModel @Inject constructor(
     
     /**
      * Link an existing album to a tag.
+     * Tagged photos not in the album will be copied/moved based on copyMode.
      */
     fun linkExistingAlbum(tagId: String, album: Album, copyMode: AlbumCopyMode) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
                 when (val result = tagAlbumSyncUseCase.linkExistingAlbum(tagId, album, copyMode)) {
-                    is LinkAlbumResult.Success -> {
-                        _uiState.update { 
+                    is CreateLinkAlbumResult.Success -> {
+                        _uiState.update {
                             it.copy(
                                 isLoading = false,
                                 message = "已关联相册「${result.albumName}」，已同步 ${result.photosAdded} 张照片"
-                            ) 
+                            )
                         }
                     }
-                    is LinkAlbumResult.Error -> {
+                    is CreateLinkAlbumResult.RequiresDeleteConfirmation -> {
+                        // Album linked and photos copied, but need user confirmation to delete originals
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                pendingDeleteRequest = PendingDeleteRequest(
+                                    intentSender = result.intentSender,
+                                    tagIdToDeleteAfter = null,
+                                    message = "已关联相册「${result.albumName}」并移动 ${result.photosAdded} 张照片"
+                                )
+                            )
+                        }
+                    }
+                    is CreateLinkAlbumResult.Error -> {
                         _uiState.update { it.copy(isLoading = false, error = result.message) }
                     }
                 }

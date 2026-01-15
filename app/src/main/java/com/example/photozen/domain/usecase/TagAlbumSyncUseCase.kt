@@ -225,26 +225,32 @@ class TagAlbumSyncUseCase @Inject constructor(
     
     /**
      * Link an existing album to a tag.
-     * Photos in the album will be automatically tagged.
+     * - Photos in the album will be automatically tagged
+     * - Photos with this tag but not in album will be copied/moved to album based on copyMode
      * 
      * @param tagId The tag to link
      * @param album The existing album to link
-     * @param copyMode Mode for future photo additions
-     * @return Result indicating success or failure
+     * @param copyMode Whether to COPY or MOVE existing tagged photos to the album
+     * @return Result indicating success, need for confirmation (MOVE mode), or failure
      */
     suspend fun linkExistingAlbum(
         tagId: String,
         album: Album,
         copyMode: AlbumCopyMode
-    ): LinkAlbumResult = withContext(Dispatchers.IO) {
+    ): CreateLinkAlbumResult = withContext(Dispatchers.IO) {
         try {
             // Check if album is already linked
             if (tagDao.isAlbumLinked(album.id)) {
-                return@withContext LinkAlbumResult.Error("该相册已关联到其他标签")
+                return@withContext CreateLinkAlbumResult.Error("该相册已关联到其他标签")
             }
+            
+            // Get album path for copying photos
+            val albumPath = mediaStoreDataSource.getAlbumPath(album.id)
+                ?: return@withContext CreateLinkAlbumResult.Error("无法获取相册路径")
             
             // Get all photos from the album
             val albumPhotos = mediaStoreDataSource.getPhotosFromAlbum(album.id)
+            val albumPhotoIds = albumPhotos.map { it.id }.toSet()
             var photosTagged = 0
             
             // Tag each photo in the album
@@ -262,16 +268,84 @@ class TagAlbumSyncUseCase @Inject constructor(
                 }
             }
             
+            // Get photos with this tag that are NOT in the album
+            val taggedPhotoIds = tagDao.getPhotoIdsWithTag(tagId).first()
+            val photosNotInAlbum = taggedPhotoIds.filter { it !in albumPhotoIds }
+            
+            // Collect URIs of original photos for MOVE mode deletion
+            val originalUrisToDelete = mutableListOf<Uri>()
+            var photosCopied = 0
+            
+            // Copy/move tagged photos that are not in the album
+            for (photoId in photosNotInAlbum) {
+                val photo = photoDao.getById(photoId)
+                if (photo != null) {
+                    val sourceUri = Uri.parse(photo.systemUri)
+                    
+                    // Copy photo to album
+                    val newPhoto = mediaStoreDataSource.copyPhotoToAlbum(sourceUri, albumPath)
+                    
+                    if (newPhoto != null) {
+                        // Save the new photo to our database
+                        photoDao.insert(newPhoto)
+                        // Add the tag to the new photo
+                        tagDao.addTagToPhoto(PhotoTagCrossRef(newPhoto.id, tagId))
+                        
+                        // Remove tag from old photo to avoid duplicates
+                        tagDao.removeTagFromPhoto(photoId, tagId)
+                        
+                        // For MOVE mode, collect original URIs for deletion
+                        if (copyMode == AlbumCopyMode.MOVE) {
+                            originalUrisToDelete.add(sourceUri)
+                        }
+                        
+                        photosCopied++
+                    }
+                }
+            }
+            
             // Update the tag with album link
             tagDao.updateAlbumLink(tagId, album.id, album.name, copyMode.name)
             
-            LinkAlbumResult.Success(
-                albumId = album.id,
-                albumName = album.name,
-                photosAdded = photosTagged
-            )
+            val totalPhotosAdded = photosTagged + photosCopied
+            
+            // For MOVE mode, request deletion of original photos
+            if (copyMode == AlbumCopyMode.MOVE && originalUrisToDelete.isNotEmpty()) {
+                when (val deleteResult = mediaStoreDataSource.deletePhotos(originalUrisToDelete)) {
+                    is DeleteResult.RequiresConfirmation -> {
+                        CreateLinkAlbumResult.RequiresDeleteConfirmation(
+                            albumId = album.id,
+                            albumName = album.name,
+                            photosAdded = totalPhotosAdded,
+                            intentSender = deleteResult.intentSender,
+                            pendingDeleteUris = deleteResult.uris
+                        )
+                    }
+                    is DeleteResult.Success -> {
+                        CreateLinkAlbumResult.Success(
+                            albumId = album.id,
+                            albumName = album.name,
+                            photosAdded = totalPhotosAdded
+                        )
+                    }
+                    is DeleteResult.Failed -> {
+                        // Photos copied but original deletion failed - still return success
+                        CreateLinkAlbumResult.Success(
+                            albumId = album.id,
+                            albumName = album.name,
+                            photosAdded = totalPhotosAdded
+                        )
+                    }
+                }
+            } else {
+                CreateLinkAlbumResult.Success(
+                    albumId = album.id,
+                    albumName = album.name,
+                    photosAdded = totalPhotosAdded
+                )
+            }
         } catch (e: Exception) {
-            LinkAlbumResult.Error("关联相册失败: ${e.message}")
+            CreateLinkAlbumResult.Error("关联相册失败: ${e.message}")
         }
     }
     
