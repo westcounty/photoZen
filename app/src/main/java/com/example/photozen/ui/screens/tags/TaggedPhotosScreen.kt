@@ -2,6 +2,7 @@
 
 package com.example.photozen.ui.screens.tags
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -61,6 +62,8 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.local.entity.TagEntity
+import com.example.photozen.ui.components.TaggedPhotoActionSheet
+import com.example.photozen.ui.components.openImageWithApp
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -89,10 +92,13 @@ fun TaggedPhotosScreen(
     viewModel: TaggedPhotosViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var showFullscreen by remember { mutableStateOf(false) }
     var fullscreenStartIndex by remember { mutableIntStateOf(0) }
     var selectedPhotoId by remember { mutableStateOf<String?>(null) }
-    var showActionDialog by remember { mutableStateOf(false) }
+    var selectedPhotoUri by remember { mutableStateOf<String?>(null) }
+    var showActionSheet by remember { mutableStateOf(false) }
     var showChangeTagDialog by remember { mutableStateOf(false) }
     
     // Load photos for this tag
@@ -153,9 +159,10 @@ fun TaggedPhotosScreen(
                             fullscreenStartIndex = index
                             showFullscreen = true
                         },
-                        onPhotoLongPress = { photoId ->
+                        onPhotoLongPress = { photoId, photoUri ->
                             selectedPhotoId = photoId
-                            showActionDialog = true
+                            selectedPhotoUri = photoUri
+                            showActionSheet = true
                         }
                     )
                 }
@@ -172,23 +179,34 @@ fun TaggedPhotosScreen(
         )
     }
 
-    if (showActionDialog && selectedPhotoId != null) {
+    if (showActionSheet && selectedPhotoId != null && selectedPhotoUri != null) {
         val photoId = selectedPhotoId!!
-        ActionSheetDialog(
-            onDismiss = { showActionDialog = false },
-            onEdit = {
-                showActionDialog = false
+        val photoUri = selectedPhotoUri!!
+        TaggedPhotoActionSheet(
+            imageUri = photoUri,
+            onDismiss = { 
+                showActionSheet = false
                 selectedPhotoId = null
+                selectedPhotoUri = null
+            },
+            onEdit = {
                 onNavigateToEditor(photoId)
             },
             onRemoveTag = {
                 viewModel.removeTagFromPhoto(photoId)
-                showActionDialog = false
-                selectedPhotoId = null
             },
             onChangeTag = {
-                showActionDialog = false
+                showActionSheet = false
                 showChangeTagDialog = true
+            },
+            onOpenWithApp = { packageName ->
+                openImageWithApp(context, Uri.parse(photoUri), packageName)
+            },
+            defaultAppPackage = uiState.defaultExternalApp,
+            onSetDefaultApp = { packageName ->
+                scope.launch {
+                    viewModel.setDefaultExternalApp(packageName)
+                }
             }
         )
     }
@@ -269,7 +287,7 @@ private fun EmptyContent(tagName: String) {
 private fun PhotoGrid(
     photos: List<PhotoEntity>,
     onPhotoClick: (String, Int) -> Unit,
-    onPhotoLongPress: (String) -> Unit
+    onPhotoLongPress: (String, String) -> Unit // photoId, photoUri
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
@@ -282,7 +300,7 @@ private fun PhotoGrid(
             PhotoGridItem(
                 photo = photo,
                 onClick = { onPhotoClick(photo.id, index) },
-                onLongPress = { onPhotoLongPress(photo.id) }
+                onLongPress = { onPhotoLongPress(photo.id, photo.systemUri) }
             )
         }
     }
@@ -313,37 +331,6 @@ private fun PhotoGridItem(
             modifier = Modifier.fillMaxSize()
         )
     }
-}
-
-@Composable
-private fun ActionSheetDialog(
-    onDismiss: () -> Unit,
-    onEdit: () -> Unit,
-    onRemoveTag: () -> Unit,
-    onChangeTag: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("照片操作") },
-        text = {
-            Column {
-                TextButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {
-                    Text("编辑照片")
-                }
-                TextButton(onClick = onRemoveTag, modifier = Modifier.fillMaxWidth()) {
-                    Text("移除标签")
-                }
-                TextButton(onClick = onChangeTag, modifier = Modifier.fillMaxWidth()) {
-                    Text("修改标签")
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("关闭")
-            }
-        }
-    )
 }
 
 @Composable

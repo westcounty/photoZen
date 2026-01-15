@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.SortPhotoUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -21,19 +22,22 @@ data class PhotoListUiState(
     val photos: List<PhotoEntity> = emptyList(),
     val status: PhotoStatus = PhotoStatus.UNSORTED,
     val isLoading: Boolean = true,
-    val message: String? = null
+    val message: String? = null,
+    val defaultExternalApp: String? = null
 )
 
 private data class InternalState(
     val isLoading: Boolean = true,
-    val message: String? = null
+    val message: String? = null,
+    val defaultExternalApp: String? = null
 )
 
 @HiltViewModel
 class PhotoListViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getPhotosUseCase: GetPhotosUseCase,
-    private val sortPhotoUseCase: SortPhotoUseCase
+    private val sortPhotoUseCase: SortPhotoUseCase,
+    private val preferencesRepository: PreferencesRepository
 ) : ViewModel() {
     
     private val statusName: String = savedStateHandle.get<String>("statusName") ?: "UNSORTED"
@@ -53,7 +57,8 @@ class PhotoListViewModel @Inject constructor(
             photos = photos,
             status = status,
             isLoading = internal.isLoading && photos.isEmpty(),
-            message = internal.message
+            message = internal.message,
+            defaultExternalApp = internal.defaultExternalApp
         )
     }.stateIn(
         scope = viewModelScope,
@@ -65,6 +70,18 @@ class PhotoListViewModel @Inject constructor(
         viewModelScope.launch {
             _internalState.update { it.copy(isLoading = false) }
         }
+        viewModelScope.launch {
+            preferencesRepository.getDefaultExternalApp().collect { app ->
+                _internalState.update { it.copy(defaultExternalApp = app) }
+            }
+        }
+    }
+    
+    /**
+     * Set default external app for opening photos.
+     */
+    suspend fun setDefaultExternalApp(packageName: String?) {
+        preferencesRepository.setDefaultExternalApp(packageName)
     }
     
     fun moveToKeep(photoId: String) {

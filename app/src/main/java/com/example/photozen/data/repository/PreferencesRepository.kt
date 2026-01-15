@@ -37,6 +37,9 @@ class PreferencesRepository @Inject constructor(
         // Photo filter settings
         private val KEY_PHOTO_FILTER_MODE = stringPreferencesKey("photo_filter_mode")
         
+        // Default external app for opening photos
+        private val KEY_DEFAULT_EXTERNAL_APP = stringPreferencesKey("default_external_app")
+        
         // Achievement keys
         private val KEY_TAGGED_COUNT = intPreferencesKey("total_tagged_count")
         private val KEY_MAX_COMBO = intPreferencesKey("max_combo")
@@ -104,6 +107,35 @@ class PreferencesRepository @Inject constructor(
      */
     fun clearSessionCustomFilter() {
         _sessionCustomFilter = null
+    }
+    
+    // ==================== EXTERNAL APP SETTINGS ====================
+    
+    /**
+     * Get default external app package name for opening photos.
+     */
+    fun getDefaultExternalApp(): Flow<String?> = dataStore.data.map { preferences ->
+        preferences[KEY_DEFAULT_EXTERNAL_APP]
+    }
+    
+    /**
+     * Get default external app synchronously.
+     */
+    suspend fun getDefaultExternalAppSync(): String? {
+        return getDefaultExternalApp().first()
+    }
+    
+    /**
+     * Set default external app for opening photos.
+     */
+    suspend fun setDefaultExternalApp(packageName: String?) {
+        dataStore.edit { preferences ->
+            if (packageName == null) {
+                preferences.remove(KEY_DEFAULT_EXTERNAL_APP)
+            } else {
+                preferences[KEY_DEFAULT_EXTERNAL_APP] = packageName
+            }
+        }
     }
     
     // ==================== SORT COUNT ====================

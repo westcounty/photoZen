@@ -21,19 +21,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.QuestionMark
-import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +43,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,9 +62,12 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.ui.components.PhotoListActionSheet
+import com.example.photozen.ui.components.openImageWithApp
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,7 +79,14 @@ fun PhotoListScreen(
     viewModel: PhotoListViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    
+    // Action sheet state
+    var showActionSheet by remember { mutableStateOf(false) }
+    var selectedPhotoId by remember { mutableStateOf<String?>(null) }
+    var selectedPhotoUri by remember { mutableStateOf<String?>(null) }
     
     LaunchedEffect(uiState.message) {
         uiState.message?.let { message ->
@@ -154,16 +159,50 @@ fun PhotoListScreen(
                 else -> {
                     PhotoGrid(
                         photos = uiState.photos,
-                        currentStatus = uiState.status,
-                        onMoveToKeep = { viewModel.moveToKeep(it) },
-                        onMoveToTrash = { viewModel.moveToTrash(it) },
-                        onMoveToMaybe = { viewModel.moveToMaybe(it) },
-                        onResetToUnsorted = { viewModel.resetToUnsorted(it) },
-                        onEdit = onNavigateToEditor
+                        onPhotoLongPress = { photoId, photoUri ->
+                            selectedPhotoId = photoId
+                            selectedPhotoUri = photoUri
+                            showActionSheet = true
+                        }
                     )
                 }
             }
         }
+    }
+    
+    // Action Sheet
+    if (showActionSheet && selectedPhotoId != null && selectedPhotoUri != null) {
+        val photoId = selectedPhotoId!!
+        val photoUri = selectedPhotoUri!!
+        
+        PhotoListActionSheet(
+            imageUri = photoUri,
+            onDismiss = {
+                showActionSheet = false
+                selectedPhotoId = null
+                selectedPhotoUri = null
+            },
+            onEdit = { onNavigateToEditor(photoId) },
+            onMoveToKeep = if (uiState.status != PhotoStatus.KEEP) {
+                { viewModel.moveToKeep(photoId) }
+            } else null,
+            onMoveToMaybe = if (uiState.status != PhotoStatus.MAYBE) {
+                { viewModel.moveToMaybe(photoId) }
+            } else null,
+            onMoveToTrash = if (uiState.status != PhotoStatus.TRASH) {
+                { viewModel.moveToTrash(photoId) }
+            } else null,
+            onResetToUnsorted = { viewModel.resetToUnsorted(photoId) },
+            onOpenWithApp = { packageName ->
+                openImageWithApp(context, Uri.parse(photoUri), packageName)
+            },
+            defaultAppPackage = uiState.defaultExternalApp,
+            onSetDefaultApp = { packageName ->
+                scope.launch {
+                    viewModel.setDefaultExternalApp(packageName)
+                }
+            }
+        )
     }
 }
 
@@ -171,12 +210,7 @@ fun PhotoListScreen(
 @Composable
 private fun PhotoGrid(
     photos: List<PhotoEntity>,
-    currentStatus: PhotoStatus,
-    onMoveToKeep: (String) -> Unit,
-    onMoveToTrash: (String) -> Unit,
-    onMoveToMaybe: (String) -> Unit,
-    onResetToUnsorted: (String) -> Unit,
-    onEdit: (String) -> Unit
+    onPhotoLongPress: (String, String) -> Unit // photoId, photoUri
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
@@ -187,12 +221,7 @@ private fun PhotoGrid(
         items(photos, key = { it.id }) { photo ->
             PhotoGridItem(
                 photo = photo,
-                currentStatus = currentStatus,
-                onMoveToKeep = onMoveToKeep,
-                onMoveToTrash = onMoveToTrash,
-                onMoveToMaybe = onMoveToMaybe,
-                onResetToUnsorted = onResetToUnsorted,
-                onEdit = onEdit
+                onLongPress = { onPhotoLongPress(photo.id, photo.systemUri) }
             )
         }
     }
@@ -202,14 +231,8 @@ private fun PhotoGrid(
 @Composable
 private fun PhotoGridItem(
     photo: PhotoEntity,
-    currentStatus: PhotoStatus,
-    onMoveToKeep: (String) -> Unit,
-    onMoveToTrash: (String) -> Unit,
-    onMoveToMaybe: (String) -> Unit,
-    onResetToUnsorted: (String) -> Unit,
-    onEdit: (String) -> Unit
+    onLongPress: () -> Unit
 ) {
-    var showMenu by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
     
     Box(
@@ -220,7 +243,7 @@ private fun PhotoGridItem(
                 onClick = { },
                 onLongClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    showMenu = true
+                    onLongPress()
                 }
             )
     ) {
@@ -233,82 +256,19 @@ private fun PhotoGridItem(
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
-        
-        // Context menu
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { showMenu = false }
-        ) {
-            // Edit option - always show first
-            DropdownMenuItem(
-                text = { Text("编辑照片") },
-                onClick = {
-                    onEdit(photo.id)
-                    showMenu = false
-                },
-                leadingIcon = {
-                    Icon(Icons.Default.Edit, null, tint = MaterialTheme.colorScheme.primary)
-                }
-            )
-            
-            if (currentStatus != PhotoStatus.KEEP) {
-                DropdownMenuItem(
-                    text = { Text("移至保留") },
-                    onClick = {
-                        onMoveToKeep(photo.id)
-                        showMenu = false
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.Favorite, null, tint = KeepGreen)
-                    }
-                )
-            }
-            if (currentStatus != PhotoStatus.MAYBE) {
-                DropdownMenuItem(
-                    text = { Text("标记待定") },
-                    onClick = {
-                        onMoveToMaybe(photo.id)
-                        showMenu = false
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.QuestionMark, null, tint = MaybeAmber)
-                    }
-                )
-            }
-            if (currentStatus != PhotoStatus.TRASH) {
-                DropdownMenuItem(
-                    text = { Text("移至回收站") },
-                    onClick = {
-                        onMoveToTrash(photo.id)
-                        showMenu = false
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.Delete, null, tint = TrashRed)
-                    }
-                )
-            }
-            DropdownMenuItem(
-                text = { Text("恢复未整理") },
-                onClick = {
-                    onResetToUnsorted(photo.id)
-                    showMenu = false
-                },
-                leadingIcon = {
-                    Icon(Icons.Default.Restore, null)
-                }
-            )
-        }
     }
 }
 
 @Composable
 private fun EmptyState(status: PhotoStatus, color: Color) {
-    val (icon, text) = when (status) {
+    val iconAndText: Pair<androidx.compose.ui.graphics.vector.ImageVector, String> = when (status) {
         PhotoStatus.KEEP -> Icons.Default.Favorite to "没有保留的照片"
         PhotoStatus.TRASH -> Icons.Default.Delete to "回收站为空"
         PhotoStatus.MAYBE -> Icons.Default.QuestionMark to "没有待定的照片"
         PhotoStatus.UNSORTED -> Icons.Default.Check to "所有照片已整理完成"
     }
+    val icon = iconAndText.first
+    val text = iconAndText.second
     
     Column(
         modifier = Modifier.fillMaxSize(),

@@ -7,6 +7,7 @@ import com.example.photozen.data.local.dao.TagDao
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.local.entity.PhotoTagCrossRef
 import com.example.photozen.data.local.entity.TagEntity
+import com.example.photozen.data.repository.PreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +25,7 @@ data class TaggedPhotosUiState(
     val tagName: String? = null,
     val photos: List<PhotoEntity> = emptyList(),
     val allTags: List<TagEntity> = emptyList(),
+    val defaultExternalApp: String? = null,
     val error: String? = null
 )
 
@@ -33,7 +35,8 @@ data class TaggedPhotosUiState(
 @HiltViewModel
 class TaggedPhotosViewModel @Inject constructor(
     private val photoDao: PhotoDao,
-    private val tagDao: TagDao
+    private val tagDao: TagDao,
+    private val preferencesRepository: PreferencesRepository
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(TaggedPhotosUiState())
@@ -45,6 +48,18 @@ class TaggedPhotosViewModel @Inject constructor(
                 _uiState.update { it.copy(allTags = tags) }
             }
         }
+        viewModelScope.launch {
+            preferencesRepository.getDefaultExternalApp().collect { app ->
+                _uiState.update { it.copy(defaultExternalApp = app) }
+            }
+        }
+    }
+    
+    /**
+     * Set default external app for opening photos.
+     */
+    suspend fun setDefaultExternalApp(packageName: String?) {
+        preferencesRepository.setDefaultExternalApp(packageName)
     }
     
     /**
