@@ -520,6 +520,9 @@ private fun AcknowledgementCard() {
         Color(0xFFF48FB1),  // Light pink
     )
     
+    // Current heart icon color (changes on each click)
+    var heartIconColor by remember { mutableStateOf(Color(0xFFE91E63)) }
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -545,17 +548,23 @@ private fun AcknowledgementCard() {
                     .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Clickable heart icon
+                // Clickable heart icon (no ripple effect)
                 Box(
                     modifier = Modifier
                         .size(40.dp)
-                        .clickable {
-                            // Create a new floating heart
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                        ) {
+                            // Change the heart icon color
+                            heartIconColor = heartColors.random()
+                            
+                            // Create a new floating heart with longer duration and faster movement
                             val newHeart = FloatingHeart(
                                 id = System.currentTimeMillis() + Random.nextLong(1000),
                                 angle = Random.nextFloat() * 2 * Math.PI.toFloat(),
-                                distance = 80f + Random.nextFloat() * 60f,
-                                duration = 1200 + Random.nextInt(600),
+                                distance = 150f + Random.nextFloat() * 100f,  // Increased distance for faster visual
+                                duration = 3000 + Random.nextInt(1500),       // Much longer duration (3-4.5 seconds)
                                 startDelay = 0,
                                 color = heartColors.random(),
                                 maxScale = 1.2f + Random.nextFloat() * 0.6f
@@ -567,7 +576,7 @@ private fun AcknowledgementCard() {
                     Icon(
                         imageVector = Icons.Default.Favorite,
                         contentDescription = "点击发送爱心",
-                        tint = MaterialTheme.colorScheme.error,
+                        tint = heartIconColor,
                         modifier = Modifier.size(28.dp)
                     )
                 }
