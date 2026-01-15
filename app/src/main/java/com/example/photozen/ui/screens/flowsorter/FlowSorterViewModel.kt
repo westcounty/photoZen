@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.data.repository.CustomFilterSession
 import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.MediaStoreDataSource
@@ -180,25 +181,27 @@ class FlowSorterViewModel @Inject constructor(
     /**
      * Get filtered photos flow based on current filter mode.
      * IMPORTANT: Wait for camera albums to load before applying camera-based filters.
+     * Also monitors session custom filter changes for CUSTOM mode.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun getFilteredPhotosFlow(): Flow<List<PhotoEntity>> {
         return combine(
             preferencesRepository.getPhotoFilterMode(),
             _cameraAlbumIds,
-            _cameraAlbumsLoaded
-        ) { filterMode, cameraIds, loaded ->
-            Triple(filterMode, cameraIds, loaded)
-        }.flatMapLatest { (filterMode, cameraIds, loaded) ->
-            when (filterMode) {
+            _cameraAlbumsLoaded,
+            preferencesRepository.getSessionCustomFilterFlow()
+        ) { filterMode, cameraIds, loaded, sessionFilter ->
+            FilterParams(filterMode, cameraIds, loaded, sessionFilter)
+        }.flatMapLatest { params ->
+            when (params.filterMode) {
                 PhotoFilterMode.ALL -> getUnsortedPhotosUseCase()
                 PhotoFilterMode.CAMERA_ONLY -> {
                     // Must wait for camera albums to load
-                    if (!loaded) {
+                    if (!params.cameraLoaded) {
                         // Return empty while loading
                         kotlinx.coroutines.flow.flowOf(emptyList())
-                    } else if (cameraIds.isNotEmpty()) {
-                        getUnsortedPhotosUseCase.byBuckets(cameraIds)
+                    } else if (params.cameraIds.isNotEmpty()) {
+                        getUnsortedPhotosUseCase.byBuckets(params.cameraIds)
                     } else {
                         // No camera albums found, show empty
                         kotlinx.coroutines.flow.flowOf(emptyList())
@@ -206,27 +209,38 @@ class FlowSorterViewModel @Inject constructor(
                 }
                 PhotoFilterMode.EXCLUDE_CAMERA -> {
                     // Must wait for camera albums to load
-                    if (!loaded) {
+                    if (!params.cameraLoaded) {
                         // Return empty while loading
                         kotlinx.coroutines.flow.flowOf(emptyList())
-                    } else if (cameraIds.isNotEmpty()) {
-                        getUnsortedPhotosUseCase.excludingBuckets(cameraIds)
+                    } else if (params.cameraIds.isNotEmpty()) {
+                        getUnsortedPhotosUseCase.excludingBuckets(params.cameraIds)
                     } else {
                         // No camera albums found, show all photos
                         getUnsortedPhotosUseCase()
                     }
                 }
                 PhotoFilterMode.CUSTOM -> {
-                    val sessionFilter = preferencesRepository.getSessionCustomFilter()
+                    val sessionFilter = params.sessionFilter
                     if (sessionFilter != null && !sessionFilter.albumIds.isNullOrEmpty()) {
                         getUnsortedPhotosUseCase.byBuckets(sessionFilter.albumIds)
                     } else {
+                        // No custom filter set, show all photos
                         getUnsortedPhotosUseCase()
                     }
                 }
             }
         }
     }
+    
+    /**
+     * Helper data class for filter parameters.
+     */
+    private data class FilterParams(
+        val filterMode: PhotoFilterMode,
+        val cameraIds: List<String>,
+        val cameraLoaded: Boolean,
+        val sessionFilter: CustomFilterSession?
+    )
     
     /**
      * UI State exposed to the screen.

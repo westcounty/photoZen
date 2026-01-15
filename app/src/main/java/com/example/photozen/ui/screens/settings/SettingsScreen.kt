@@ -279,7 +279,17 @@ private fun ChangelogDialog(onDismiss: () -> Unit) {
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Version 1.5.7 - Current
+                // Version 1.5.8 - Current
+                ChangelogVersion(
+                    version = "1.5.8",
+                    date = "2026-01-16",
+                    changes = listOf(
+                        "🔧 彻底修复Flow筛选：自定义筛选条件改为响应式，实时生效",
+                        "🚀 CUSTOM模式正确导航：每次整理前选择会正确跳转到筛选界面"
+                    )
+                )
+                
+                // Version 1.5.7
                 ChangelogVersion(
                     version = "1.5.7",
                     date = "2026-01-16",
@@ -427,7 +437,7 @@ private fun AboutCard(onVersionClick: () -> Unit) {
             
             // Clickable version number
             Text(
-                text = "版本 1.5.7",
+                text = "版本 1.5.8",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier

@@ -26,8 +26,8 @@ android {
         applicationId = "com.example.photozen"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1570
-        versionName = "1.5.7"
+        versionCode = 1580
+        versionName = "1.5.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

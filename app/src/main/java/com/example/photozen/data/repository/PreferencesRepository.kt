@@ -7,6 +7,9 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -98,25 +101,30 @@ class PreferencesRepository @Inject constructor(
     }
     
     // Session-based custom filter (not persisted, cleared on app restart)
-    private var _sessionCustomFilter: CustomFilterSession? = null
+    private val _sessionCustomFilter = MutableStateFlow<CustomFilterSession?>(null)
     
     /**
-     * Get current session's custom filter settings.
+     * Get current session's custom filter settings as Flow.
      */
-    fun getSessionCustomFilter(): CustomFilterSession? = _sessionCustomFilter
+    fun getSessionCustomFilterFlow(): StateFlow<CustomFilterSession?> = _sessionCustomFilter.asStateFlow()
+    
+    /**
+     * Get current session's custom filter settings (synchronous).
+     */
+    fun getSessionCustomFilter(): CustomFilterSession? = _sessionCustomFilter.value
     
     /**
      * Set session custom filter for CUSTOM mode.
      */
     fun setSessionCustomFilter(filter: CustomFilterSession?) {
-        _sessionCustomFilter = filter
+        _sessionCustomFilter.value = filter
     }
     
     /**
      * Clear session custom filter.
      */
     fun clearSessionCustomFilter() {
-        _sessionCustomFilter = null
+        _sessionCustomFilter.value = null
     }
     
     // ==================== EXTERNAL APP SETTINGS ====================
