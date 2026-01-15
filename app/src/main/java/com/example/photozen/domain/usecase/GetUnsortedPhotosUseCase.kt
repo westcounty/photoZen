@@ -22,6 +22,20 @@ class GetUnsortedPhotosUseCase @Inject constructor(
     }
     
     /**
+     * Get unsorted photos filtered by bucket IDs (for camera only mode).
+     */
+    fun byBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>> {
+        return photoRepository.getUnsortedPhotosByBuckets(bucketIds)
+    }
+    
+    /**
+     * Get unsorted photos excluding specific bucket IDs (for exclude camera mode).
+     */
+    fun excludingBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>> {
+        return photoRepository.getUnsortedPhotosExcludingBuckets(bucketIds)
+    }
+    
+    /**
      * Get unsorted photos with paging support.
      */
     fun paged(): Flow<PagingData<PhotoEntity>> {

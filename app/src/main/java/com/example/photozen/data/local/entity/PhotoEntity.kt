@@ -24,7 +24,8 @@ import com.example.photozen.data.model.PhotoStatus
         Index(value = ["parent_id"]),
         Index(value = ["date_added"]),
         Index(value = ["latitude", "longitude"]),
-        Index(value = ["gps_scanned"])
+        Index(value = ["gps_scanned"]),
+        Index(value = ["bucket_id"])
     ]
 )
 data class PhotoEntity(
@@ -129,6 +130,12 @@ data class PhotoEntity(
      */
     @ColumnInfo(name = "camera_model")
     val cameraModel: String? = null,
+    
+    /**
+     * MediaStore bucket ID (album ID)
+     */
+    @ColumnInfo(name = "bucket_id", defaultValue = "NULL")
+    val bucketId: String? = null,
     
     /**
      * GPS Latitude (from EXIF)

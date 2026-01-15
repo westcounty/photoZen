@@ -59,6 +59,9 @@ class PhotoRepositoryImpl @Inject constructor(
             photoDao.insertAll(newPhotos)
         }
         
+        // Update bucket_id for existing photos that don't have it
+        updateBucketIdsForExistingPhotos(mediaStorePhotos)
+        
         // Detect and remove photos that were deleted externally
         val deletedCount = removeDeletedPhotos()
         
@@ -68,6 +71,26 @@ class PhotoRepositoryImpl @Inject constructor(
         }
         
         return newPhotos.size
+    }
+    
+    /**
+     * Update bucket_id for existing photos that don't have it set.
+     * This is needed for photos synced before bucket_id was added.
+     */
+    private suspend fun updateBucketIdsForExistingPhotos(mediaStorePhotos: List<PhotoEntity>) {
+        // Create a map of system_uri to bucket_id from MediaStore photos
+        val uriBucketMap = mediaStorePhotos.associate { it.systemUri to it.bucketId }
+        
+        // Get all photos from DB that need bucket_id update
+        val photosNeedingUpdate = photoDao.getPhotosWithNullBucketId()
+        
+        // Update each photo with its bucket_id
+        photosNeedingUpdate.forEach { photo ->
+            val bucketId = uriBucketMap[photo.systemUri]
+            if (bucketId != null) {
+                photoDao.updateBucketId(photo.id, bucketId)
+            }
+        }
     }
     
     /**
@@ -129,6 +152,14 @@ class PhotoRepositoryImpl @Inject constructor(
     
     override fun getUnsortedPhotos(): Flow<List<PhotoEntity>> {
         return photoDao.getUnsortedPhotos()
+    }
+    
+    override fun getUnsortedPhotosByBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>> {
+        return photoDao.getUnsortedPhotosByBuckets(bucketIds)
+    }
+    
+    override fun getUnsortedPhotosExcludingBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>> {
+        return photoDao.getUnsortedPhotosExcludingBuckets(bucketIds)
     }
     
     override fun getMaybePhotos(): Flow<List<PhotoEntity>> {

@@ -76,12 +76,16 @@ class MediaStoreDataSource @Inject constructor(
     )
     
     /**
-     * Common camera album names.
+     * Check if an album name is a camera album.
+     * Matches: Camera, camera, CAMERA, 相机, etc.
      */
-    private val cameraAlbumNames = setOf(
-        "Camera", "相机", "DCIM", "camera",
-        "100ANDRO", "100MEDIA", "Pictures"
-    )
+    private fun isCameraAlbum(albumName: String): Boolean {
+        val lowerName = albumName.lowercase()
+        return lowerName == "camera" || 
+               albumName == "相机" ||
+               lowerName == "dcim" ||
+               lowerName.startsWith("100") // 100ANDRO, 100MEDIA, etc.
+    }
     
     /**
      * Fetch all images from MediaStore.
@@ -167,6 +171,7 @@ class MediaStoreDataSource @Inject constructor(
             val dateTakenColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_TAKEN)
             val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
             val dateModifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
+            val bucketIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_ID)
             
             // Skip to offset
             if (offset > 0) {
@@ -187,7 +192,8 @@ class MediaStoreDataSource @Inject constructor(
                     mimeTypeColumn = mimeTypeColumn,
                     dateTakenColumn = dateTakenColumn,
                     dateAddedColumn = dateAddedColumn,
-                    dateModifiedColumn = dateModifiedColumn
+                    dateModifiedColumn = dateModifiedColumn,
+                    bucketIdColumn = bucketIdColumn
                 )
                 photos.add(photo)
                 count++
@@ -229,9 +235,7 @@ class MediaStoreDataSource @Inject constructor(
                     AlbumBuilder(
                         id = bucketId,
                         name = bucketName,
-                        isCamera = cameraAlbumNames.any { 
-                            bucketName.contains(it, ignoreCase = true) 
-                        }
+                        isCamera = isCameraAlbum(bucketName)
                     )
                 }
                 builder.count++
@@ -429,7 +433,8 @@ class MediaStoreDataSource @Inject constructor(
         mimeTypeColumn: Int,
         dateTakenColumn: Int,
         dateAddedColumn: Int,
-        dateModifiedColumn: Int
+        dateModifiedColumn: Int,
+        bucketIdColumn: Int? = null
     ): PhotoEntity {
         val mediaStoreId = cursor.getLong(idColumn)
         val contentUri = ContentUris.withAppendedId(
@@ -454,6 +459,7 @@ class MediaStoreDataSource @Inject constructor(
             dateModified = cursor.getLong(dateModifiedColumn),
             cameraMake = null, // Would need to read EXIF for this
             cameraModel = null,
+            bucketId = bucketIdColumn?.let { cursor.getString(it) },
             isSynced = true
         )
     }

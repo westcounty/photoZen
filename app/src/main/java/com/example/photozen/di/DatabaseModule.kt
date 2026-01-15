@@ -35,6 +35,19 @@ private val MIGRATION_3_4 = object : Migration(3, 4) {
 }
 
 /**
+ * Migration from version 4 to 5: Add bucket_id field for album filtering.
+ * - bucket_id: MediaStore bucket ID (album ID)
+ */
+private val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Add bucket_id column
+        db.execSQL("ALTER TABLE photos ADD COLUMN bucket_id TEXT DEFAULT NULL")
+        // Create index for bucket_id queries
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_photos_bucket_id ON photos (bucket_id)")
+    }
+}
+
+/**
  * Hilt module for providing Room database and DAOs.
  */
 @Module
@@ -54,7 +67,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME
         )
-            .addMigrations(MIGRATION_3_4)
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
             .fallbackToDestructiveMigration(dropAllTables = true) // For development - use migrations in production
             .build()
     }

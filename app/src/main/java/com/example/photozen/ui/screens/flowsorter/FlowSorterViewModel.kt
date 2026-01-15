@@ -4,17 +4,22 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.PreferencesRepository
+import com.example.photozen.data.source.MediaStoreDataSource
 import com.example.photozen.domain.usecase.GetUnsortedPhotosUseCase
 import com.example.photozen.domain.usecase.SortPhotoUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -106,7 +111,8 @@ class FlowSorterViewModel @Inject constructor(
     private val getUnsortedPhotosUseCase: GetUnsortedPhotosUseCase,
     private val sortPhotoUseCase: SortPhotoUseCase,
     private val syncPhotosUseCase: SyncPhotosUseCase,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    private val mediaStoreDataSource: MediaStoreDataSource
 ) : ViewModel() {
     
     private val _isLoading = MutableStateFlow(true)
@@ -116,6 +122,9 @@ class FlowSorterViewModel @Inject constructor(
     private val _error = MutableStateFlow<String?>(null)
     private val _counters = MutableStateFlow(SortCounters())
     private val _combo = MutableStateFlow(ComboState())
+    
+    // Camera album IDs cache
+    private var cameraAlbumIds: List<String> = emptyList()
     
     // Job for auto-hiding combo after timeout
     private var comboTimeoutJob: Job? = null
@@ -132,10 +141,44 @@ class FlowSorterViewModel @Inject constructor(
     }
     
     /**
+     * Get filtered photos flow based on current filter mode.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun getFilteredPhotosFlow(): Flow<List<PhotoEntity>> {
+        return preferencesRepository.getPhotoFilterMode().flatMapLatest { filterMode ->
+            when (filterMode) {
+                PhotoFilterMode.ALL -> getUnsortedPhotosUseCase()
+                PhotoFilterMode.CAMERA_ONLY -> {
+                    if (cameraAlbumIds.isNotEmpty()) {
+                        getUnsortedPhotosUseCase.byBuckets(cameraAlbumIds)
+                    } else {
+                        getUnsortedPhotosUseCase()
+                    }
+                }
+                PhotoFilterMode.EXCLUDE_CAMERA -> {
+                    if (cameraAlbumIds.isNotEmpty()) {
+                        getUnsortedPhotosUseCase.excludingBuckets(cameraAlbumIds)
+                    } else {
+                        getUnsortedPhotosUseCase()
+                    }
+                }
+                PhotoFilterMode.CUSTOM -> {
+                    val sessionFilter = preferencesRepository.getSessionCustomFilter()
+                    if (sessionFilter != null && !sessionFilter.albumIds.isNullOrEmpty()) {
+                        getUnsortedPhotosUseCase.byBuckets(sessionFilter.albumIds)
+                    } else {
+                        getUnsortedPhotosUseCase()
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
      * UI State exposed to the screen.
      */
     val uiState: StateFlow<FlowSorterUiState> = combine(
-        getUnsortedPhotosUseCase(),
+        getFilteredPhotosFlow(),
         _isLoading,
         _isSyncing,
         _currentIndex,
@@ -175,9 +218,22 @@ class FlowSorterViewModel @Inject constructor(
     )
     
     init {
-        // Perform initial sync if needed
+        // Load camera album IDs first, then sync
         viewModelScope.launch {
+            loadCameraAlbumIds()
             syncPhotos()
+        }
+    }
+    
+    /**
+     * Load camera album IDs from MediaStore.
+     */
+    private suspend fun loadCameraAlbumIds() {
+        try {
+            val albums = mediaStoreDataSource.getAllAlbums()
+            cameraAlbumIds = albums.filter { it.isCamera }.map { it.id }
+        } catch (e: Exception) {
+            // Ignore errors, just use empty list
         }
     }
     

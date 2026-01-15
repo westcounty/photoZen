@@ -72,6 +72,16 @@ interface PhotoRepository {
     fun getUnsortedPhotos(): Flow<List<PhotoEntity>>
     
     /**
+     * Get unsorted photos filtered by bucket IDs.
+     */
+    fun getUnsortedPhotosByBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>>
+    
+    /**
+     * Get unsorted photos excluding specific bucket IDs.
+     */
+    fun getUnsortedPhotosExcludingBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>>
+    
+    /**
      * Get "Maybe" photos for Light Table.
      */
     fun getMaybePhotos(): Flow<List<PhotoEntity>>

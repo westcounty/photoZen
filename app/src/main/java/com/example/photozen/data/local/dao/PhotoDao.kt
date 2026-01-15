@@ -141,6 +141,54 @@ interface PhotoDao {
     fun getUnsortedPhotos(): Flow<List<PhotoEntity>>
     
     /**
+     * Get unsorted photos filtered by bucket IDs (for camera only / exclude camera).
+     */
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) ORDER BY date_added DESC")
+    fun getUnsortedPhotosByBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>>
+    
+    /**
+     * Get unsorted photos excluding specific bucket IDs.
+     */
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL) ORDER BY date_added DESC")
+    fun getUnsortedPhotosExcludingBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>>
+    
+    /**
+     * Get unsorted photos filtered by bucket IDs and date range.
+     */
+    @Query("""
+        SELECT * FROM photos 
+        WHERE status = 'UNSORTED' 
+        AND is_virtual_copy = 0 
+        AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
+        AND (:startDate IS NULL OR date_added >= :startDate)
+        AND (:endDate IS NULL OR date_added <= :endDate)
+        ORDER BY date_added DESC
+    """)
+    fun getUnsortedPhotosFiltered(
+        bucketIds: List<String>?,
+        startDate: Long?,
+        endDate: Long?
+    ): Flow<List<PhotoEntity>>
+    
+    /**
+     * Get all camera bucket IDs from our database.
+     */
+    @Query("SELECT DISTINCT bucket_id FROM photos WHERE bucket_id IS NOT NULL")
+    suspend fun getAllBucketIds(): List<String>
+    
+    /**
+     * Get photos that need bucket_id update (null bucket_id, non-virtual copies).
+     */
+    @Query("SELECT * FROM photos WHERE bucket_id IS NULL AND is_virtual_copy = 0")
+    suspend fun getPhotosWithNullBucketId(): List<PhotoEntity>
+    
+    /**
+     * Update bucket_id for a photo.
+     */
+    @Query("UPDATE photos SET bucket_id = :bucketId WHERE id = :photoId")
+    suspend fun updateBucketId(photoId: String, bucketId: String)
+    
+    /**
      * Get all "MAYBE" photos for Light Table comparison.
      */
     @Query("SELECT * FROM photos WHERE status = 'MAYBE' AND is_virtual_copy = 0 ORDER BY date_added DESC")
