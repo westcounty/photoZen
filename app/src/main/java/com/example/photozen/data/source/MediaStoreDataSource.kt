@@ -18,6 +18,28 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * Represents an album (bucket) in MediaStore.
+ */
+data class Album(
+    val id: String,
+    val name: String,
+    val photoCount: Int,
+    val coverUri: String? = null,
+    val isCamera: Boolean = false // True if this is a camera album (DCIM/Camera)
+)
+
+/**
+ * Filter options for fetching photos.
+ */
+data class PhotoFilter(
+    val albumIds: List<String>? = null,      // Filter by specific album IDs (null = all)
+    val startDate: Long? = null,              // Start date in milliseconds (inclusive)
+    val endDate: Long? = null,                // End date in milliseconds (inclusive)
+    val cameraOnly: Boolean = false,          // Only camera photos
+    val excludeCamera: Boolean = false        // Exclude camera photos
+)
+
+/**
  * Data source for reading photos from Android MediaStore.
  * Handles Android 13+ (API 33) permission changes and efficient querying.
  */
@@ -48,7 +70,17 @@ class MediaStoreDataSource @Inject constructor(
         MediaStore.Images.Media.MIME_TYPE,
         MediaStore.Images.Media.DATE_TAKEN,
         MediaStore.Images.Media.DATE_ADDED,
-        MediaStore.Images.Media.DATE_MODIFIED
+        MediaStore.Images.Media.DATE_MODIFIED,
+        MediaStore.Images.Media.BUCKET_ID,
+        MediaStore.Images.Media.BUCKET_DISPLAY_NAME
+    )
+    
+    /**
+     * Common camera album names.
+     */
+    private val cameraAlbumNames = setOf(
+        "Camera", "相机", "DCIM", "camera",
+        "100ANDRO", "100MEDIA", "Pictures"
     )
     
     /**
@@ -62,19 +94,68 @@ class MediaStoreDataSource @Inject constructor(
         limit: Int? = null,
         offset: Int = 0
     ): List<PhotoEntity> = withContext(Dispatchers.IO) {
+        fetchPhotosWithFilter(PhotoFilter(), limit, offset)
+    }
+    
+    /**
+     * Fetch photos with filter options.
+     */
+    suspend fun fetchPhotosWithFilter(
+        filter: PhotoFilter,
+        limit: Int? = null,
+        offset: Int = 0
+    ): List<PhotoEntity> = withContext(Dispatchers.IO) {
         val photos = mutableListOf<PhotoEntity>()
         
         val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
         
-        // Build selection with limit/offset for pagination
-        val selection: String? = null
-        val selectionArgs: Array<String>? = null
+        // Build selection based on filter
+        val selectionBuilder = StringBuilder()
+        val selectionArgs = mutableListOf<String>()
+        
+        // Album filter
+        if (!filter.albumIds.isNullOrEmpty()) {
+            val placeholders = filter.albumIds.joinToString(",") { "?" }
+            selectionBuilder.append("${MediaStore.Images.Media.BUCKET_ID} IN ($placeholders)")
+            selectionArgs.addAll(filter.albumIds)
+        }
+        
+        // Date range filter
+        if (filter.startDate != null) {
+            if (selectionBuilder.isNotEmpty()) selectionBuilder.append(" AND ")
+            selectionBuilder.append("${MediaStore.Images.Media.DATE_ADDED} >= ?")
+            // DATE_ADDED is in seconds
+            selectionArgs.add((filter.startDate / 1000).toString())
+        }
+        if (filter.endDate != null) {
+            if (selectionBuilder.isNotEmpty()) selectionBuilder.append(" AND ")
+            selectionBuilder.append("${MediaStore.Images.Media.DATE_ADDED} <= ?")
+            selectionArgs.add((filter.endDate / 1000).toString())
+        }
+        
+        // Camera only / exclude camera filter
+        if (filter.cameraOnly || filter.excludeCamera) {
+            val cameraAlbumIds = getCameraAlbumIds()
+            if (cameraAlbumIds.isNotEmpty()) {
+                val placeholders = cameraAlbumIds.joinToString(",") { "?" }
+                if (selectionBuilder.isNotEmpty()) selectionBuilder.append(" AND ")
+                if (filter.cameraOnly) {
+                    selectionBuilder.append("${MediaStore.Images.Media.BUCKET_ID} IN ($placeholders)")
+                } else {
+                    selectionBuilder.append("${MediaStore.Images.Media.BUCKET_ID} NOT IN ($placeholders)")
+                }
+                selectionArgs.addAll(cameraAlbumIds)
+            }
+        }
+        
+        val selection = if (selectionBuilder.isNotEmpty()) selectionBuilder.toString() else null
+        val args = if (selectionArgs.isNotEmpty()) selectionArgs.toTypedArray() else null
         
         contentResolver.query(
             imageCollection,
             projection,
             selection,
-            selectionArgs,
+            args,
             sortOrder
         )?.use { cursor ->
             val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
@@ -114,6 +195,160 @@ class MediaStoreDataSource @Inject constructor(
         }
         
         photos
+    }
+    
+    /**
+     * Get all albums (buckets) from MediaStore.
+     */
+    suspend fun getAllAlbums(): List<Album> = withContext(Dispatchers.IO) {
+        val albumMap = mutableMapOf<String, AlbumBuilder>()
+        
+        val albumProjection = arrayOf(
+            MediaStore.Images.Media._ID,
+            MediaStore.Images.Media.BUCKET_ID,
+            MediaStore.Images.Media.BUCKET_DISPLAY_NAME
+        )
+        
+        contentResolver.query(
+            imageCollection,
+            albumProjection,
+            null,
+            null,
+            "${MediaStore.Images.Media.DATE_ADDED} DESC"
+        )?.use { cursor ->
+            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+            val bucketIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_ID)
+            val bucketNameColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
+            
+            while (cursor.moveToNext()) {
+                val mediaStoreId = cursor.getLong(idColumn)
+                val bucketId = cursor.getString(bucketIdColumn) ?: continue
+                val bucketName = cursor.getString(bucketNameColumn) ?: "Unknown"
+                
+                val builder = albumMap.getOrPut(bucketId) {
+                    AlbumBuilder(
+                        id = bucketId,
+                        name = bucketName,
+                        isCamera = cameraAlbumNames.any { 
+                            bucketName.contains(it, ignoreCase = true) 
+                        }
+                    )
+                }
+                builder.count++
+                if (builder.coverUri == null) {
+                    builder.coverUri = ContentUris.withAppendedId(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        mediaStoreId
+                    ).toString()
+                }
+            }
+        }
+        
+        albumMap.values.map { builder ->
+            Album(
+                id = builder.id,
+                name = builder.name,
+                photoCount = builder.count,
+                coverUri = builder.coverUri,
+                isCamera = builder.isCamera
+            )
+        }.sortedByDescending { it.photoCount }
+    }
+    
+    /**
+     * Get IDs of camera albums.
+     */
+    private suspend fun getCameraAlbumIds(): List<String> {
+        return getAllAlbums().filter { it.isCamera }.map { it.id }
+    }
+    
+    /**
+     * Helper class for building Album objects.
+     */
+    private class AlbumBuilder(
+        val id: String,
+        val name: String,
+        val isCamera: Boolean,
+        var count: Int = 0,
+        var coverUri: String? = null
+    )
+    
+    /**
+     * Get all MediaStore IDs currently in the system.
+     * Used for detecting deleted photos during sync.
+     */
+    suspend fun getAllMediaStoreIds(): Set<String> = withContext(Dispatchers.IO) {
+        val ids = mutableSetOf<String>()
+        
+        contentResolver.query(
+            imageCollection,
+            arrayOf(MediaStore.Images.Media._ID),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+            while (cursor.moveToNext()) {
+                val mediaStoreId = cursor.getLong(idColumn)
+                ids.add("ms_$mediaStoreId")
+            }
+        }
+        
+        ids
+    }
+    
+    /**
+     * Get count of photos matching the filter.
+     */
+    suspend fun getFilteredPhotoCount(filter: PhotoFilter): Int = withContext(Dispatchers.IO) {
+        // Build selection based on filter
+        val selectionBuilder = StringBuilder()
+        val selectionArgs = mutableListOf<String>()
+        
+        // Album filter
+        if (!filter.albumIds.isNullOrEmpty()) {
+            val placeholders = filter.albumIds.joinToString(",") { "?" }
+            selectionBuilder.append("${MediaStore.Images.Media.BUCKET_ID} IN ($placeholders)")
+            selectionArgs.addAll(filter.albumIds)
+        }
+        
+        // Date range filter
+        if (filter.startDate != null) {
+            if (selectionBuilder.isNotEmpty()) selectionBuilder.append(" AND ")
+            selectionBuilder.append("${MediaStore.Images.Media.DATE_ADDED} >= ?")
+            selectionArgs.add((filter.startDate / 1000).toString())
+        }
+        if (filter.endDate != null) {
+            if (selectionBuilder.isNotEmpty()) selectionBuilder.append(" AND ")
+            selectionBuilder.append("${MediaStore.Images.Media.DATE_ADDED} <= ?")
+            selectionArgs.add((filter.endDate / 1000).toString())
+        }
+        
+        // Camera only / exclude camera filter
+        if (filter.cameraOnly || filter.excludeCamera) {
+            val cameraAlbumIds = getCameraAlbumIds()
+            if (cameraAlbumIds.isNotEmpty()) {
+                val placeholders = cameraAlbumIds.joinToString(",") { "?" }
+                if (selectionBuilder.isNotEmpty()) selectionBuilder.append(" AND ")
+                if (filter.cameraOnly) {
+                    selectionBuilder.append("${MediaStore.Images.Media.BUCKET_ID} IN ($placeholders)")
+                } else {
+                    selectionBuilder.append("${MediaStore.Images.Media.BUCKET_ID} NOT IN ($placeholders)")
+                }
+                selectionArgs.addAll(cameraAlbumIds)
+            }
+        }
+        
+        val selection = if (selectionBuilder.isNotEmpty()) selectionBuilder.toString() else null
+        val args = if (selectionArgs.isNotEmpty()) selectionArgs.toTypedArray() else null
+        
+        contentResolver.query(
+            imageCollection,
+            arrayOf(MediaStore.Images.Media._ID),
+            selection,
+            args,
+            null
+        )?.use { it.count } ?: 0
     }
     
     /**

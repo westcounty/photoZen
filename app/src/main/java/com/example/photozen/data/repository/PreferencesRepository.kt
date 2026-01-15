@@ -5,10 +5,22 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * Photo filter mode for sorting.
+ */
+enum class PhotoFilterMode {
+    ALL,           // 整理全部照片
+    CAMERA_ONLY,   // 仅整理相机照片
+    EXCLUDE_CAMERA, // 排除相机照片
+    CUSTOM         // 每次整理前选择
+}
 
 /**
  * Repository for managing app preferences using DataStore.
@@ -21,6 +33,9 @@ class PreferencesRepository @Inject constructor(
     companion object {
         // Sort count
         private val KEY_TOTAL_SORTED_COUNT = intPreferencesKey("total_sorted_count")
+        
+        // Photo filter settings
+        private val KEY_PHOTO_FILTER_MODE = stringPreferencesKey("photo_filter_mode")
         
         // Achievement keys
         private val KEY_TAGGED_COUNT = intPreferencesKey("total_tagged_count")
@@ -37,6 +52,58 @@ class PreferencesRepository @Inject constructor(
         private val KEY_KEEP_COUNT = intPreferencesKey("keep_count")
         private val KEY_TRASH_COUNT = intPreferencesKey("trash_count")
         private val KEY_MAYBE_COUNT = intPreferencesKey("maybe_count")
+    }
+    
+    // ==================== PHOTO FILTER SETTINGS ====================
+    
+    /**
+     * Get current photo filter mode.
+     */
+    fun getPhotoFilterMode(): Flow<PhotoFilterMode> = dataStore.data.map { preferences ->
+        val modeStr = preferences[KEY_PHOTO_FILTER_MODE] ?: PhotoFilterMode.ALL.name
+        try {
+            PhotoFilterMode.valueOf(modeStr)
+        } catch (e: IllegalArgumentException) {
+            PhotoFilterMode.ALL
+        }
+    }
+    
+    /**
+     * Get current photo filter mode synchronously.
+     */
+    suspend fun getPhotoFilterModeSync(): PhotoFilterMode {
+        return getPhotoFilterMode().first()
+    }
+    
+    /**
+     * Set photo filter mode.
+     */
+    suspend fun setPhotoFilterMode(mode: PhotoFilterMode) {
+        dataStore.edit { preferences ->
+            preferences[KEY_PHOTO_FILTER_MODE] = mode.name
+        }
+    }
+    
+    // Session-based custom filter (not persisted, cleared on app restart)
+    private var _sessionCustomFilter: CustomFilterSession? = null
+    
+    /**
+     * Get current session's custom filter settings.
+     */
+    fun getSessionCustomFilter(): CustomFilterSession? = _sessionCustomFilter
+    
+    /**
+     * Set session custom filter for CUSTOM mode.
+     */
+    fun setSessionCustomFilter(filter: CustomFilterSession?) {
+        _sessionCustomFilter = filter
+    }
+    
+    /**
+     * Clear session custom filter.
+     */
+    fun clearSessionCustomFilter() {
+        _sessionCustomFilter = null
     }
     
     // ==================== SORT COUNT ====================
@@ -373,4 +440,14 @@ data class AchievementData(
     val keepCount: Int = 0,
     val trashCount: Int = 0,
     val maybeCount: Int = 0
+)
+
+/**
+ * Custom filter session data for CUSTOM filter mode.
+ * Not persisted - only valid for the current session.
+ */
+data class CustomFilterSession(
+    val albumIds: List<String>? = null,
+    val startDate: Long? = null,
+    val endDate: Long? = null
 )

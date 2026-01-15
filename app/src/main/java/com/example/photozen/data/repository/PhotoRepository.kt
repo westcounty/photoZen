@@ -5,6 +5,7 @@ import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.local.entity.PhotoWithTags
 import com.example.photozen.data.model.CropState
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.data.source.PhotoFilter
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -22,6 +23,14 @@ interface PhotoRepository {
      * @return Number of new photos added
      */
     suspend fun syncFromMediaStore(): Int
+    
+    /**
+     * Remove photos from database that no longer exist in MediaStore.
+     * This handles the case where photos are deleted outside the app.
+     * 
+     * @return Number of photos removed
+     */
+    suspend fun removeDeletedPhotos(): Int
     
     /**
      * Check if initial sync has been performed.
@@ -115,6 +124,11 @@ interface PhotoRepository {
      * Get unsorted count.
      */
     fun getUnsortedCount(): Flow<Int>
+    
+    /**
+     * Get filtered unsorted count based on current filter mode.
+     */
+    suspend fun getFilteredUnsortedCount(filter: PhotoFilter): Int
     
     // ==================== WRITE - Status ====================
     

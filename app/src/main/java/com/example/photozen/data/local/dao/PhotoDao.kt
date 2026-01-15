@@ -238,6 +238,19 @@ interface PhotoDao {
     @Query("SELECT system_uri FROM photos WHERE is_virtual_copy = 0")
     suspend fun getAllSystemUris(): List<String>
     
+    /**
+     * Get all photo IDs that are not virtual copies.
+     * Used for detecting externally deleted photos.
+     */
+    @Query("SELECT id FROM photos WHERE is_virtual_copy = 0")
+    suspend fun getAllNonVirtualPhotoIds(): List<String>
+    
+    /**
+     * Delete all virtual copies of a parent photo.
+     */
+    @Query("DELETE FROM photos WHERE parent_id = :parentId")
+    suspend fun deleteVirtualCopiesByParentId(parentId: String)
+    
     // ==================== QUERY - GPS/Location ====================
     
     /**

@@ -85,4 +85,11 @@ sealed interface Screen {
      */
     @Serializable
     data object Achievements : Screen
+    
+    /**
+     * Photo Filter Selection screen - choose albums and date range for custom filtering.
+     * @param mode The sorting mode: "flow" for FlowSorter, "quicktag" for QuickTag
+     */
+    @Serializable
+    data class PhotoFilterSelection(val mode: String = "flow") : Screen
 }

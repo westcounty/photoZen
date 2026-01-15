@@ -2,6 +2,7 @@ package com.example.photozen.ui.screens.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.PreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -17,6 +19,7 @@ import javax.inject.Inject
  */
 data class SettingsUiState(
     val totalSorted: Int = 0,
+    val photoFilterMode: PhotoFilterMode = PhotoFilterMode.ALL,
     val error: String? = null
 )
 
@@ -40,10 +43,12 @@ class SettingsViewModel @Inject constructor(
     
     val uiState: StateFlow<SettingsUiState> = combine(
         preferencesRepository.getTotalSortedCount(),
+        preferencesRepository.getPhotoFilterMode(),
         _internalState
-    ) { totalSorted, internal ->
+    ) { totalSorted, filterMode, internal ->
         SettingsUiState(
             totalSorted = totalSorted,
+            photoFilterMode = filterMode,
             error = internal.error
         )
     }.stateIn(
@@ -51,6 +56,15 @@ class SettingsViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = SettingsUiState()
     )
+    
+    /**
+     * Set photo filter mode.
+     */
+    fun setPhotoFilterMode(mode: PhotoFilterMode) {
+        viewModelScope.launch {
+            preferencesRepository.setPhotoFilterMode(mode)
+        }
+    }
     
     fun clearError() {
         _internalState.update { it.copy(error = null) }

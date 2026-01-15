@@ -6,18 +6,19 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import com.example.photozen.ui.screens.achievements.AchievementsScreen
 import com.example.photozen.ui.screens.editor.PhotoEditorScreen
+import com.example.photozen.ui.screens.filterselection.PhotoFilterSelectionScreen
 import com.example.photozen.ui.screens.flowsorter.FlowSorterScreen
 import com.example.photozen.ui.screens.home.HomeScreen
 import com.example.photozen.ui.screens.lighttable.LightTableScreen
 import com.example.photozen.ui.screens.photolist.PhotoListScreen
+import com.example.photozen.ui.screens.quicktag.QuickTagScreen
 import com.example.photozen.ui.screens.settings.SettingsScreen
 import com.example.photozen.ui.screens.tags.TagBubbleScreen
 import com.example.photozen.ui.screens.tags.TaggedPhotosScreen
 import com.example.photozen.ui.screens.trash.TrashScreen
 import com.example.photozen.ui.screens.workflow.WorkflowScreen
-import com.example.photozen.ui.screens.quicktag.QuickTagScreen
-import com.example.photozen.ui.screens.achievements.AchievementsScreen
 
 /**
  * Main navigation host for PicZen app.
@@ -58,6 +59,9 @@ fun PicZenNavHost(
                 },
                 onNavigateToAchievements = {
                     navController.navigate(Screen.Achievements)
+                },
+                onNavigateToFilterSelection = { mode ->
+                    navController.navigate(Screen.PhotoFilterSelection(mode))
                 }
             )
         }
@@ -166,6 +170,26 @@ fun PicZenNavHost(
             AchievementsScreen(
                 onNavigateBack = {
                     navController.popBackStack()
+                }
+            )
+        }
+        
+        composable<Screen.PhotoFilterSelection> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.PhotoFilterSelection>()
+            PhotoFilterSelectionScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onConfirm = { albumIds, startDate, endDate ->
+                    // Pop filter selection and navigate to the target screen
+                    navController.popBackStack()
+                    when (route.mode) {
+                        "flow" -> navController.navigate(Screen.FlowSorter)
+                        "quicktag" -> navController.navigate(Screen.QuickTag)
+                        else -> navController.navigate(Screen.FlowSorter)
+                    }
+                    // Note: The filter parameters are stored in a shared ViewModel or PreferencesRepository
+                    // for use by FlowSorter/QuickTag
                 }
             )
         }

@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.AchievementData
+import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.PreferencesRepository
+import com.example.photozen.data.source.PhotoFilter
 import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -30,7 +32,8 @@ data class HomeUiState(
     val isSyncing: Boolean = false,
     val syncResult: String? = null,
     val error: String? = null,
-    val achievementData: AchievementData = AchievementData()
+    val achievementData: AchievementData = AchievementData(),
+    val photoFilterMode: PhotoFilterMode = PhotoFilterMode.ALL
 ) {
     val sortedCount: Int
         get() = keepCount + trashCount + maybeCount
@@ -40,6 +43,12 @@ data class HomeUiState(
     
     val hasPhotos: Boolean
         get() = totalPhotos > 0
+    
+    /**
+     * Whether the user needs to select a custom filter before starting to sort.
+     */
+    val needsFilterSelection: Boolean
+        get() = photoFilterMode == PhotoFilterMode.CUSTOM
 }
 
 /**
@@ -72,12 +81,16 @@ class HomeViewModel @Inject constructor(
         _isLoading,
         _isSyncing,
         _syncResult,
-        combine(_error, preferencesRepository.getAllAchievementData()) { error, achievementData ->
-            Pair(error, achievementData)
+        combine(
+            _error, 
+            preferencesRepository.getAllAchievementData(),
+            preferencesRepository.getPhotoFilterMode()
+        ) { error, achievementData, filterMode ->
+            Triple(error, achievementData, filterMode)
         }
     ) { values ->
         @Suppress("UNCHECKED_CAST")
-        val errorAndAchievement = values[9] as Pair<String?, AchievementData>
+        val combined = values[9] as Triple<String?, AchievementData, PhotoFilterMode>
         HomeUiState(
             totalPhotos = values[0] as Int,
             unsortedCount = values[1] as Int,
@@ -88,8 +101,9 @@ class HomeViewModel @Inject constructor(
             isLoading = values[6] as Boolean,
             isSyncing = values[7] as Boolean,
             syncResult = values[8] as String?,
-            error = errorAndAchievement.first,
-            achievementData = errorAndAchievement.second
+            error = combined.first,
+            achievementData = combined.second,
+            photoFilterMode = combined.third
         )
     }.stateIn(
         scope = viewModelScope,

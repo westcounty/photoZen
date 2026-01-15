@@ -93,6 +93,7 @@ fun HomeScreen(
     onNavigateToWorkflow: () -> Unit,
     onNavigateToTagBubble: () -> Unit,
     onNavigateToAchievements: () -> Unit,
+    onNavigateToFilterSelection: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -246,7 +247,13 @@ fun HomeScreen(
                     icon = Icons.Default.SwipeRight,
                     iconTint = MaterialTheme.colorScheme.primary,
                     enabled = uiState.unsortedCount > 0,
-                    onClick = onNavigateToFlowSorter
+                    onClick = {
+                        if (uiState.needsFilterSelection) {
+                            onNavigateToFilterSelection("flow")
+                        } else {
+                            onNavigateToFlowSorter()
+                        }
+                    }
                 )
                 
                 // Light Table Card

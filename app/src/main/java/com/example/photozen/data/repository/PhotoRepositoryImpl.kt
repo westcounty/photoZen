@@ -13,6 +13,7 @@ import com.example.photozen.data.local.entity.PhotoWithTags
 import com.example.photozen.data.model.CropState
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.source.MediaStoreDataSource
+import com.example.photozen.data.source.PhotoFilter
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -58,12 +59,44 @@ class PhotoRepositoryImpl @Inject constructor(
             photoDao.insertAll(newPhotos)
         }
         
+        // Detect and remove photos that were deleted externally
+        val deletedCount = removeDeletedPhotos()
+        
         // Mark initial sync as done
         dataStore.edit { prefs ->
             prefs[KEY_INITIAL_SYNC_DONE] = true
         }
         
         return newPhotos.size
+    }
+    
+    /**
+     * Remove photos from database that no longer exist in MediaStore.
+     * This handles the case where photos are deleted outside the app.
+     */
+    override suspend fun removeDeletedPhotos(): Int {
+        // Get all MediaStore IDs currently in the system
+        val currentMediaStoreIds = mediaStoreDataSource.getAllMediaStoreIds()
+        
+        // Get all photo IDs from our database (only non-virtual copies)
+        val dbPhotoIds = photoDao.getAllNonVirtualPhotoIds()
+        
+        // Find photos in our DB that are no longer in MediaStore
+        val deletedIds = dbPhotoIds.filter { id -> 
+            // Only check photos that originated from MediaStore (have "ms_" prefix)
+            id.startsWith("ms_") && id !in currentMediaStoreIds
+        }
+        
+        // Remove deleted photos from database
+        if (deletedIds.isNotEmpty()) {
+            photoDao.deleteByIds(deletedIds)
+            // Also remove any virtual copies of deleted photos
+            deletedIds.forEach { parentId ->
+                photoDao.deleteVirtualCopiesByParentId(parentId)
+            }
+        }
+        
+        return deletedIds.size
     }
     
     override suspend fun hasPerformedInitialSync(): Boolean {
@@ -161,6 +194,12 @@ class PhotoRepositoryImpl @Inject constructor(
     
     override fun getUnsortedCount(): Flow<Int> {
         return photoDao.getUnsortedCount()
+    }
+    
+    override suspend fun getFilteredUnsortedCount(filter: PhotoFilter): Int {
+        // For filtered count, we need to consider the filter criteria
+        // Get count from MediaStore based on filter, not from our DB
+        return mediaStoreDataSource.getFilteredPhotoCount(filter)
     }
     
     // ==================== WRITE - Status ====================
