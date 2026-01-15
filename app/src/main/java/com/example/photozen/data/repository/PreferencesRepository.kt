@@ -40,6 +40,16 @@ class PreferencesRepository @Inject constructor(
         // Default external app for opening photos
         private val KEY_DEFAULT_EXTERNAL_APP = stringPreferencesKey("default_external_app")
         
+        // Bubble positions (JSON encoded map: tagId -> "x,y")
+        private val KEY_BUBBLE_POSITIONS = stringPreferencesKey("bubble_positions")
+        
+        // Grid column preferences for different screens
+        private val KEY_GRID_COLUMNS_KEEP = intPreferencesKey("grid_columns_keep")
+        private val KEY_GRID_COLUMNS_MAYBE = intPreferencesKey("grid_columns_maybe")
+        private val KEY_GRID_COLUMNS_TRASH = intPreferencesKey("grid_columns_trash")
+        private val KEY_GRID_COLUMNS_TAGGED = intPreferencesKey("grid_columns_tagged")
+        private val KEY_GRID_COLUMNS_FLOW = intPreferencesKey("grid_columns_flow")
+        
         // Achievement keys
         private val KEY_TAGGED_COUNT = intPreferencesKey("total_tagged_count")
         private val KEY_MAX_COMBO = intPreferencesKey("max_combo")
@@ -429,6 +439,110 @@ class PreferencesRepository @Inject constructor(
         }
     }
     
+    // ==================== BUBBLE POSITIONS ====================
+    
+    /**
+     * Save bubble positions for tag bubble screen.
+     * @param positions Map of tagId to Pair(x, y)
+     */
+    suspend fun saveBubblePositions(positions: Map<String, Pair<Float, Float>>) {
+        dataStore.edit { preferences ->
+            // Encode as simple string: "tagId:x,y;tagId:x,y;..."
+            val encoded = positions.entries.joinToString(";") { (id, pos) ->
+                "$id:${pos.first},${pos.second}"
+            }
+            preferences[KEY_BUBBLE_POSITIONS] = encoded
+        }
+    }
+    
+    /**
+     * Get saved bubble positions.
+     * @return Map of tagId to Pair(x, y), or empty map if none saved
+     */
+    suspend fun getBubblePositions(): Map<String, Pair<Float, Float>> {
+        val encoded = dataStore.data.first()[KEY_BUBBLE_POSITIONS] ?: return emptyMap()
+        return try {
+            encoded.split(";").filter { it.isNotBlank() }.associate { entry ->
+                val parts = entry.split(":")
+                val id = parts[0]
+                val coords = parts[1].split(",")
+                id to Pair(coords[0].toFloat(), coords[1].toFloat())
+            }
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+    
+    /**
+     * Clear saved bubble positions (reset to default).
+     */
+    suspend fun clearBubblePositions() {
+        dataStore.edit { preferences ->
+            preferences.remove(KEY_BUBBLE_POSITIONS)
+        }
+    }
+    
+    // ==================== GRID COLUMN PREFERENCES ====================
+    
+    /**
+     * Grid column count for different screens.
+     * Default is 2 columns.
+     */
+    enum class GridScreen {
+        KEEP, MAYBE, TRASH, TAGGED, FLOW
+    }
+    
+    /**
+     * Get grid column count for a specific screen.
+     */
+    fun getGridColumns(screen: GridScreen): Flow<Int> = dataStore.data.map { preferences ->
+        val key = when (screen) {
+            GridScreen.KEEP -> KEY_GRID_COLUMNS_KEEP
+            GridScreen.MAYBE -> KEY_GRID_COLUMNS_MAYBE
+            GridScreen.TRASH -> KEY_GRID_COLUMNS_TRASH
+            GridScreen.TAGGED -> KEY_GRID_COLUMNS_TAGGED
+            GridScreen.FLOW -> KEY_GRID_COLUMNS_FLOW
+        }
+        preferences[key] ?: 2 // Default 2 columns
+    }
+    
+    /**
+     * Get grid column count synchronously.
+     */
+    suspend fun getGridColumnsSync(screen: GridScreen): Int {
+        return getGridColumns(screen).first()
+    }
+    
+    /**
+     * Set grid column count for a specific screen.
+     */
+    suspend fun setGridColumns(screen: GridScreen, columns: Int) {
+        val key = when (screen) {
+            GridScreen.KEEP -> KEY_GRID_COLUMNS_KEEP
+            GridScreen.MAYBE -> KEY_GRID_COLUMNS_MAYBE
+            GridScreen.TRASH -> KEY_GRID_COLUMNS_TRASH
+            GridScreen.TAGGED -> KEY_GRID_COLUMNS_TAGGED
+            GridScreen.FLOW -> KEY_GRID_COLUMNS_FLOW
+        }
+        dataStore.edit { preferences ->
+            preferences[key] = columns.coerceIn(1, 3) // 1-3 columns
+        }
+    }
+    
+    /**
+     * Cycle grid columns: 2 -> 3 -> 1 -> 2
+     */
+    suspend fun cycleGridColumns(screen: GridScreen): Int {
+        val current = getGridColumnsSync(screen)
+        val next = when (current) {
+            1 -> 2
+            2 -> 3
+            else -> 1
+        }
+        setGridColumns(screen, next)
+        return next
+    }
+    
     // ==================== ALL ACHIEVEMENT DATA ====================
     
     /**
@@ -482,4 +596,13 @@ data class CustomFilterSession(
     val albumIds: List<String>? = null,
     val startDate: Long? = null,
     val endDate: Long? = null
+)
+
+/**
+ * Bubble position data for tag bubble screen.
+ */
+data class BubblePosition(
+    val tagId: String,
+    val x: Float,
+    val y: Float
 )

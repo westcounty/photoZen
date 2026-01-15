@@ -5,6 +5,7 @@ import android.net.Uri
 import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.dao.TagDao
 import com.example.photozen.data.local.entity.AlbumCopyMode
+import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.local.entity.PhotoTagCrossRef
 import com.example.photozen.data.local.entity.TagEntity
 import com.example.photozen.data.source.Album
@@ -65,13 +66,25 @@ sealed class CreateLinkAlbumResult {
         val photosAdded: Int
     ) : CreateLinkAlbumResult()
     
-    /** User confirmation required to delete original photos (MOVE mode) */
+    /** User confirmation required for write permission to move photos (MOVE mode) */
+    data class RequiresWritePermission(
+        val tagId: String,
+        val albumName: String,
+        val albumPath: String,
+        val alreadyMovedCount: Int,
+        val intentSender: IntentSender,
+        val pendingPhotoIds: List<String>, // Photo IDs still waiting to be moved
+        val pendingUris: List<Uri>
+    ) : CreateLinkAlbumResult()
+    
+    /** User confirmation required to delete original photos (MOVE mode fallback) */
     data class RequiresDeleteConfirmation(
         val albumId: String,
         val albumName: String,
         val photosAdded: Int,
         val intentSender: IntentSender,
-        val pendingDeleteUris: List<Uri>
+        val pendingDeleteUris: List<Uri>,
+        val photoIdsToCleanup: List<String> = emptyList() // Photo IDs to delete from DB after confirmation
     ) : CreateLinkAlbumResult()
     
     data class Error(val message: String) : CreateLinkAlbumResult()
@@ -132,95 +145,51 @@ class TagAlbumSyncUseCase @Inject constructor(
             
             // Get photos with this tag
             val photoIds = tagDao.getPhotoIdsWithTag(tagId).first()
-            var photosProcessed = 0
-            var actualBucketId = tempBucketId
             
-            // Collect URIs of original photos that need deletion (for MOVE mode fallback)
-            val pendingDeleteUris = mutableListOf<Uri>()
+            if (photoIds.isEmpty()) {
+                // No photos - just create album link
+                tagDao.updateAlbumLink(tagId, tempBucketId, albumName, copyMode.name)
+                return@withContext CreateLinkAlbumResult.Success(
+                    albumId = tempBucketId,
+                    albumName = albumName,
+                    photosAdded = 0
+                )
+            }
             
+            // Build list of photos to process
+            val photosToProcess = mutableListOf<Pair<Uri, String>>()
             for (photoId in photoIds) {
                 val photo = photoDao.getById(photoId)
                 if (photo != null) {
-                    val sourceUri = Uri.parse(photo.systemUri)
-                    
-                    val newPhoto = if (copyMode == AlbumCopyMode.MOVE) {
-                        // MOVE mode: Try direct move first, fall back to copy+delete
-                        val moveResult = mediaStoreDataSource.movePhotoToAlbumWithConfirmation(sourceUri, albumPath)
-                        when (moveResult) {
-                            is com.example.photozen.data.source.MediaStoreDataSource.MoveResult.Success -> {
-                                moveResult.newPhoto
-                            }
-                            is com.example.photozen.data.source.MediaStoreDataSource.MoveResult.RequiresDeleteConfirmation -> {
-                                // Photo was copied, need to delete original later
-                                pendingDeleteUris.add(moveResult.originalUri)
-                                moveResult.newPhoto
-                            }
-                            is com.example.photozen.data.source.MediaStoreDataSource.MoveResult.Failed -> null
-                        }
-                    } else {
-                        // COPY mode: Just copy the photo
-                        mediaStoreDataSource.copyPhotoToAlbum(sourceUri, albumPath)
-                    }
-                    
+                    photosToProcess.add(Uri.parse(photo.systemUri) to photoId)
+                }
+            }
+            
+            if (copyMode == AlbumCopyMode.MOVE) {
+                // Use batch move for MOVE mode
+                val batchResult = mediaStoreDataSource.batchMovePhotosToAlbum(photosToProcess, albumPath)
+                return@withContext handleBatchMoveResult(tagId, albumName, albumPath, tempBucketId, batchResult)
+            } else {
+                // COPY mode: Just copy all photos
+                var photosProcessed = 0
+                var actualBucketId = tempBucketId
+                
+                for ((sourceUri, photoId) in photosToProcess) {
+                    val newPhoto = mediaStoreDataSource.copyPhotoToAlbum(sourceUri, albumPath)
                     if (newPhoto != null) {
-                        // Save the new photo to our database
                         photoDao.insert(newPhoto)
-                        // Add the tag to the new photo
                         tagDao.addTagToPhoto(PhotoTagCrossRef(newPhoto.id, tagId))
+                        // For COPY mode, remove tag from original
+                        tagDao.removeTagFromPhoto(photoId, tagId)
                         
-                        // Get the actual bucket_id from the first processed photo
                         if (photosProcessed == 0 && newPhoto.bucketId != null) {
                             actualBucketId = newPhoto.bucketId
                         }
-                        
-                        // Remove the old photo-tag relationship to avoid duplicates
-                        tagDao.removeTagFromPhoto(photoId, tagId)
-                        
                         photosProcessed++
                     }
                 }
-            }
-            
-            // If we didn't process any photos, try to find the album anyway
-            if (photosProcessed == 0) {
-                val foundAlbum = mediaStoreDataSource.findAlbumByName(albumName)
-                if (foundAlbum != null) {
-                    actualBucketId = foundAlbum.id
-                }
-            }
-            
-            // Update the tag with album link
-            tagDao.updateAlbumLink(tagId, actualBucketId, albumName, copyMode.name)
-            
-            // For MOVE mode, if there are pending deletions, request confirmation
-            if (copyMode == AlbumCopyMode.MOVE && pendingDeleteUris.isNotEmpty()) {
-                when (val deleteResult = mediaStoreDataSource.deletePhotos(pendingDeleteUris)) {
-                    is DeleteResult.RequiresConfirmation -> {
-                        CreateLinkAlbumResult.RequiresDeleteConfirmation(
-                            albumId = actualBucketId,
-                            albumName = albumName,
-                            photosAdded = photosProcessed,
-                            intentSender = deleteResult.intentSender,
-                            pendingDeleteUris = deleteResult.uris
-                        )
-                    }
-                    is DeleteResult.Success -> {
-                        CreateLinkAlbumResult.Success(
-                            albumId = actualBucketId,
-                            albumName = albumName,
-                            photosAdded = photosProcessed
-                        )
-                    }
-                    is DeleteResult.Failed -> {
-                        // Photos moved/copied but original deletion failed - still return success
-                        CreateLinkAlbumResult.Success(
-                            albumId = actualBucketId,
-                            albumName = albumName,
-                            photosAdded = photosProcessed
-                        )
-                    }
-                }
-            } else {
+                
+                tagDao.updateAlbumLink(tagId, actualBucketId, albumName, copyMode.name)
                 CreateLinkAlbumResult.Success(
                     albumId = actualBucketId,
                     albumName = albumName,
@@ -230,6 +199,238 @@ class TagAlbumSyncUseCase @Inject constructor(
         } catch (e: Exception) {
             CreateLinkAlbumResult.Error("关联相册失败: ${e.message}")
         }
+    }
+    
+    /**
+     * Handle the result of batch move operation.
+     */
+    private suspend fun handleBatchMoveResult(
+        tagId: String,
+        albumName: String,
+        albumPath: String,
+        tempBucketId: String,
+        batchResult: MediaStoreDataSource.BatchMoveResult
+    ): CreateLinkAlbumResult {
+        return when (batchResult) {
+            is MediaStoreDataSource.BatchMoveResult.Success -> {
+                // All photos moved successfully
+                val actualBucketId = processMoveSuccess(tagId, albumName, tempBucketId, batchResult.movedPhotos)
+                CreateLinkAlbumResult.Success(
+                    albumId = actualBucketId,
+                    albumName = albumName,
+                    photosAdded = batchResult.movedPhotos.size
+                )
+            }
+            is MediaStoreDataSource.BatchMoveResult.RequiresWritePermission -> {
+                // Process already moved photos first
+                val actualBucketId = if (batchResult.alreadyMoved.isNotEmpty()) {
+                    processMoveSuccess(tagId, albumName, tempBucketId, batchResult.alreadyMoved)
+                } else {
+                    tempBucketId
+                }
+                
+                // Need write permission for remaining photos
+                CreateLinkAlbumResult.RequiresWritePermission(
+                    tagId = tagId,
+                    albumName = albumName,
+                    albumPath = albumPath,
+                    alreadyMovedCount = batchResult.alreadyMoved.size,
+                    intentSender = batchResult.intentSender,
+                    pendingPhotoIds = batchResult.pendingUris.map { it.second },
+                    pendingUris = batchResult.pendingUris.map { it.first }
+                )
+            }
+            is MediaStoreDataSource.BatchMoveResult.RequiresDeletePermission -> {
+                // Process already moved photos
+                var actualBucketId = if (batchResult.alreadyMoved.isNotEmpty()) {
+                    processMoveSuccess(tagId, albumName, tempBucketId, batchResult.alreadyMoved)
+                } else {
+                    tempBucketId
+                }
+                
+                // Process copied photos
+                for ((originalId, newPhoto) in batchResult.copiedPhotos) {
+                    photoDao.insert(newPhoto)
+                    tagDao.addTagToPhoto(PhotoTagCrossRef(newPhoto.id, tagId))
+                    tagDao.removeTagFromPhoto(originalId, tagId)
+                    if (actualBucketId == tempBucketId && newPhoto.bucketId != null) {
+                        actualBucketId = newPhoto.bucketId
+                    }
+                }
+                
+                tagDao.updateAlbumLink(tagId, actualBucketId, albumName, AlbumCopyMode.MOVE.name)
+                
+                // Need delete confirmation for original photos
+                CreateLinkAlbumResult.RequiresDeleteConfirmation(
+                    albumId = actualBucketId,
+                    albumName = albumName,
+                    photosAdded = batchResult.alreadyMoved.size + batchResult.copiedPhotos.size,
+                    intentSender = batchResult.intentSender,
+                    pendingDeleteUris = batchResult.pendingDeleteUris,
+                    photoIdsToCleanup = batchResult.photoIdsToCleanup
+                )
+            }
+        }
+    }
+    
+    /**
+     * Process successfully moved photos and return actual bucket ID.
+     */
+    private suspend fun processMoveSuccess(
+        tagId: String,
+        albumName: String,
+        tempBucketId: String,
+        movedPhotos: List<Pair<String, PhotoEntity>>
+    ): String {
+        var actualBucketId = tempBucketId
+        
+        for ((originalId, newPhoto) in movedPhotos) {
+            // Update photo in database
+            photoDao.insert(newPhoto)
+            
+            // For direct moves, newPhoto.id should equal originalId
+            // No need to change tag relationships
+            
+            if (actualBucketId == tempBucketId && newPhoto.bucketId != null) {
+                actualBucketId = newPhoto.bucketId
+            }
+        }
+        
+        // Update album link
+        tagDao.updateAlbumLink(tagId, actualBucketId, albumName, AlbumCopyMode.MOVE.name)
+        
+        return actualBucketId
+    }
+    
+    /**
+     * Complete move after write permission was granted.
+     */
+    suspend fun completeMoveAfterWritePermission(
+        tagId: String,
+        albumName: String,
+        albumPath: String,
+        pendingPhotoIds: List<String>,
+        pendingUris: List<Uri>
+    ): CreateLinkAlbumResult = withContext(Dispatchers.IO) {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val pendingPairs = pendingUris.zip(pendingPhotoIds)
+                val movedPhotos = mediaStoreDataSource.completeBatchMoveAfterPermission(
+                    pendingPairs.map { it.first to it.second },
+                    albumPath
+                )
+                
+                // Process moved photos
+                var actualBucketId: String? = null
+                for ((originalId, newPhoto) in movedPhotos) {
+                    photoDao.insert(newPhoto)
+                    if (actualBucketId == null && newPhoto.bucketId != null) {
+                        actualBucketId = newPhoto.bucketId
+                    }
+                }
+                
+                if (actualBucketId != null) {
+                    tagDao.updateAlbumLink(tagId, actualBucketId, albumName, AlbumCopyMode.MOVE.name)
+                }
+                
+                CreateLinkAlbumResult.Success(
+                    albumId = actualBucketId ?: albumName.hashCode().toString(),
+                    albumName = albumName,
+                    photosAdded = movedPhotos.size
+                )
+            } else {
+                CreateLinkAlbumResult.Error("需要 Android 10 或更高版本")
+            }
+        } catch (e: Exception) {
+            CreateLinkAlbumResult.Error("完成移动失败: ${e.message}")
+        }
+    }
+    
+    /**
+     * Legacy single-photo move method for backward compatibility.
+     */
+    private suspend fun legacyCreateAndLinkAlbum(
+        tagId: String,
+        albumName: String,
+        albumPath: String,
+        tempBucketId: String,
+        photoIds: List<String>,
+        copyMode: AlbumCopyMode
+    ): CreateLinkAlbumResult {
+        var photosProcessed = 0
+        var actualBucketId = tempBucketId
+        val pendingDeleteUris = mutableListOf<Uri>()
+        val photoIdsToCleanup = mutableListOf<String>()
+        
+        for (photoId in photoIds) {
+            val photo = photoDao.getById(photoId)
+            if (photo != null) {
+                val sourceUri = Uri.parse(photo.systemUri)
+                
+                val newPhoto = if (copyMode == AlbumCopyMode.MOVE) {
+                    val moveResult = mediaStoreDataSource.movePhotoToAlbumWithConfirmation(sourceUri, albumPath)
+                    when (moveResult) {
+                        is MediaStoreDataSource.MoveResult.Success -> moveResult.newPhoto
+                        is MediaStoreDataSource.MoveResult.RequiresDeleteConfirmation -> {
+                            pendingDeleteUris.add(moveResult.originalUri)
+                            photoIdsToCleanup.add(photoId)
+                            moveResult.newPhoto
+                        }
+                        is MediaStoreDataSource.MoveResult.Failed -> null
+                    }
+                } else {
+                    mediaStoreDataSource.copyPhotoToAlbum(sourceUri, albumPath)
+                }
+                
+                if (newPhoto != null) {
+                    photoDao.insert(newPhoto)
+                    
+                    if (photosProcessed == 0 && newPhoto.bucketId != null) {
+                        actualBucketId = newPhoto.bucketId
+                    }
+                    
+                    if (newPhoto.id != photoId) {
+                        tagDao.addTagToPhoto(PhotoTagCrossRef(newPhoto.id, tagId))
+                        tagDao.removeTagFromPhoto(photoId, tagId)
+                    }
+                    
+                    photosProcessed++
+                }
+            }
+        }
+        
+        tagDao.updateAlbumLink(tagId, actualBucketId, albumName, copyMode.name)
+        
+        if (copyMode == AlbumCopyMode.MOVE && pendingDeleteUris.isNotEmpty()) {
+            when (val deleteResult = mediaStoreDataSource.deletePhotos(pendingDeleteUris)) {
+                is DeleteResult.RequiresConfirmation -> {
+                    return CreateLinkAlbumResult.RequiresDeleteConfirmation(
+                        albumId = actualBucketId,
+                        albumName = albumName,
+                        photosAdded = photosProcessed,
+                        intentSender = deleteResult.intentSender,
+                        pendingDeleteUris = deleteResult.uris,
+                        photoIdsToCleanup = photoIdsToCleanup
+                    )
+                }
+                is DeleteResult.Success -> {
+                    // Clean up DB records
+                    for (id in photoIdsToCleanup) {
+                        tagDao.removeAllTagsFromPhoto(id)
+                        photoDao.deleteById(id)
+                    }
+                }
+                is DeleteResult.Failed -> {
+                    // Ignore
+                }
+            }
+        }
+        
+        return CreateLinkAlbumResult.Success(
+            albumId = actualBucketId,
+            albumName = albumName,
+            photosAdded = photosProcessed
+        )
     }
     
     /**
@@ -570,5 +771,22 @@ class TagAlbumSyncUseCase @Inject constructor(
         }
         
         totalChanges
+    }
+    
+    /**
+     * Clean up photo records from the database.
+     * Called after user confirms deletion of original photos in MOVE mode.
+     */
+    suspend fun cleanupPhotos(photoIds: List<String>) = withContext(Dispatchers.IO) {
+        for (photoId in photoIds) {
+            try {
+                // Remove all tag associations first
+                tagDao.removeAllTagsFromPhoto(photoId)
+                // Delete the photo record
+                photoDao.deleteById(photoId)
+            } catch (e: Exception) {
+                // Ignore individual errors - best effort cleanup
+            }
+        }
     }
 }

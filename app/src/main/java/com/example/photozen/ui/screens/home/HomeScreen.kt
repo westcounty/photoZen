@@ -151,7 +151,7 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "PhotoZen",
+                            text = "PhotoZen 图禅",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold
                         )
@@ -214,7 +214,6 @@ fun HomeScreen(
                         unsortedCount = uiState.filteredUnsorted,
                         sortedCount = uiState.filteredSorted,
                         totalCount = uiState.filteredTotal,
-                        maybeCount = uiState.maybeCount,
                         progress = uiState.filteredProgress,
                         filterMode = uiState.photoFilterMode,
                         onStartFlow = onNavigateToWorkflow
@@ -359,19 +358,19 @@ private fun QuickStatsRow(
             modifier = Modifier.weight(1f)
         )
         StatChip(
-            count = uiState.trashCount,
-            label = "删除",
-            icon = Icons.Default.Delete,
-            color = TrashRed,
-            onClick = onTrashClick,
-            modifier = Modifier.weight(1f)
-        )
-        StatChip(
             count = uiState.maybeCount,
             label = "待定",
             icon = Icons.Default.QuestionMark,
             color = MaybeAmber,
             onClick = onMaybeClick,
+            modifier = Modifier.weight(1f)
+        )
+        StatChip(
+            count = uiState.trashCount,
+            label = "回收站",
+            icon = Icons.Default.Delete,
+            color = TrashRed,
+            onClick = onTrashClick,
             modifier = Modifier.weight(1f)
         )
     }
@@ -451,7 +450,6 @@ private fun MissionCard(
     unsortedCount: Int,
     sortedCount: Int,
     totalCount: Int,
-    maybeCount: Int,
     progress: Float,
     filterMode: PhotoFilterMode,
     onStartFlow: () -> Unit
@@ -585,22 +583,6 @@ private fun MissionCard(
                     )
                 }
                 
-                // Maybe - if any
-                if (maybeCount > 0) {
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = maybeCount.toString(),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = MaybeAmber
-                        )
-                        Text(
-                            text = "待对比",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
             }
             
             Spacer(modifier = Modifier.height(16.dp))

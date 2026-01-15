@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.dao.TagDao
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.data.local.entity.PhotoTagCrossRef
+import com.example.photozen.data.local.entity.TagEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.MediaStoreDataSource
@@ -39,14 +41,40 @@ data class PhotoListUiState(
     val message: String? = null,
     val defaultExternalApp: String? = null,
     val untaggedCount: Int = 0,
-    val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC
+    val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC,
+    val isSelectionMode: Boolean = false,
+    val selectedPhotoIds: Set<String> = emptySet(),
+    val availableTags: List<TagInfo> = emptyList(),
+    val showTagDialog: Boolean = false,
+    val gridColumns: Int = 2
+) {
+    val selectedCount: Int get() = selectedPhotoIds.size
+    val allSelected: Boolean get() = photos.isNotEmpty() && selectedPhotoIds.size == photos.size
+    // Batch management is available for KEEP, MAYBE, and TRASH
+    val canBatchManage: Boolean get() = status in listOf(PhotoStatus.KEEP, PhotoStatus.MAYBE, PhotoStatus.TRASH)
+    // Tag operations only for KEEP status
+    val canBatchTag: Boolean get() = status == PhotoStatus.KEEP
+}
+
+/**
+ * Simplified tag info for display.
+ */
+data class TagInfo(
+    val id: String,
+    val name: String,
+    val color: Int,
+    val photoCount: Int
 )
 
 private data class InternalState(
     val isLoading: Boolean = true,
     val message: String? = null,
     val defaultExternalApp: String? = null,
-    val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC
+    val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC,
+    val isSelectionMode: Boolean = false,
+    val selectedPhotoIds: Set<String> = emptySet(),
+    val showTagDialog: Boolean = false,
+    val gridColumns: Int = 2
 )
 
 @HiltViewModel
@@ -75,13 +103,21 @@ class PhotoListViewModel @Inject constructor(
     // Track untagged count separately to avoid blocking UI
     private val _untaggedCount = MutableStateFlow(0)
     
+    // Available tags for batch tagging
+    private val _availableTags = MutableStateFlow<List<TagInfo>>(emptyList())
+    
     val uiState: StateFlow<PhotoListUiState> = combine(
         getPhotosUseCase.getPhotosByStatus(status),
         _internalState,
-        _untaggedCount
-    ) { photos, internal, untaggedCount ->
+        _untaggedCount,
+        _availableTags
+    ) { photos, internal, untaggedCount, tags ->
         // Apply sorting based on dateAdded (creation time)
         val sortedPhotos = applySortOrder(photos, internal.sortOrder)
+        // Filter out selected photos that no longer exist
+        val validSelectedIds = internal.selectedPhotoIds.filter { id ->
+            sortedPhotos.any { it.id == id }
+        }.toSet()
         PhotoListUiState(
             photos = sortedPhotos,
             status = status,
@@ -89,7 +125,12 @@ class PhotoListViewModel @Inject constructor(
             message = internal.message,
             defaultExternalApp = internal.defaultExternalApp,
             untaggedCount = untaggedCount,
-            sortOrder = internal.sortOrder
+            sortOrder = internal.sortOrder,
+            isSelectionMode = internal.isSelectionMode,
+            selectedPhotoIds = validSelectedIds,
+            availableTags = tags,
+            showTagDialog = internal.showTagDialog,
+            gridColumns = internal.gridColumns
         )
     }.stateIn(
         scope = viewModelScope,
@@ -106,6 +147,18 @@ class PhotoListViewModel @Inject constructor(
                 _internalState.update { it.copy(defaultExternalApp = app) }
             }
         }
+        // Load grid columns preference
+        viewModelScope.launch {
+            val gridScreen = when (status) {
+                PhotoStatus.KEEP -> PreferencesRepository.GridScreen.KEEP
+                PhotoStatus.MAYBE -> PreferencesRepository.GridScreen.MAYBE
+                PhotoStatus.TRASH -> PreferencesRepository.GridScreen.TRASH
+                PhotoStatus.UNSORTED -> PreferencesRepository.GridScreen.KEEP // Default
+            }
+            preferencesRepository.getGridColumns(gridScreen).collect { columns ->
+                _internalState.update { it.copy(gridColumns = columns) }
+            }
+        }
         // Count untagged photos for KEEP status - reactive to photo list changes
         if (status == PhotoStatus.KEEP) {
             viewModelScope.launch {
@@ -118,6 +171,19 @@ class PhotoListViewModel @Inject constructor(
                         }
                     }
                     _untaggedCount.value = count
+                }
+            }
+            // Load available tags for KEEP status (batch tagging)
+            viewModelScope.launch {
+                tagDao.getTagsWithPhotoCount().collect { tagsWithCount ->
+                    _availableTags.value = tagsWithCount.map { tagWithCount ->
+                        TagInfo(
+                            id = tagWithCount.id,
+                            name = tagWithCount.name,
+                            color = tagWithCount.color,
+                            photoCount = tagWithCount.photoCount
+                        )
+                    }
                 }
             }
         }
@@ -213,6 +279,158 @@ class PhotoListViewModel @Inject constructor(
         _internalState.update { it.copy(message = null) }
     }
     
+    // ==================== Selection Mode ====================
+    
+    /**
+     * Toggle selection mode on/off.
+     */
+    fun toggleSelectionMode() {
+        _internalState.update { 
+            it.copy(
+                isSelectionMode = !it.isSelectionMode,
+                selectedPhotoIds = if (it.isSelectionMode) emptySet() else it.selectedPhotoIds
+            )
+        }
+    }
+    
+    /**
+     * Exit selection mode and clear selection.
+     */
+    fun exitSelectionMode() {
+        _internalState.update { 
+            it.copy(isSelectionMode = false, selectedPhotoIds = emptySet())
+        }
+    }
+    
+    /**
+     * Toggle selection of a single photo.
+     */
+    fun togglePhotoSelection(photoId: String) {
+        _internalState.update { state ->
+            val newSelection = if (photoId in state.selectedPhotoIds) {
+                state.selectedPhotoIds - photoId
+            } else {
+                state.selectedPhotoIds + photoId
+            }
+            state.copy(selectedPhotoIds = newSelection)
+        }
+    }
+    
+    /**
+     * Select all photos.
+     */
+    fun selectAll() {
+        val allIds = uiState.value.photos.map { it.id }.toSet()
+        _internalState.update { it.copy(selectedPhotoIds = allIds) }
+    }
+    
+    /**
+     * Deselect all photos.
+     */
+    fun deselectAll() {
+        _internalState.update { it.copy(selectedPhotoIds = emptySet()) }
+    }
+    
+    /**
+     * Move selected photos to Keep.
+     */
+    fun moveSelectedToKeep() {
+        val selectedIds = _internalState.value.selectedPhotoIds
+        if (selectedIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            try {
+                selectedIds.forEach { photoId ->
+                    sortPhotoUseCase.keepPhoto(photoId)
+                }
+                _internalState.update { 
+                    it.copy(
+                        message = "已将 ${selectedIds.size} 张照片移至保留",
+                        selectedPhotoIds = emptySet(),
+                        isSelectionMode = false
+                    )
+                }
+            } catch (e: Exception) {
+                _internalState.update { it.copy(message = "操作失败") }
+            }
+        }
+    }
+    
+    /**
+     * Move selected photos to Trash.
+     */
+    fun moveSelectedToTrash() {
+        val selectedIds = _internalState.value.selectedPhotoIds
+        if (selectedIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            try {
+                selectedIds.forEach { photoId ->
+                    sortPhotoUseCase.trashPhoto(photoId)
+                }
+                _internalState.update { 
+                    it.copy(
+                        message = "已将 ${selectedIds.size} 张照片移至回收站",
+                        selectedPhotoIds = emptySet(),
+                        isSelectionMode = false
+                    )
+                }
+            } catch (e: Exception) {
+                _internalState.update { it.copy(message = "操作失败") }
+            }
+        }
+    }
+    
+    /**
+     * Move selected photos to Maybe.
+     */
+    fun moveSelectedToMaybe() {
+        val selectedIds = _internalState.value.selectedPhotoIds
+        if (selectedIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            try {
+                selectedIds.forEach { photoId ->
+                    sortPhotoUseCase.maybePhoto(photoId)
+                }
+                _internalState.update { 
+                    it.copy(
+                        message = "已将 ${selectedIds.size} 张照片标记为待定",
+                        selectedPhotoIds = emptySet(),
+                        isSelectionMode = false
+                    )
+                }
+            } catch (e: Exception) {
+                _internalState.update { it.copy(message = "操作失败") }
+            }
+        }
+    }
+    
+    /**
+     * Reset selected photos to Unsorted.
+     */
+    fun resetSelectedToUnsorted() {
+        val selectedIds = _internalState.value.selectedPhotoIds
+        if (selectedIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            try {
+                selectedIds.forEach { photoId ->
+                    sortPhotoUseCase.resetPhoto(photoId)
+                }
+                _internalState.update { 
+                    it.copy(
+                        message = "已将 ${selectedIds.size} 张照片恢复为未整理",
+                        selectedPhotoIds = emptySet(),
+                        isSelectionMode = false
+                    )
+                }
+            } catch (e: Exception) {
+                _internalState.update { it.copy(message = "操作失败") }
+            }
+        }
+    }
+    
     /**
      * Duplicate a photo, preserving all EXIF metadata and timestamps.
      * The copy will have the same status as the original photo.
@@ -242,6 +460,114 @@ class PhotoListViewModel @Inject constructor(
             } catch (e: Exception) {
                 _internalState.update { it.copy(message = "复制照片失败: ${e.message}") }
             }
+        }
+    }
+    
+    // ==================== Batch Tagging ====================
+    
+    /**
+     * Show tag selection dialog.
+     */
+    fun showTagDialog() {
+        _internalState.update { it.copy(showTagDialog = true) }
+    }
+    
+    /**
+     * Hide tag selection dialog.
+     */
+    fun hideTagDialog() {
+        _internalState.update { it.copy(showTagDialog = false) }
+    }
+    
+    /**
+     * Apply a tag to all selected photos.
+     */
+    fun applyTagToSelected(tagId: String) {
+        val selectedIds = _internalState.value.selectedPhotoIds
+        if (selectedIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            try {
+                var addedCount = 0
+                selectedIds.forEach { photoId ->
+                    // Check if already tagged
+                    if (!tagDao.photoHasTag(photoId, tagId)) {
+                        tagDao.addTagToPhoto(PhotoTagCrossRef(photoId, tagId))
+                        addedCount++
+                    }
+                }
+                val tagName = _availableTags.value.find { it.id == tagId }?.name ?: "标签"
+                _internalState.update { 
+                    it.copy(
+                        showTagDialog = false,
+                        message = "已为 $addedCount 张照片添加标签「$tagName」",
+                        selectedPhotoIds = emptySet(),
+                        isSelectionMode = false
+                    )
+                }
+            } catch (e: Exception) {
+                _internalState.update { it.copy(message = "设置标签失败") }
+            }
+        }
+    }
+    
+    /**
+     * Create a new tag and apply to selected photos.
+     */
+    fun createTagAndApplyToSelected(tagName: String, tagColor: Int) {
+        val selectedIds = _internalState.value.selectedPhotoIds
+        if (selectedIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            try {
+                // Check if tag name already exists
+                if (tagDao.tagNameExists(tagName)) {
+                    _internalState.update { it.copy(message = "标签「$tagName」已存在") }
+                    return@launch
+                }
+                
+                // Create the new tag
+                val newTag = TagEntity(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = tagName,
+                    color = tagColor
+                )
+                tagDao.insert(newTag)
+                
+                // Apply to selected photos
+                selectedIds.forEach { photoId ->
+                    tagDao.addTagToPhoto(PhotoTagCrossRef(photoId, newTag.id))
+                }
+                
+                _internalState.update { 
+                    it.copy(
+                        showTagDialog = false,
+                        message = "已创建标签「$tagName」并应用到 ${selectedIds.size} 张照片",
+                        selectedPhotoIds = emptySet(),
+                        isSelectionMode = false
+                    )
+                }
+            } catch (e: Exception) {
+                _internalState.update { it.copy(message = "创建标签失败: ${e.message}") }
+            }
+        }
+    }
+    
+    // ==================== Grid Columns ====================
+    
+    /**
+     * Cycle grid columns: 2 -> 3 -> 1 -> 2
+     */
+    fun cycleGridColumns() {
+        viewModelScope.launch {
+            val gridScreen = when (status) {
+                PhotoStatus.KEEP -> PreferencesRepository.GridScreen.KEEP
+                PhotoStatus.MAYBE -> PreferencesRepository.GridScreen.MAYBE
+                PhotoStatus.TRASH -> PreferencesRepository.GridScreen.TRASH
+                PhotoStatus.UNSORTED -> PreferencesRepository.GridScreen.KEEP
+            }
+            val newColumns = preferencesRepository.cycleGridColumns(gridScreen)
+            _internalState.update { it.copy(gridColumns = newColumns) }
         }
     }
 }

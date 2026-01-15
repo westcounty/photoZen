@@ -5,9 +5,10 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,24 +18,29 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Restore
-import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material3.BottomAppBar
+import androidx.compose.material.icons.filled.ViewColumn
+import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,7 +52,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -58,8 +66,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -69,9 +79,10 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.ui.theme.KeepGreen
+import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TrashScreen(
     onNavigateBack: () -> Unit,
@@ -80,6 +91,7 @@ fun TrashScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val haptic = LocalHapticFeedback.current
     
     // Launcher for system delete request
     val deleteLauncher = rememberLauncherForActivityResult(
@@ -105,6 +117,15 @@ fun TrashScreen(
         }
     }
     
+    // Handle back press in selection mode
+    val handleBack: () -> Unit = {
+        if (uiState.isSelectionMode) {
+            viewModel.clearSelection()
+        } else {
+            onNavigateBack()
+        }
+    }
+    
     Scaffold(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -126,13 +147,7 @@ fun TrashScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        if (uiState.isSelectionMode) {
-                            viewModel.clearSelection()
-                        } else {
-                            onNavigateBack()
-                        }
-                    }) {
+                    IconButton(onClick = handleBack) {
                         Icon(
                             if (uiState.isSelectionMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
                             "返回"
@@ -140,14 +155,41 @@ fun TrashScreen(
                     }
                 },
                 actions = {
-                    if (uiState.photos.isNotEmpty()) {
-                        IconButton(onClick = {
-                            if (uiState.allSelected) viewModel.clearSelection() else viewModel.selectAll()
-                        }) {
-                            Icon(
-                                Icons.Default.SelectAll,
-                                if (uiState.allSelected) "取消全选" else "全选"
-                            )
+                    if (uiState.isSelectionMode) {
+                        // Select all / Deselect all
+                        TextButton(
+                            onClick = {
+                                if (uiState.allSelected) viewModel.clearSelection() else viewModel.selectAll()
+                            }
+                        ) {
+                            Text(if (uiState.allSelected) "取消全选" else "全选")
+                        }
+                    } else {
+                        // Grid columns toggle
+                        if (uiState.photos.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.cycleGridColumns() }) {
+                                Icon(
+                                    imageVector = when (uiState.gridColumns) {
+                                        1 -> Icons.Default.ViewColumn
+                                        2 -> Icons.Default.GridView
+                                        else -> Icons.Default.ViewModule
+                                    },
+                                    contentDescription = "${uiState.gridColumns}列视图"
+                                )
+                            }
+                        }
+                        
+                        // Batch management mode
+                        if (uiState.photos.isNotEmpty()) {
+                            IconButton(onClick = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.enterSelectionMode()
+                            }) {
+                                Icon(
+                                    Icons.Default.Checklist,
+                                    "批量管理"
+                                )
+                            }
                         }
                     }
                 },
@@ -157,9 +199,11 @@ fun TrashScreen(
             )
         },
         bottomBar = {
-            if (uiState.isSelectionMode) {
-                SelectionBottomBar(
+            if (uiState.isSelectionMode && uiState.selectedCount > 0) {
+                TrashSelectionBottomBar(
                     onRestore = { viewModel.restoreSelected() },
+                    onKeep = { viewModel.keepSelected() },
+                    onMaybe = { viewModel.maybeSelected() },
                     onDelete = { viewModel.requestPermanentDelete() },
                     isDeleting = uiState.isDeleting
                 )
@@ -181,8 +225,120 @@ fun TrashScreen(
                 else -> {
                     TrashPhotoGrid(
                         photos = uiState.photos,
+                        columns = uiState.gridColumns,
                         selectedIds = uiState.selectedIds,
-                        onToggleSelection = { viewModel.toggleSelection(it) }
+                        isSelectionMode = uiState.isSelectionMode,
+                        onPhotoClick = { photoId ->
+                            if (uiState.isSelectionMode) {
+                                viewModel.toggleSelection(photoId)
+                            }
+                        },
+                        onPhotoLongPress = { photoId ->
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (!uiState.isSelectionMode) {
+                                viewModel.enterSelectionMode()
+                            }
+                            viewModel.toggleSelection(photoId)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TrashPhotoGrid(
+    photos: List<PhotoEntity>,
+    columns: Int,
+    selectedIds: Set<String>,
+    isSelectionMode: Boolean,
+    onPhotoClick: (String) -> Unit,
+    onPhotoLongPress: (String) -> Unit
+) {
+    LazyVerticalStaggeredGrid(
+        columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 3)),
+        contentPadding = PaddingValues(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalItemSpacing = 8.dp
+    ) {
+        items(photos, key = { it.id }) { photo ->
+            TrashPhotoItem(
+                photo = photo,
+                isSelected = photo.id in selectedIds,
+                isSelectionMode = isSelectionMode,
+                onClick = { onPhotoClick(photo.id) },
+                onLongPress = { onPhotoLongPress(photo.id) }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TrashPhotoItem(
+    photo: PhotoEntity,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit
+) {
+    val context = LocalContext.current
+    
+    // Calculate aspect ratio from photo dimensions
+    val aspectRatio = if (photo.width > 0 && photo.height > 0) {
+        photo.width.toFloat() / photo.height.toFloat()
+    } else {
+        1f // Default to square if dimensions unknown
+    }
+    
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .then(
+                if (isSelected) {
+                    Modifier.border(3.dp, TrashRed, RoundedCornerShape(8.dp))
+                } else Modifier
+            )
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongPress
+            )
+    ) {
+        AsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(Uri.parse(photo.systemUri))
+                .crossfade(true)
+                .build(),
+            contentDescription = photo.displayName,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(aspectRatio)
+        )
+        
+        // Selection indicator
+        if (isSelectionMode) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (isSelected) TrashRed
+                        else Color.Black.copy(alpha = 0.5f)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isSelected) {
+                    Icon(
+                        Icons.Default.Check,
+                        null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
@@ -191,102 +347,68 @@ fun TrashScreen(
 }
 
 @Composable
-private fun TrashPhotoGrid(
-    photos: List<PhotoEntity>,
-    selectedIds: Set<String>,
-    onToggleSelection: (String) -> Unit
-) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
-        contentPadding = PaddingValues(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        items(photos, key = { it.id }) { photo ->
-            TrashPhotoItem(
-                photo = photo,
-                isSelected = photo.id in selectedIds,
-                onToggle = { onToggleSelection(photo.id) }
-            )
-        }
-    }
-}
-
-@Composable
-private fun TrashPhotoItem(
-    photo: PhotoEntity,
-    isSelected: Boolean,
-    onToggle: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable { onToggle() }
-            .then(
-                if (isSelected) {
-                    Modifier.border(3.dp, TrashRed, RoundedCornerShape(8.dp))
-                } else Modifier
-            )
-    ) {
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(Uri.parse(photo.systemUri))
-                .crossfade(true)
-                .build(),
-            contentDescription = photo.displayName,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-        )
-        
-        // Selection indicator
-        if (isSelected) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(4.dp)
-                    .size(24.dp)
-                    .clip(CircleShape)
-                    .background(TrashRed),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Check,
-                    null,
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SelectionBottomBar(
+private fun TrashSelectionBottomBar(
     onRestore: () -> Unit,
+    onKeep: () -> Unit,
+    onMaybe: () -> Unit,
     onDelete: () -> Unit,
     isDeleting: Boolean
 ) {
-    BottomAppBar(containerColor = MaterialTheme.colorScheme.surface) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 8.dp,
+        shadowElevation = 8.dp
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                .navigationBarsPadding()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            // Keep button
             FilledTonalButton(
-                onClick = onRestore,
+                onClick = onKeep,
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.filledTonalButtonColors(
                     containerColor = KeepGreen.copy(alpha = 0.15f),
                     contentColor = KeepGreen
                 )
             ) {
-                Icon(Icons.Default.Restore, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("恢复")
+                Icon(Icons.Default.Favorite, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(2.dp))
+                Text("保留", maxLines = 1)
             }
             
+            // Maybe button
+            FilledTonalButton(
+                onClick = onMaybe,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaybeAmber.copy(alpha = 0.15f),
+                    contentColor = MaybeAmber
+                )
+            ) {
+                Icon(Icons.Default.QuestionMark, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(2.dp))
+                Text("待定", maxLines = 1)
+            }
+            
+            // Restore button
+            FilledTonalButton(
+                onClick = onRestore,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Undo, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("重置")
+            }
+            
+            // Delete button
             Button(
                 onClick = onDelete,
                 enabled = !isDeleting,

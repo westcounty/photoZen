@@ -1,26 +1,39 @@
 package com.example.photozen.ui.components.bubble
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -28,52 +41,70 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Interactive bubble graph visualization with physics simulation.
+ * Interactive bubble graph visualization with smooth physics-based dragging.
  * 
  * Features:
- * - Center node (parent tag) fixed in center
- * - Child nodes float around with spring physics
+ * - Ultra-smooth draggable bubbles that follow finger precisely
+ * - Physics-based collision and bouncing effects
+ * - Inertia-based animation when released
+ * - Positions are saved and restored
  * - Tap to select a bubble
- * - Long press to navigate into bubble (show children)
- * - Drag to move bubbles (they spring back)
- * 
- * @param nodes List of bubble nodes to display
- * @param onBubbleClick Callback when a bubble is clicked (tap)
- * @param onBubbleLongClick Callback when a bubble is long pressed
- * @param modifier Modifier for the graph
+ * - Long press for options
  */
 @Composable
 fun BubbleGraphView(
     nodes: List<BubbleNode>,
     onBubbleClick: (BubbleNode) -> Unit,
     onBubbleLongClick: ((BubbleNode) -> Unit)? = null,
+    savedPositions: Map<String, Pair<Float, Float>> = emptyMap(),
+    onPositionsChanged: ((Map<String, Pair<Float, Float>>) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+    val haptic = LocalHapticFeedback.current
     
-    // Physics state
-    var physicsEngine by remember { mutableStateOf<BubblePhysicsEngine?>(null) }
-    val bubbleStates = remember { mutableStateListOf<BubbleState>() }
-    var lastFrameTime by remember { mutableStateOf(0L) }
+    // Container size
+    var containerSize by remember { mutableStateOf(IntSize.Zero) }
     
-    // Track nodes changes to update bubble states
-    var lastNodesVersion by remember { mutableStateOf(0) }
-    val currentNodesVersion = remember(nodes) { nodes.hashCode() }
+    // Bubble states with animatable positions
+    val bubbleAnimatables = remember(nodes.map { it.id }.sorted().joinToString()) {
+        nodes.map { node ->
+            node to Animatable(Offset.Zero, Offset.VectorConverter)
+        }
+    }
     
-    // Dragging state
-    var draggedBubbleIndex by remember { mutableStateOf(-1) }
+    // Track initialization
+    var initialized by remember { mutableStateOf(false) }
+    
+    // Track dragging state
+    var draggedNodeId by remember { mutableStateOf<String?>(null) }
+    
+    // Velocity tracking for inertia
+    var lastDragVelocity by remember { mutableStateOf(Offset.Zero) }
     
     // Pulse animation for center bubble
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -87,189 +118,292 @@ fun BubbleGraphView(
         label = "pulse_scale"
     )
     
-    // Initialize physics engine and bubble states when size changes
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .pointerInput(nodes, onBubbleLongClick) {
-                detectTapGestures(
-                    onTap = { offset ->
-                        // Find clicked bubble - use expanded hit area for better touch responsiveness
-                        // Sort by distance to prefer the closest bubble
-                        val hitBubble = bubbleStates
-                            .map { state -> 
-                                val distance = (offset - state.position).getDistance()
-                                // Expanded hit area: radius + 15dp padding
-                                val hitRadius = state.node.radius + 15.dp.toPx()
-                                state to distance
-                            }
-                            .filter { (state, distance) -> distance <= state.node.radius + 15.dp.toPx() }
-                            .minByOrNull { (_, distance) -> distance }
-                            ?.first
-                        
-                        if (hitBubble != null) {
-                            onBubbleClick(hitBubble.node)
-                        }
-                    },
-                    onLongPress = { offset ->
-                        // Find long-pressed bubble
-                        if (onBubbleLongClick != null) {
-                            val hitBubble = bubbleStates
-                                .map { state -> 
-                                    val distance = (offset - state.position).getDistance()
-                                    state to distance
-                                }
-                                .filter { (state, distance) -> distance <= state.node.radius + 15.dp.toPx() }
-                                .minByOrNull { (_, distance) -> distance }
-                                ?.first
-                            
-                            if (hitBubble != null) {
-                                onBubbleLongClick(hitBubble.node)
-                            }
-                        }
-                    }
-                )
-            }
-            .pointerInput(nodes) {
-                detectDragGestures(
-                    onDragStart = { offset ->
-                        // Find bubble under finger
-                        bubbleStates.forEachIndexed { index, state ->
-                            if (state.node.isCenter) return@forEachIndexed // Can't drag center
-                            val distance = (offset - state.position).getDistance()
-                            if (distance <= state.node.radius) {
-                                draggedBubbleIndex = index
-                                state.startDrag()
-                                return@forEachIndexed
-                            }
-                        }
-                    },
-                    onDrag = { change, dragAmount ->
-                        if (draggedBubbleIndex >= 0) {
-                            change.consume()
-                            val state = bubbleStates[draggedBubbleIndex]
-                            state.setPosition(state.position + dragAmount)
-                        }
-                    },
-                    onDragEnd = {
-                        if (draggedBubbleIndex >= 0) {
-                            val state = bubbleStates[draggedBubbleIndex]
-                            val engine = physicsEngine
-                            if (engine != null) {
-                                // Calculate target position (will be updated by physics)
-                                val initialPositions = engine.calculateInitialPositions(nodes)
-                                val targetPos = initialPositions.getOrNull(draggedBubbleIndex)
-                                    ?: state.position
-                                
-                                scope.launch {
-                                    state.endDrag(scope, targetPos)
-                                }
-                            }
-                            draggedBubbleIndex = -1
-                        }
-                    },
-                    onDragCancel = {
-                        if (draggedBubbleIndex >= 0) {
-                            bubbleStates[draggedBubbleIndex].let { bubbleState ->
-                                scope.launch {
-                                    bubbleState.endDrag(scope, bubbleState.position)
-                                }
-                            }
-                            draggedBubbleIndex = -1
-                        }
-                    }
-                )
-            }
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            // Initialize physics engine on first draw
-            if (physicsEngine == null && size.width > 0 && size.height > 0) {
-                physicsEngine = BubblePhysicsEngine(
-                    centerX = size.width / 2,
-                    centerY = size.height / 2,
-                    boundaryWidth = size.width,
-                    boundaryHeight = size.height
-                )
-                
-                val initialPositions = physicsEngine!!.calculateInitialPositions(nodes)
-                bubbleStates.clear()
-                nodes.forEachIndexed { index, node ->
-                    bubbleStates.add(BubbleState(initialPositions[index], node))
-                }
-                lastNodesVersion = currentNodesVersion
-            }
+    // Initialize positions when size is available
+    LaunchedEffect(containerSize, nodes, savedPositions) {
+        if (containerSize.width > 0 && containerSize.height > 0 && !initialized) {
+            val centerX = containerSize.width / 2f
+            val centerY = containerSize.height / 2f
+            val childNodes = nodes.filter { !it.isCenter }
+            val orbitRadius = min(containerSize.width, containerSize.height) * 0.3f
             
-            // Update bubble states when nodes change (e.g., after unlinking album)
-            if (lastNodesVersion != currentNodesVersion && physicsEngine != null && size.width > 0) {
-                // Update existing bubbles or add/remove as needed
-                val existingIds = bubbleStates.map { it.node.id }.toSet()
-                val newIds = nodes.map { it.id }.toSet()
-                
-                // Remove bubbles that no longer exist
-                bubbleStates.removeAll { it.node.id !in newIds }
-                
-                // Update existing bubbles with new node data (preserving positions)
-                bubbleStates.forEachIndexed { index, state ->
-                    val newNode = nodes.find { it.id == state.node.id }
-                    if (newNode != null && newNode != state.node) {
-                        // Replace with updated node, keeping position
-                        val position = state.position
-                        bubbleStates[index] = BubbleState(position, newNode)
-                    }
-                }
-                
-                // Add new bubbles
-                val initialPositions = physicsEngine!!.calculateInitialPositions(nodes)
-                nodes.forEachIndexed { index, node ->
-                    if (node.id !in existingIds) {
-                        bubbleStates.add(BubbleState(initialPositions[index], node))
-                    }
-                }
-                
-                lastNodesVersion = currentNodesVersion
-            }
-            
-            // Draw connections from center to children
-            val centerBubble = bubbleStates.find { it.node.isCenter }
-            if (centerBubble != null) {
-                bubbleStates.filter { !it.node.isCenter }.forEach { child ->
-                    drawLine(
-                        color = Color.White.copy(alpha = 0.2f),
-                        start = centerBubble.position,
-                        end = child.position,
-                        strokeWidth = 2.dp.toPx()
+            bubbleAnimatables.forEachIndexed { index, (node, animatable) ->
+                val savedPos = savedPositions[node.id]
+                val targetPos = if (savedPos != null) {
+                    Offset(savedPos.first, savedPos.second)
+                } else if (node.isCenter) {
+                    Offset(centerX, centerY)
+                } else {
+                    val childIndex = childNodes.indexOf(node)
+                    val total = childNodes.size
+                    val angle = (2 * Math.PI * childIndex / total).toFloat() - (Math.PI / 2).toFloat()
+                    Offset(
+                        centerX + orbitRadius * cos(angle),
+                        centerY + orbitRadius * sin(angle)
                     )
                 }
+                animatable.snapTo(targetPos)
             }
+            initialized = true
+        }
+    }
+    
+    // Collision detection and resolution
+    fun resolveCollisions(
+        currentIndex: Int,
+        currentPos: Offset,
+        excludeDragged: Boolean = true
+    ): Offset {
+        var resolvedPos = currentPos
+        val currentNode = bubbleAnimatables[currentIndex].first
+        val margin = 8f
+        
+        bubbleAnimatables.forEachIndexed { otherIndex, (otherNode, otherAnimatable) ->
+            if (otherIndex == currentIndex) return@forEachIndexed
+            if (excludeDragged && otherNode.id == draggedNodeId) return@forEachIndexed
             
-            // Draw bubbles
-            bubbleStates.forEach { state ->
-                drawBubble(
-                    state = state,
-                    pulseScale = if (state.node.isCenter) pulseScale else 1f,
-                    isDragging = bubbleStates.indexOf(state) == draggedBubbleIndex
-                )
+            val otherPos = otherAnimatable.value
+            val minDist = currentNode.radius + otherNode.radius + margin
+            val diff = resolvedPos - otherPos
+            val dist = sqrt(diff.x * diff.x + diff.y * diff.y)
+            
+            if (dist < minDist && dist > 0.1f) {
+                // Push away
+                val overlap = minDist - dist
+                val direction = diff / dist
+                resolvedPos += direction * overlap
+            }
+        }
+        
+        // Boundary constraints
+        val boundaryMargin = currentNode.radius + 4f
+        resolvedPos = Offset(
+            resolvedPos.x.coerceIn(boundaryMargin, containerSize.width - boundaryMargin),
+            resolvedPos.y.coerceIn(boundaryMargin, containerSize.height - boundaryMargin)
+        )
+        
+        return resolvedPos
+    }
+    
+    // Push other bubbles away from dragged bubble
+    fun pushOtherBubbles(draggedIndex: Int, draggedPos: Offset) {
+        val draggedNode = bubbleAnimatables[draggedIndex].first
+        val margin = 8f
+        
+        bubbleAnimatables.forEachIndexed { otherIndex, (otherNode, otherAnimatable) ->
+            if (otherIndex == draggedIndex) return@forEachIndexed
+            if (otherNode.isCenter) return@forEachIndexed // Don't push center
+            
+            val otherPos = otherAnimatable.value
+            val minDist = draggedNode.radius + otherNode.radius + margin
+            val diff = otherPos - draggedPos
+            val dist = sqrt(diff.x * diff.x + diff.y * diff.y)
+            
+            if (dist < minDist && dist > 0.1f) {
+                // Calculate push direction and amount
+                val overlap = minDist - dist
+                val direction = diff / dist
+                val targetPos = resolveCollisions(otherIndex, otherPos + direction * (overlap * 1.2f), excludeDragged = true)
+                
+                // Animate other bubble away with spring physics
+                scope.launch {
+                    otherAnimatable.animateTo(
+                        targetPos,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessHigh
+                        )
+                    )
+                }
             }
         }
     }
     
-    // Physics simulation loop - throttled to 60fps for battery efficiency
-    LaunchedEffect(nodes) {
-        val targetFrameTime = 16_666_666L // ~60fps in nanoseconds
-        lastFrameTime = System.nanoTime()
+    // Save positions helper
+    fun savePositions() {
+        if (onPositionsChanged != null && initialized) {
+            val positions = bubbleAnimatables.associate { (node, animatable) ->
+                node.id to Pair(animatable.value.x, animatable.value.y)
+            }
+            onPositionsChanged(positions)
+        }
+    }
+    
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .onSizeChanged { containerSize = it }
+    ) {
+        // Draw connection lines
+        if (initialized && containerSize.width > 0) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val centerBubble = bubbleAnimatables.find { it.first.isCenter }
+                if (centerBubble != null) {
+                    val centerPos = centerBubble.second.value
+                    bubbleAnimatables.filter { !it.first.isCenter }.forEach { (_, animatable) ->
+                        drawLine(
+                            color = Color.White.copy(alpha = 0.2f),
+                            start = centerPos,
+                            end = animatable.value,
+                            strokeWidth = 2.dp.toPx()
+                        )
+                    }
+                }
+            }
+        }
         
-        while (isActive) {
-            withFrameNanos { frameTime ->
-                val elapsed = frameTime - lastFrameTime
+        // Render each bubble as a separate composable for better touch handling
+        bubbleAnimatables.forEachIndexed { index, (node, animatable) ->
+            key(node.id) {
+                val position = animatable.value
+                val isDragging = node.id == draggedNodeId
+                val radiusDp = with(density) { node.radius.toDp() }
+                val scale = if (node.isCenter) pulseScale else if (isDragging) 1.1f else 1f
                 
-                // Only update if enough time has passed (throttle to 60fps)
-                if (elapsed >= targetFrameTime) {
-                    val deltaTime = elapsed / 1_000_000_000f
-                    lastFrameTime = frameTime
-                    
-                    // Only run physics if there are bubbles and engine is initialized
-                    if (bubbleStates.isNotEmpty() && physicsEngine != null) {
-                        physicsEngine?.step(bubbleStates, deltaTime)
+                Box(
+                    modifier = Modifier
+                        .offset {
+                            IntOffset(
+                                (position.x - node.radius).roundToInt(),
+                                (position.y - node.radius).roundToInt()
+                            )
+                        }
+                        .size(radiusDp * 2)
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                        }
+                        .then(
+                            if (!node.isCenter) {
+                                Modifier.pointerInput(node.id) {
+                                    var velocityTracker = mutableListOf<Pair<Long, Offset>>()
+                                    
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown(requireUnconsumed = false)
+                                        draggedNodeId = node.id
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        velocityTracker.clear()
+                                        
+                                        var lastPosition = down.position
+                                        var lastTime = System.currentTimeMillis()
+                                        velocityTracker.add(lastTime to position)
+                                        
+                                        // Immediately snap to finger position during drag
+                                        scope.launch {
+                                            animatable.stop()
+                                        }
+                                        
+                                        try {
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                
+                                                if (event.type == PointerEventType.Move) {
+                                                    val change = event.changes.firstOrNull() ?: continue
+                                                    if (change.pressed) {
+                                                        val delta = change.positionChange()
+                                                        change.consume()
+                                                        
+                                                        // Directly update position - no animation delay
+                                                        val currentPos = animatable.value
+                                                        var newPos = currentPos + delta
+                                                        
+                                                        // Apply boundary constraints immediately
+                                                        val boundaryMargin = node.radius + 4f
+                                                        newPos = Offset(
+                                                            newPos.x.coerceIn(boundaryMargin, containerSize.width - boundaryMargin),
+                                                            newPos.y.coerceIn(boundaryMargin, containerSize.height - boundaryMargin)
+                                                        )
+                                                        
+                                                        // Snap to new position (no animation = instant response)
+                                                        scope.launch {
+                                                            animatable.snapTo(newPos)
+                                                        }
+                                                        
+                                                        // Push other bubbles
+                                                        pushOtherBubbles(index, newPos)
+                                                        
+                                                        // Track velocity
+                                                        val currentTime = System.currentTimeMillis()
+                                                        velocityTracker.add(currentTime to newPos)
+                                                        // Keep only recent samples
+                                                        if (velocityTracker.size > 10) {
+                                                            velocityTracker = velocityTracker.takeLast(10).toMutableList()
+                                                        }
+                                                        
+                                                        lastPosition = change.position
+                                                        lastTime = currentTime
+                                                    }
+                                                }
+                                                
+                                                if (event.changes.all { it.changedToUp() }) {
+                                                    // Calculate release velocity
+                                                    val velocity = if (velocityTracker.size >= 2) {
+                                                        val recent = velocityTracker.takeLast(5)
+                                                        val timeDiff = (recent.last().first - recent.first().first).coerceAtLeast(1)
+                                                        val posDiff = recent.last().second - recent.first().second
+                                                        Offset(
+                                                            posDiff.x / timeDiff * 100,
+                                                            posDiff.y / timeDiff * 100
+                                                        )
+                                                    } else {
+                                                        Offset.Zero
+                                                    }
+                                                    
+                                                    draggedNodeId = null
+                                                    
+                                                    // Apply inertia animation if velocity is significant
+                                                    if (velocity.getDistance() > 50f) {
+                                                        val currentPos = animatable.value
+                                                        var targetPos = currentPos + velocity * 2f
+                                                        
+                                                        // Resolve collisions and boundaries for target
+                                                        targetPos = resolveCollisions(index, targetPos, excludeDragged = false)
+                                                        
+                                                        scope.launch {
+                                                            animatable.animateTo(
+                                                                targetPos,
+                                                                animationSpec = spring(
+                                                                    dampingRatio = Spring.DampingRatioLowBouncy,
+                                                                    stiffness = Spring.StiffnessLow
+                                                                )
+                                                            )
+                                                            savePositions()
+                                                        }
+                                                    } else {
+                                                        savePositions()
+                                                    }
+                                                    
+                                                    break
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            draggedNodeId = null
+                                            savePositions()
+                                        }
+                                    }
+                                }
+                            } else Modifier
+                        )
+                        .pointerInput(node.id) {
+                            detectTapGestures(
+                                onTap = {
+                                    onBubbleClick(node)
+                                },
+                                onLongPress = {
+                                    if (onBubbleLongClick != null) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onBubbleLongClick(node)
+                                    }
+                                }
+                            )
+                        }
+                ) {
+                    // Draw bubble content
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        drawBubbleContent(
+                            node = node,
+                            radius = node.radius,
+                            isDragging = isDragging
+                        )
                     }
                 }
             }
@@ -278,65 +412,60 @@ fun BubbleGraphView(
 }
 
 /**
- * Draw a single bubble with its label and photo count.
+ * Draw bubble content (circle, label, count).
  */
-private fun DrawScope.drawBubble(
-    state: BubbleState,
-    pulseScale: Float = 1f,
-    isDragging: Boolean = false
+private fun DrawScope.drawBubbleContent(
+    node: BubbleNode,
+    radius: Float,
+    isDragging: Boolean
 ) {
-    val node = state.node
-    val position = state.position
-    val radius = node.radius * pulseScale
+    val center = Offset(size.width / 2, size.height / 2)
     val color = Color(node.color)
     
     // Shadow
     drawCircle(
-        color = Color.Black.copy(alpha = 0.3f),
-        radius = radius + 4.dp.toPx(),
-        center = position + Offset(2.dp.toPx(), 4.dp.toPx())
+        color = Color.Black.copy(alpha = if (isDragging) 0.4f else 0.25f),
+        radius = radius + (if (isDragging) 6.dp.toPx() else 3.dp.toPx()),
+        center = center + Offset(2.dp.toPx(), if (isDragging) 6.dp.toPx() else 3.dp.toPx())
     )
     
     // Main bubble
     drawCircle(
         color = color,
         radius = radius,
-        center = position
+        center = center
     )
     
-    // Highlight gradient (top-left shine)
+    // Highlight (top-left shine)
     drawCircle(
         color = Color.White.copy(alpha = 0.3f),
-        radius = radius * 0.7f,
-        center = position + Offset(-radius * 0.2f, -radius * 0.2f)
+        radius = radius * 0.6f,
+        center = center + Offset(-radius * 0.25f, -radius * 0.25f)
     )
     
-    // Border (thicker when dragging)
+    // Border
     drawCircle(
         color = if (isDragging) Color.White else Color.White.copy(alpha = 0.5f),
         radius = radius,
-        center = position,
+        center = center,
         style = Stroke(width = if (isDragging) 4.dp.toPx() else 2.dp.toPx())
     )
     
-    // Draw children indicator (small arrow) for bubbles with children
+    // Children indicator
     if (node.hasChildren && !node.isCenter) {
         val indicatorSize = radius * 0.25f
-        val indicatorX = position.x + radius * 0.6f
-        val indicatorY = position.y - radius * 0.6f
+        val indicatorCenter = center + Offset(radius * 0.6f, -radius * 0.6f)
         
-        // Small circle background
         drawCircle(
             color = Color.White,
             radius = indicatorSize,
-            center = Offset(indicatorX, indicatorY)
+            center = indicatorCenter
         )
         
-        // Arrow symbol using path
         val arrowPath = Path().apply {
-            moveTo(indicatorX - indicatorSize * 0.3f, indicatorY - indicatorSize * 0.3f)
-            lineTo(indicatorX + indicatorSize * 0.4f, indicatorY)
-            lineTo(indicatorX - indicatorSize * 0.3f, indicatorY + indicatorSize * 0.3f)
+            moveTo(indicatorCenter.x - indicatorSize * 0.3f, indicatorCenter.y - indicatorSize * 0.3f)
+            lineTo(indicatorCenter.x + indicatorSize * 0.4f, indicatorCenter.y)
+            lineTo(indicatorCenter.x - indicatorSize * 0.3f, indicatorCenter.y + indicatorSize * 0.3f)
         }
         drawPath(
             path = arrowPath,
@@ -356,15 +485,13 @@ private fun DrawScope.drawBubble(
             setShadowLayer(4f, 0f, 2f, android.graphics.Color.argb(100, 0, 0, 0))
         }
         
-        // Label
         drawText(
             node.label,
-            position.x,
-            position.y + textPaint.textSize * 0.1f,
+            center.x,
+            center.y + textPaint.textSize * 0.1f,
             textPaint
         )
         
-        // Photo count (smaller, below label)
         if (node.photoCount > 0) {
             val countPaint = android.graphics.Paint(textPaint).apply {
                 textSize = textPaint.textSize * 0.7f
@@ -372,8 +499,8 @@ private fun DrawScope.drawBubble(
             }
             drawText(
                 "${node.photoCount} 张",
-                position.x,
-                position.y + textPaint.textSize * 0.8f,
+                center.x,
+                center.y + textPaint.textSize * 0.8f,
                 countPaint
             )
         }

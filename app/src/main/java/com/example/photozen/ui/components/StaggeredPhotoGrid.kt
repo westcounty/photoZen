@@ -177,12 +177,13 @@ fun SelectableStaggeredPhotoGrid(
     selectedIds: Set<String>,
     onSelectionChanged: (Set<String>) -> Unit,
     onPhotoClick: (String, Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    columns: Int = 2
 ) {
     val haptic = LocalHapticFeedback.current
     
     LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Fixed(2),
+        columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 3)),
         contentPadding = PaddingValues(8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalItemSpacing = 8.dp,

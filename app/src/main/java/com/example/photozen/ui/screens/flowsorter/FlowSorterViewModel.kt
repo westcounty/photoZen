@@ -95,7 +95,10 @@ data class FlowSorterUiState(
     val combo: ComboState = ComboState(),
     val viewMode: FlowSorterViewMode = FlowSorterViewMode.CARD,
     val selectedPhotoIds: Set<String> = emptySet(),
-    val sortOrder: PhotoSortOrder = PhotoSortOrder.DATE_DESC
+    val sortOrder: PhotoSortOrder = PhotoSortOrder.DATE_DESC,
+    val gridColumns: Int = 2,
+    val filterMode: PhotoFilterMode = PhotoFilterMode.ALL,
+    val cameraAlbumsLoaded: Boolean = false
 ) {
     val currentPhoto: PhotoEntity?
         get() = photos.getOrNull(currentIndex)
@@ -151,12 +154,14 @@ class FlowSorterViewModel @Inject constructor(
     private val _viewMode = MutableStateFlow(FlowSorterViewMode.CARD)
     private val _selectedPhotoIds = MutableStateFlow<Set<String>>(emptySet())
     private val _sortOrder = MutableStateFlow(PhotoSortOrder.DATE_DESC)
+    private val _gridColumns = MutableStateFlow(2)
     
     // Random seed for consistent random sorting until changed
     private var randomSeed = System.currentTimeMillis()
     
     // Camera album IDs as StateFlow for reactive updates
     private val _cameraAlbumIds = MutableStateFlow<List<String>>(emptyList())
+    private val _cameraAlbumsLoaded = MutableStateFlow(false)
     
     // Job for auto-hiding combo after timeout
     private var comboTimeoutJob: Job? = null
@@ -174,29 +179,40 @@ class FlowSorterViewModel @Inject constructor(
     
     /**
      * Get filtered photos flow based on current filter mode.
+     * IMPORTANT: Wait for camera albums to load before applying camera-based filters.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun getFilteredPhotosFlow(): Flow<List<PhotoEntity>> {
         return combine(
             preferencesRepository.getPhotoFilterMode(),
-            _cameraAlbumIds
-        ) { filterMode, cameraIds ->
-            Pair(filterMode, cameraIds)
-        }.flatMapLatest { (filterMode, cameraIds) ->
+            _cameraAlbumIds,
+            _cameraAlbumsLoaded
+        ) { filterMode, cameraIds, loaded ->
+            Triple(filterMode, cameraIds, loaded)
+        }.flatMapLatest { (filterMode, cameraIds, loaded) ->
             when (filterMode) {
                 PhotoFilterMode.ALL -> getUnsortedPhotosUseCase()
                 PhotoFilterMode.CAMERA_ONLY -> {
-                    if (cameraIds.isNotEmpty()) {
+                    // Must wait for camera albums to load
+                    if (!loaded) {
+                        // Return empty while loading
+                        kotlinx.coroutines.flow.flowOf(emptyList())
+                    } else if (cameraIds.isNotEmpty()) {
                         getUnsortedPhotosUseCase.byBuckets(cameraIds)
                     } else {
-                        // Return empty flow while loading camera IDs
-                        getUnsortedPhotosUseCase()
+                        // No camera albums found, show empty
+                        kotlinx.coroutines.flow.flowOf(emptyList())
                     }
                 }
                 PhotoFilterMode.EXCLUDE_CAMERA -> {
-                    if (cameraIds.isNotEmpty()) {
+                    // Must wait for camera albums to load
+                    if (!loaded) {
+                        // Return empty while loading
+                        kotlinx.coroutines.flow.flowOf(emptyList())
+                    } else if (cameraIds.isNotEmpty()) {
                         getUnsortedPhotosUseCase.excludingBuckets(cameraIds)
                     } else {
+                        // No camera albums found, show all photos
                         getUnsortedPhotosUseCase()
                     }
                 }
@@ -223,7 +239,8 @@ class FlowSorterViewModel @Inject constructor(
         _lastAction,
         combine(_error, _counters, _combo) { e, c, co -> Triple(e, c, co) },
         _viewMode,
-        combine(_selectedPhotoIds, _sortOrder) { ids, order -> Pair(ids, order) }
+        combine(_selectedPhotoIds, _sortOrder, _gridColumns) { ids, order, cols -> Triple(ids, order, cols) },
+        combine(preferencesRepository.getPhotoFilterMode(), _cameraAlbumsLoaded) { mode, loaded -> Pair(mode, loaded) }
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val photos = values[0] as List<PhotoEntity>
@@ -233,21 +250,29 @@ class FlowSorterViewModel @Inject constructor(
         val lastAction = values[4] as SortAction?
         val combined = values[5] as Triple<String?, SortCounters, ComboState>
         val viewMode = values[6] as FlowSorterViewMode
-        val selectionAndSort = values[7] as Pair<Set<String>, PhotoSortOrder>
+        val selectionAndSortAndCols = values[7] as Triple<Set<String>, PhotoSortOrder, Int>
+        val filterAndLoaded = values[8] as Pair<PhotoFilterMode, Boolean>
         
         val error = combined.first
         val counters = combined.second
         val combo = combined.third
-        val selectedIds = selectionAndSort.first
-        val sortOrder = selectionAndSort.second
+        val selectedIds = selectionAndSortAndCols.first
+        val sortOrder = selectionAndSortAndCols.second
+        val gridColumns = selectionAndSortAndCols.third
+        val filterMode = filterAndLoaded.first
+        val cameraLoaded = filterAndLoaded.second
         
         // Apply sorting to photos
         val sortedPhotos = applySortOrder(photos, sortOrder)
         
+        // Show loading if camera filter is active but not loaded yet
+        val shouldShowLoading = isLoading || 
+            ((filterMode == PhotoFilterMode.CAMERA_ONLY || filterMode == PhotoFilterMode.EXCLUDE_CAMERA) && !cameraLoaded)
+        
         FlowSorterUiState(
             photos = sortedPhotos,
             currentIndex = 0, // Always 0 since we remove sorted photos from list
-            isLoading = isLoading && sortedPhotos.isEmpty(),
+            isLoading = shouldShowLoading && sortedPhotos.isEmpty(),
             isSyncing = isSyncing,
             totalCount = sortedPhotos.size + counters.total,
             sortedCount = counters.total,
@@ -259,7 +284,10 @@ class FlowSorterViewModel @Inject constructor(
             combo = combo,
             viewMode = viewMode,
             selectedPhotoIds = selectedIds,
-            sortOrder = sortOrder
+            sortOrder = sortOrder,
+            gridColumns = gridColumns,
+            filterMode = filterMode,
+            cameraAlbumsLoaded = cameraLoaded
         )
     }.stateIn(
         scope = viewModelScope,
@@ -286,6 +314,12 @@ class FlowSorterViewModel @Inject constructor(
             loadCameraAlbumIds()
             syncPhotos()
         }
+        // Load grid columns preference
+        viewModelScope.launch {
+            preferencesRepository.getGridColumns(PreferencesRepository.GridScreen.FLOW).collect { columns ->
+                _gridColumns.value = columns
+            }
+        }
     }
     
     /**
@@ -297,6 +331,8 @@ class FlowSorterViewModel @Inject constructor(
             _cameraAlbumIds.value = albums.filter { it.isCamera }.map { it.id }
         } catch (e: Exception) {
             // Ignore errors, just use empty list
+        } finally {
+            _cameraAlbumsLoaded.value = true
         }
     }
     
@@ -455,6 +491,16 @@ class FlowSorterViewModel @Inject constructor(
             PhotoSortOrder.RANDOM -> PhotoSortOrder.DATE_DESC
         }
         setSortOrder(nextOrder)
+    }
+    
+    /**
+     * Cycle grid columns: 2 -> 3 -> 1 -> 2
+     */
+    fun cycleGridColumns() {
+        viewModelScope.launch {
+            val newColumns = preferencesRepository.cycleGridColumns(PreferencesRepository.GridScreen.FLOW)
+            _gridColumns.value = newColumns
+        }
     }
     
     /**

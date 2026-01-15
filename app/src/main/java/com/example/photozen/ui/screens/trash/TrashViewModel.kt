@@ -31,9 +31,11 @@ data class TrashUiState(
     val isLoading: Boolean = true,
     val isDeleting: Boolean = false,
     val deleteIntentSender: IntentSender? = null,
-    val message: String? = null
+    val message: String? = null,
+    val gridColumns: Int = 2,
+    val inSelectionMode: Boolean = false
 ) {
-    val isSelectionMode: Boolean get() = selectedIds.isNotEmpty()
+    val isSelectionMode: Boolean get() = inSelectionMode || selectedIds.isNotEmpty()
     val selectedCount: Int get() = selectedIds.size
     val allSelected: Boolean get() = photos.isNotEmpty() && selectedIds.size == photos.size
 }
@@ -43,7 +45,9 @@ private data class InternalState(
     val isLoading: Boolean = true,
     val isDeleting: Boolean = false,
     val deleteIntentSender: IntentSender? = null,
-    val message: String? = null
+    val message: String? = null,
+    val gridColumns: Int = 2,
+    val inSelectionMode: Boolean = false
 )
 
 @HiltViewModel
@@ -67,7 +71,9 @@ class TrashViewModel @Inject constructor(
             isLoading = internal.isLoading && photos.isEmpty(),
             isDeleting = internal.isDeleting,
             deleteIntentSender = internal.deleteIntentSender,
-            message = internal.message
+            message = internal.message,
+            gridColumns = internal.gridColumns,
+            inSelectionMode = internal.inSelectionMode
         )
     }.stateIn(
         scope = viewModelScope,
@@ -78,6 +84,14 @@ class TrashViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             _internalState.update { it.copy(isLoading = false) }
+        }
+        // Load grid columns preference
+        viewModelScope.launch {
+            preferencesRepository.getGridColumns(
+                com.example.photozen.data.repository.PreferencesRepository.GridScreen.TRASH
+            ).collect { columns ->
+                _internalState.update { it.copy(gridColumns = columns) }
+            }
         }
     }
     
@@ -98,7 +112,48 @@ class TrashViewModel @Inject constructor(
     }
     
     fun clearSelection() {
-        _internalState.update { it.copy(selectedIds = emptySet()) }
+        _internalState.update { it.copy(selectedIds = emptySet(), inSelectionMode = false) }
+    }
+    
+    fun enterSelectionMode() {
+        _internalState.update { it.copy(inSelectionMode = true) }
+    }
+    
+    fun keepSelected() {
+        val selected = _internalState.value.selectedIds.toList()
+        viewModelScope.launch {
+            try {
+                sortPhotoUseCase.batchUpdateStatus(selected, PhotoStatus.KEEP)
+                _internalState.update { 
+                    it.copy(selectedIds = emptySet(), inSelectionMode = false, message = "已将 ${selected.size} 张照片移至保留")
+                }
+            } catch (e: Exception) {
+                _internalState.update { it.copy(message = "操作失败") }
+            }
+        }
+    }
+    
+    fun maybeSelected() {
+        val selected = _internalState.value.selectedIds.toList()
+        viewModelScope.launch {
+            try {
+                sortPhotoUseCase.batchUpdateStatus(selected, PhotoStatus.MAYBE)
+                _internalState.update { 
+                    it.copy(selectedIds = emptySet(), inSelectionMode = false, message = "已将 ${selected.size} 张照片移至待定")
+                }
+            } catch (e: Exception) {
+                _internalState.update { it.copy(message = "操作失败") }
+            }
+        }
+    }
+    
+    fun cycleGridColumns() {
+        viewModelScope.launch {
+            val newColumns = preferencesRepository.cycleGridColumns(
+                com.example.photozen.data.repository.PreferencesRepository.GridScreen.TRASH
+            )
+            _internalState.update { it.copy(gridColumns = newColumns) }
+        }
     }
     
     fun restoreSelected() {
@@ -107,7 +162,7 @@ class TrashViewModel @Inject constructor(
             try {
                 sortPhotoUseCase.batchUpdateStatus(selected, PhotoStatus.UNSORTED)
                 _internalState.update { 
-                    it.copy(selectedIds = emptySet(), message = "已恢复 ${selected.size} 张照片")
+                    it.copy(selectedIds = emptySet(), inSelectionMode = false, message = "已恢复 ${selected.size} 张照片")
                 }
             } catch (e: Exception) {
                 _internalState.update { it.copy(message = "恢复失败") }

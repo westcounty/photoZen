@@ -81,6 +81,12 @@ interface TagDao {
     @Query("SELECT * FROM tags WHERE name LIKE '%' || :query || '%' ORDER BY name ASC")
     fun searchTags(query: String): Flow<List<TagEntity>>
     
+    /**
+     * Check if a tag with the given name already exists.
+     */
+    @Query("SELECT EXISTS(SELECT 1 FROM tags WHERE name = :name LIMIT 1)")
+    suspend fun tagNameExists(name: String): Boolean
+    
     // ==================== PHOTO-TAG RELATIONSHIP ====================
     
     /**

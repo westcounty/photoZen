@@ -279,46 +279,15 @@ private fun ChangelogDialog(onDismiss: () -> Unit) {
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Version 1.5.2
+                // Version 1.5.7 - Current
                 ChangelogVersion(
-                    version = "1.5.2",
-                    date = "2026-01-15",
+                    version = "1.5.7",
+                    date = "2026-01-16",
                     changes = listOf(
-                        "✨ 保留照片列表新增排序功能",
-                        "🔢 快速分类横幅显示未标签照片数量",
-                        "🎯 修复排序图标区分：正序↑、倒序↓、随机🔀",
-                        "⏰ 排序改为基于创建时间",
-                        "🏆 修复清洁工/清理大师成就触发",
-                        "📊 成就页面新增统计模块",
-                        "🐛 修复照片列表排序时首张固定的问题"
-                    )
-                )
-                
-                HorizontalDivider()
-                
-                // Version 1.5.0
-                ChangelogVersion(
-                    version = "1.5.0",
-                    date = "2026-01-15",
-                    changes = listOf(
-                        "🔄 筛选模式新增排序功能（时间正序/倒序/随机）",
-                        "📋 复制照片功能完整保留EXIF信息",
-                        "🔗 移动模式优化为直接移动文件",
-                        "🐛 修复多选删除崩溃问题"
-                    )
-                )
-                
-                HorizontalDivider()
-                
-                // Version 1.4.0
-                ChangelogVersion(
-                    version = "1.4.0",
-                    date = "2026-01-14",
-                    changes = listOf(
-                        "🎨 全新简洁现代的应用图标",
-                        "✨ 首页名称更新为 PhotoZen",
-                        "🔄 标签照片数量现在实时更新",
-                        "📝 新增更新日志查看入口"
+                        "🔧 修复Flow筛选：筛选条件（如排除相机照片）现在正确生效",
+                        "📸 会话照片追踪：待定筛选和快速打标只显示本次Flow中的照片",
+                        "📊 Flow列表视图列数切换：支持1/2/3列切换",
+                        "❓ 回收站批量待定：新增批量设置为待定操作"
                     )
                 )
             }
@@ -458,7 +427,7 @@ private fun AboutCard(onVersionClick: () -> Unit) {
             
             // Clickable version number
             Text(
-                text = "版本 1.5.2",
+                text = "版本 1.5.7",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier

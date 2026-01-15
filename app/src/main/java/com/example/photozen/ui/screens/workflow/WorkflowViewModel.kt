@@ -41,7 +41,11 @@ data class WorkflowStats(
     val taggedCount: Int = 0,
     val maxCombo: Int = 0,
     val startTime: Long = System.currentTimeMillis(),
-    val endTime: Long? = null
+    val endTime: Long? = null,
+    /** Photo IDs marked as MAYBE during this session */
+    val sessionMaybePhotoIds: Set<String> = emptySet(),
+    /** Photo IDs marked as KEEP during this session */
+    val sessionKeepPhotoIds: Set<String> = emptySet()
 ) {
     val durationSeconds: Long
         get() = ((endTime ?: System.currentTimeMillis()) - startTime) / 1000
@@ -69,16 +73,26 @@ data class WorkflowUiState(
     val keepPhotos: List<PhotoEntity> = emptyList(),
     val isWorkflowActive: Boolean = false,
     val showExitConfirmation: Boolean = false,
-    val showNextStageConfirmation: Boolean = false
+    val showNextStageConfirmation: Boolean = false,
+    /** Maybe photos from this session only */
+    val sessionMaybePhotos: List<PhotoEntity> = emptyList(),
+    /** Keep photos from this session only */
+    val sessionKeepPhotos: List<PhotoEntity> = emptyList()
 ) {
     /** Whether there are more photos to sort */
     val hasUnsortedPhotos: Boolean get() = unsortedCount > 0
     
-    /** Whether there are maybe photos to compare */
-    val hasMaybePhotos: Boolean get() = maybeCount > 0
+    /** Whether there are maybe photos to compare (session-based) */
+    val hasMaybePhotos: Boolean get() = sessionMaybePhotos.isNotEmpty()
     
-    /** Whether there are keep photos to tag */
-    val hasKeepPhotos: Boolean get() = keepCount > 0
+    /** Whether there are keep photos to tag (session-based) */
+    val hasKeepPhotos: Boolean get() = sessionKeepPhotos.isNotEmpty()
+    
+    /** Session-based maybe count for display */
+    val sessionMaybeCount: Int get() = sessionMaybePhotos.size
+    
+    /** Session-based keep count for display */
+    val sessionKeepCount: Int get() = sessionKeepPhotos.size
     
     /** Get stage display name */
     val stageName: String get() = when (currentStage) {
@@ -88,11 +102,11 @@ data class WorkflowUiState(
         WorkflowStage.VICTORY -> "完成"
     }
     
-    /** Get stage subtitle with counts */
+    /** Get stage subtitle with counts (uses session counts for COMPARE/TAGGING) */
     val stageSubtitle: String get() = when (currentStage) {
         WorkflowStage.SWIPE -> if (unsortedCount > 0) "剩余 $unsortedCount 张" else "全部整理完成"
-        WorkflowStage.COMPARE -> if (maybeCount > 0) "待定 $maybeCount 张" else "无待定照片"
-        WorkflowStage.TAGGING -> if (keepCount > 0) "保留 $keepCount 张" else "无保留照片"
+        WorkflowStage.COMPARE -> if (sessionMaybeCount > 0) "本次待定 $sessionMaybeCount 张" else "无待定照片"
+        WorkflowStage.TAGGING -> if (sessionKeepCount > 0) "本次保留 $sessionKeepCount 张" else "无保留照片"
         WorkflowStage.VICTORY -> "整理完成"
     }
     
@@ -107,8 +121,8 @@ data class WorkflowUiState(
     /** Text for "Next" button */
     val nextButtonText: String get() = when (currentStage) {
         WorkflowStage.SWIPE -> if (unsortedCount > 0) "下一步" else "进入对比"
-        WorkflowStage.COMPARE -> if (maybeCount > 0) "下一步" else "进入分类"
-        WorkflowStage.TAGGING -> if (keepCount > 0) "完成" else "查看结果"
+        WorkflowStage.COMPARE -> if (sessionMaybeCount > 0) "下一步" else "进入分类"
+        WorkflowStage.TAGGING -> if (sessionKeepCount > 0) "完成" else "查看结果"
         WorkflowStage.VICTORY -> ""
     }
     
@@ -141,20 +155,25 @@ class WorkflowViewModel @Inject constructor(
     val uiState: StateFlow<WorkflowUiState> = combine(
         _internalState,
         getPhotosUseCase.getCountByStatus(PhotoStatus.UNSORTED),
-        getPhotosUseCase.getCountByStatus(PhotoStatus.MAYBE),
-        getPhotosUseCase.getCountByStatus(PhotoStatus.KEEP),
+        getPhotosUseCase.getPhotosByStatus(PhotoStatus.MAYBE),
         getPhotosUseCase.getPhotosByStatus(PhotoStatus.KEEP)
-    ) { internal, unsortedCount, maybeCount, keepCount, keepPhotos ->
+    ) { internal, unsortedCount, maybePhotos, keepPhotos ->
+        // Filter to only session photos for COMPARE and TAGGING stages
+        val sessionMaybePhotos = maybePhotos.filter { it.id in internal.stats.sessionMaybePhotoIds }
+        val sessionKeepPhotos = keepPhotos.filter { it.id in internal.stats.sessionKeepPhotoIds }
+        
         WorkflowUiState(
             currentStage = internal.currentStage,
             stats = internal.stats,
             unsortedCount = unsortedCount,
-            maybeCount = maybeCount,
-            keepCount = keepCount,
+            maybeCount = maybePhotos.size,
+            keepCount = keepPhotos.size,
             keepPhotos = keepPhotos,
             isWorkflowActive = internal.isWorkflowActive,
             showExitConfirmation = internal.showExitConfirmation,
-            showNextStageConfirmation = internal.showNextStageConfirmation
+            showNextStageConfirmation = internal.showNextStageConfirmation,
+            sessionMaybePhotos = sessionMaybePhotos,
+            sessionKeepPhotos = sessionKeepPhotos
         )
     }.stateIn(
         scope = viewModelScope,
@@ -177,7 +196,39 @@ class WorkflowViewModel @Inject constructor(
     
     /**
      * Record a photo sort action.
+     * @param photoId The ID of the photo that was sorted
+     * @param status The status the photo was sorted to
+     * @param currentCombo The current combo count
      */
+    fun recordSort(photoId: String, status: PhotoStatus, currentCombo: Int) {
+        _internalState.update { state ->
+            val newStats = state.stats.copy(
+                totalSorted = state.stats.totalSorted + 1,
+                keptCount = state.stats.keptCount + if (status == PhotoStatus.KEEP) 1 else 0,
+                trashedCount = state.stats.trashedCount + if (status == PhotoStatus.TRASH) 1 else 0,
+                maybeCount = state.stats.maybeCount + if (status == PhotoStatus.MAYBE) 1 else 0,
+                maxCombo = maxOf(state.stats.maxCombo, currentCombo),
+                // Track session photo IDs
+                sessionMaybePhotoIds = if (status == PhotoStatus.MAYBE) {
+                    state.stats.sessionMaybePhotoIds + photoId
+                } else {
+                    state.stats.sessionMaybePhotoIds
+                },
+                sessionKeepPhotoIds = if (status == PhotoStatus.KEEP) {
+                    state.stats.sessionKeepPhotoIds + photoId
+                } else {
+                    state.stats.sessionKeepPhotoIds
+                }
+            )
+            state.copy(stats = newStats)
+        }
+    }
+    
+    /**
+     * Record a photo sort action (legacy, without photo ID).
+     * @deprecated Use recordSort(photoId, status, currentCombo) instead
+     */
+    @Deprecated("Use recordSort with photoId", ReplaceWith("recordSort(photoId, status, currentCombo)"))
     fun recordSort(status: PhotoStatus, currentCombo: Int) {
         _internalState.update { state ->
             val newStats = state.stats.copy(
@@ -211,7 +262,7 @@ class WorkflowViewModel @Inject constructor(
         val state = uiState.value
         val hasRemaining = when (state.currentStage) {
             WorkflowStage.SWIPE -> state.unsortedCount > 0
-            WorkflowStage.COMPARE -> state.maybeCount > 0
+            WorkflowStage.COMPARE -> state.sessionMaybeCount > 0
             WorkflowStage.TAGGING -> false // No confirmation needed for tagging
             WorkflowStage.VICTORY -> false
         }

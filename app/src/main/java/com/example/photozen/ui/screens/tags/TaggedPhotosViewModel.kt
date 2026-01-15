@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.dao.TagDao
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.data.local.entity.PhotoTagCrossRef
 import com.example.photozen.data.local.entity.TagEntity
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.DeleteResult
@@ -42,8 +43,15 @@ data class TaggedPhotosUiState(
     val defaultExternalApp: String? = null,
     val error: String? = null,
     val message: String? = null,
-    val pendingDeleteRequest: PendingPhotoDeleteRequest? = null
-)
+    val pendingDeleteRequest: PendingPhotoDeleteRequest? = null,
+    val gridColumns: Int = 2,
+    val inSelectionMode: Boolean = false,
+    val selectedPhotoIds: Set<String> = emptySet()
+) {
+    val isSelectionMode: Boolean get() = inSelectionMode || selectedPhotoIds.isNotEmpty()
+    val selectedCount: Int get() = selectedPhotoIds.size
+    val allSelected: Boolean get() = photos.isNotEmpty() && selectedPhotoIds.size == photos.size
+}
 
 /**
  * ViewModel for displaying photos with a specific tag.
@@ -69,6 +77,12 @@ class TaggedPhotosViewModel @Inject constructor(
         viewModelScope.launch {
             preferencesRepository.getDefaultExternalApp().collect { app ->
                 _uiState.update { it.copy(defaultExternalApp = app) }
+            }
+        }
+        // Load grid columns preference
+        viewModelScope.launch {
+            preferencesRepository.getGridColumns(PreferencesRepository.GridScreen.TAGGED).collect { columns ->
+                _uiState.update { it.copy(gridColumns = columns) }
             }
         }
     }
@@ -301,6 +315,177 @@ class TaggedPhotosViewModel @Inject constructor(
             tagDao.removeTagFromPhoto(photoId, currentTagId)
             // Add to new tag with album sync (copies photo to linked album if applicable)
             tagAlbumSyncUseCase.addPhotoToTagWithSync(photoId, newTagId)
+        }
+    }
+    
+    // ==================== Selection Mode ====================
+    
+    fun enterSelectionMode() {
+        _uiState.update { it.copy(inSelectionMode = true) }
+    }
+    
+    fun exitSelectionMode() {
+        _uiState.update { it.copy(inSelectionMode = false, selectedPhotoIds = emptySet()) }
+    }
+    
+    fun togglePhotoSelection(photoId: String) {
+        _uiState.update { state ->
+            val newSelection = if (photoId in state.selectedPhotoIds) {
+                state.selectedPhotoIds - photoId
+            } else {
+                state.selectedPhotoIds + photoId
+            }
+            state.copy(selectedPhotoIds = newSelection)
+        }
+    }
+    
+    fun selectAll() {
+        val allIds = _uiState.value.photos.map { it.id }.toSet()
+        _uiState.update { it.copy(selectedPhotoIds = allIds) }
+    }
+    
+    fun deselectAll() {
+        _uiState.update { it.copy(selectedPhotoIds = emptySet()) }
+    }
+    
+    // ==================== Batch Operations ====================
+    
+    /**
+     * Batch change tag for selected photos.
+     */
+    fun batchChangeTag(newTagId: String) {
+        val currentTagId = _uiState.value.tagId ?: return
+        val selectedIds = _uiState.value.selectedPhotoIds.toList()
+        if (selectedIds.isEmpty() || newTagId == currentTagId) return
+        
+        viewModelScope.launch {
+            try {
+                selectedIds.forEach { photoId ->
+                    tagDao.removeTagFromPhoto(photoId, currentTagId)
+                    tagAlbumSyncUseCase.addPhotoToTagWithSync(photoId, newTagId)
+                }
+                _uiState.update { 
+                    it.copy(
+                        selectedPhotoIds = emptySet(),
+                        inSelectionMode = false,
+                        message = "已修改 ${selectedIds.size} 张照片的标签"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "批量修改标签失败: ${e.message}") }
+            }
+        }
+    }
+    
+    /**
+     * Batch remove tag from selected photos.
+     */
+    fun batchRemoveTag() {
+        val currentTagId = _uiState.value.tagId ?: return
+        val selectedIds = _uiState.value.selectedPhotoIds.toList()
+        if (selectedIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            try {
+                selectedIds.forEach { photoId ->
+                    tagDao.removeTagFromPhoto(photoId, currentTagId)
+                }
+                _uiState.update { 
+                    it.copy(
+                        selectedPhotoIds = emptySet(),
+                        inSelectionMode = false,
+                        message = "已从 ${selectedIds.size} 张照片移除标签"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "批量移除标签失败: ${e.message}") }
+            }
+        }
+    }
+    
+    /**
+     * Create a new tag and apply to a single photo.
+     */
+    fun createTagAndApplyToPhoto(photoId: String, tagName: String, tagColor: Int) {
+        val currentTagId = _uiState.value.tagId ?: return
+        viewModelScope.launch {
+            try {
+                // Check if tag exists
+                if (tagDao.tagNameExists(tagName)) {
+                    _uiState.update { it.copy(error = "标签「$tagName」已存在") }
+                    return@launch
+                }
+                
+                // Create new tag
+                val newTag = TagEntity(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = tagName,
+                    color = tagColor
+                )
+                tagDao.insert(newTag)
+                
+                // Remove from current tag and add to new tag
+                tagDao.removeTagFromPhoto(photoId, currentTagId)
+                tagAlbumSyncUseCase.addPhotoToTagWithSync(photoId, newTag.id)
+                
+                _uiState.update { it.copy(message = "已创建标签「$tagName」并应用") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "创建标签失败: ${e.message}") }
+            }
+        }
+    }
+    
+    /**
+     * Create a new tag and apply to selected photos (batch).
+     */
+    fun batchCreateTagAndApply(tagName: String, tagColor: Int) {
+        val currentTagId = _uiState.value.tagId ?: return
+        val selectedIds = _uiState.value.selectedPhotoIds.toList()
+        if (selectedIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            try {
+                // Check if tag exists
+                if (tagDao.tagNameExists(tagName)) {
+                    _uiState.update { it.copy(error = "标签「$tagName」已存在") }
+                    return@launch
+                }
+                
+                // Create new tag
+                val newTag = TagEntity(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = tagName,
+                    color = tagColor
+                )
+                tagDao.insert(newTag)
+                
+                // Apply to all selected photos
+                selectedIds.forEach { photoId ->
+                    tagDao.removeTagFromPhoto(photoId, currentTagId)
+                    tagAlbumSyncUseCase.addPhotoToTagWithSync(photoId, newTag.id)
+                }
+                
+                _uiState.update { 
+                    it.copy(
+                        selectedPhotoIds = emptySet(),
+                        inSelectionMode = false,
+                        message = "已创建标签「$tagName」并应用到 ${selectedIds.size} 张照片"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "创建标签失败: ${e.message}") }
+            }
+        }
+    }
+    
+    // ==================== Grid Columns ====================
+    
+    fun cycleGridColumns() {
+        viewModelScope.launch {
+            val newColumns = preferencesRepository.cycleGridColumns(
+                PreferencesRepository.GridScreen.TAGGED
+            )
+            _uiState.update { it.copy(gridColumns = newColumns) }
         }
     }
     

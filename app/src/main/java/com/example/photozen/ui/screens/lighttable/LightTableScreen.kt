@@ -804,10 +804,13 @@ private fun EmptyContent(
 
 /**
  * Light Table Content - Reusable content for both standalone and workflow modes.
+ * 
+ * @param sessionPhotoIds When set, only photos with these IDs will be shown (for workflow mode)
  */
 @Composable
 fun LightTableContent(
     isWorkflowMode: Boolean = false,
+    sessionPhotoIds: Set<String>? = null,
     onComplete: (() -> Unit)? = null,
     onNavigateBack: () -> Unit,
     viewModel: LightTableViewModel = hiltViewModel()
@@ -815,6 +818,11 @@ fun LightTableContent(
     val uiState by viewModel.uiState.collectAsState()
     val haptic = LocalHapticFeedback.current
     val transformState = rememberTransformState()
+    
+    // Set session filter when provided
+    LaunchedEffect(sessionPhotoIds) {
+        viewModel.setSessionPhotoIds(sessionPhotoIds)
+    }
     
     // Fullscreen state
     var showFullscreen by remember { mutableStateOf(false) }

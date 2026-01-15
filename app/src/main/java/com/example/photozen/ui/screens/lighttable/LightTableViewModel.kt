@@ -64,7 +64,9 @@ private data class InternalState(
     val selectedInComparison: Set<String> = emptySet(),
     val mode: LightTableMode = LightTableMode.SELECTION,
     val isLoading: Boolean = true,
-    val error: String? = null
+    val error: String? = null,
+    /** When set, only show photos with these IDs (for workflow session mode) */
+    val sessionPhotoIds: Set<String>? = null
 )
 
 /**
@@ -82,12 +84,19 @@ class LightTableViewModel @Inject constructor(
         getMaybePhotosUseCase(),
         _internalState
     ) { photos, internal ->
+        // Filter photos by session IDs if in workflow mode
+        val filteredPhotos = if (internal.sessionPhotoIds != null) {
+            photos.filter { it.id in internal.sessionPhotoIds }
+        } else {
+            photos
+        }
+        
         LightTableUiState(
-            allMaybePhotos = photos,
+            allMaybePhotos = filteredPhotos,
             selectedForComparison = internal.selectedForComparison,
             selectedInComparison = internal.selectedInComparison,
             mode = internal.mode,
-            isLoading = internal.isLoading && photos.isEmpty(),
+            isLoading = internal.isLoading && filteredPhotos.isEmpty(),
             error = internal.error
         )
     }.stateIn(
@@ -100,6 +109,14 @@ class LightTableViewModel @Inject constructor(
         viewModelScope.launch {
             _internalState.update { it.copy(isLoading = false) }
         }
+    }
+    
+    /**
+     * Set session photo IDs for workflow mode filtering.
+     * When set, only photos with these IDs will be shown.
+     */
+    fun setSessionPhotoIds(photoIds: Set<String>?) {
+        _internalState.update { it.copy(sessionPhotoIds = photoIds) }
     }
     
     fun toggleSelection(photoId: String) {

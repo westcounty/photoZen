@@ -41,6 +41,8 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.ViewCarousel
+import androidx.compose.material.icons.filled.ViewColumn
+import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
@@ -188,6 +190,20 @@ fun FlowSorterScreen(
                                 )
                             }
                             
+                            // Grid columns toggle (only in list view)
+                            if (uiState.viewMode == FlowSorterViewMode.LIST) {
+                                IconButton(onClick = { viewModel.cycleGridColumns() }) {
+                                    Icon(
+                                        imageVector = when (uiState.gridColumns) {
+                                            1 -> Icons.Default.ViewColumn
+                                            2 -> Icons.Default.GridView
+                                            else -> Icons.Default.ViewModule
+                                        },
+                                        contentDescription = "${uiState.gridColumns}列视图"
+                                    )
+                                }
+                            }
+                            
                             // View mode toggle
                             IconButton(onClick = { viewModel.toggleViewMode() }) {
                                 Icon(
@@ -304,7 +320,8 @@ fun FlowSorterScreen(
                                     if (photo != null) {
                                         fullscreenPhoto = photo
                                     }
-                                }
+                                },
+                                columns = uiState.gridColumns
                             )
                         }
                         else -> {
@@ -630,16 +647,16 @@ private fun BatchActionBar(
 
 /**
  * Flow Sorter Content - Reusable content for both standalone and workflow modes.
- * 
+ *
  * @param isWorkflowMode When true, hides top bar and uses callback instead of navigation
- * @param onPhotoSorted Callback when a photo is sorted (with status and current combo)
+ * @param onPhotoSorted Callback when a photo is sorted (with photoId, status and current combo)
  * @param onComplete Callback when all photos are sorted
  * @param onNavigateBack Callback for navigation back (standalone mode only)
  */
 @Composable
 fun FlowSorterContent(
     isWorkflowMode: Boolean = false,
-    onPhotoSorted: ((com.example.photozen.data.model.PhotoStatus, Int) -> Unit)? = null,
+    onPhotoSorted: ((String, com.example.photozen.data.model.PhotoStatus, Int) -> Unit)? = null,
     onComplete: (() -> Unit)? = null,
     onNavigateBack: () -> Unit,
     viewModel: FlowSorterViewModel = hiltViewModel()
@@ -735,7 +752,8 @@ fun FlowSorterContent(
                                 if (photo != null) {
                                     fullscreenPhoto = photo
                                 }
-                            }
+                            },
+                            columns = uiState.gridColumns
                         )
                     }
                     else -> {
@@ -745,27 +763,31 @@ fun FlowSorterContent(
                                 uiState = uiState,
                                 onSwipeLeft = {
                                     // Left swipe = Keep
+                                    val photoId = uiState.currentPhoto?.id ?: ""
                                     val combo = viewModel.keepCurrentPhoto()
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                                    onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.KEEP, combo)
+                                    onPhotoSorted?.invoke(photoId, com.example.photozen.data.model.PhotoStatus.KEEP, combo)
                                 },
                                 onSwipeRight = {
                                     // Right swipe = Keep
+                                    val photoId = uiState.currentPhoto?.id ?: ""
                                     val combo = viewModel.keepCurrentPhoto()
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                                    onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.KEEP, combo)
+                                    onPhotoSorted?.invoke(photoId, com.example.photozen.data.model.PhotoStatus.KEEP, combo)
                                 },
                                 onSwipeUp = {
                                     // Up swipe = Trash
+                                    val photoId = uiState.currentPhoto?.id ?: ""
                                     val combo = viewModel.trashCurrentPhoto()
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                                    onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.TRASH, combo)
+                                    onPhotoSorted?.invoke(photoId, com.example.photozen.data.model.PhotoStatus.TRASH, combo)
                                 },
                                 onSwipeDown = {
                                     // Down swipe = Maybe (sinking into pending pool)
+                                    val photoId = uiState.currentPhoto?.id ?: ""
                                     val combo = viewModel.maybeCurrentPhoto()
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                                    onPhotoSorted?.invoke(com.example.photozen.data.model.PhotoStatus.MAYBE, combo)
+                                    onPhotoSorted?.invoke(photoId, com.example.photozen.data.model.PhotoStatus.MAYBE, combo)
                                 },
                                 onPhotoClick = { photo ->
                                     fullscreenPhoto = photo
@@ -867,6 +889,26 @@ fun FlowSorterContent(
                                 contentDescription = "排序: ${uiState.sortOrder.displayName}",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                        // Grid columns toggle (only in list view)
+                        if (effectiveViewMode == FlowSorterViewMode.LIST) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            IconButton(
+                                onClick = { viewModel.cycleGridColumns() },
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
+                            ) {
+                                Icon(
+                                    imageVector = when (uiState.gridColumns) {
+                                        1 -> Icons.Default.ViewColumn
+                                        2 -> Icons.Default.GridView
+                                        else -> Icons.Default.ViewModule
+                                    },
+                                    contentDescription = "${uiState.gridColumns}列视图",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                         Spacer(modifier = Modifier.width(4.dp))
                         // View mode toggle button

@@ -124,7 +124,7 @@ fun WorkflowScreen(
             currentStage = uiState.currentStage,
             remainingCount = when (uiState.currentStage) {
                 WorkflowStage.SWIPE -> uiState.unsortedCount
-                WorkflowStage.COMPARE -> uiState.maybeCount
+                WorkflowStage.COMPARE -> uiState.sessionMaybeCount
                 else -> 0
             },
             onConfirm = { viewModel.confirmNextStage() },
@@ -172,8 +172,8 @@ fun WorkflowScreen(
                 when (stage) {
                     WorkflowStage.SWIPE -> {
                         SwipeStageContent(
-                            onPhotoSorted = { status, combo -> 
-                                viewModel.recordSort(status, combo) 
+                            onPhotoSorted = { photoId, status, combo -> 
+                                viewModel.recordSort(photoId, status, combo) 
                             },
                             onComplete = { viewModel.onSwipeAutoComplete() }
                         )
@@ -181,13 +181,14 @@ fun WorkflowScreen(
                     WorkflowStage.COMPARE -> {
                         CompareStageContent(
                             hasPhotos = uiState.hasMaybePhotos,
+                            sessionPhotoIds = uiState.stats.sessionMaybePhotoIds,
                             onComplete = { viewModel.onCompareAutoComplete() },
                             onRequestNext = { viewModel.requestNextStage() }
                         )
                     }
                     WorkflowStage.TAGGING -> {
                         TaggingStageContent(
-                            keepPhotos = uiState.keepPhotos,
+                            keepPhotos = uiState.sessionKeepPhotos,
                             onPhotoTagged = { viewModel.recordTagged() },
                             onComplete = { viewModel.requestNextStage() }
                         )
@@ -377,7 +378,7 @@ private fun NextStageConfirmationDialog(
  */
 @Composable
 private fun SwipeStageContent(
-    onPhotoSorted: (PhotoStatus, Int) -> Unit,
+    onPhotoSorted: (String, PhotoStatus, Int) -> Unit,
     onComplete: () -> Unit
 ) {
     // Let FlowSorterContent manage everything internally
@@ -397,6 +398,7 @@ private fun SwipeStageContent(
 @Composable
 private fun CompareStageContent(
     hasPhotos: Boolean,
+    sessionPhotoIds: Set<String>,
     onComplete: () -> Unit,
     onRequestNext: () -> Unit
 ) {
@@ -409,9 +411,10 @@ private fun CompareStageContent(
             onButtonClick = onRequestNext
         )
     } else {
-        // Reuse LightTable content
+        // Reuse LightTable content with session filter
         LightTableContent(
             isWorkflowMode = true,
+            sessionPhotoIds = sessionPhotoIds,
             onComplete = onComplete,
             onNavigateBack = { /* Handled by parent */ }
         )

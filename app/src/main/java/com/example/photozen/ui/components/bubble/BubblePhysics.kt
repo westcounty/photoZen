@@ -57,14 +57,25 @@ class BubbleState(
     var isDragging: Boolean = false
         private set
     
+    // Target position for physics simulation
+    var targetPosition: Offset = initialPosition
+        private set
+    
     // Animatable for smooth spring-back animation
     private val animatablePosition = Animatable(initialPosition, Offset.VectorConverter)
     
     /**
-     * Update position directly (during dragging).
+     * Update position directly (during dragging or physics push).
      */
     fun setPosition(newPosition: Offset) {
         position = newPosition
+    }
+    
+    /**
+     * Set target position for dragged bubble to stay at.
+     */
+    fun setTargetPosition(target: Offset) {
+        targetPosition = target
     }
     
     /**
@@ -80,31 +91,41 @@ class BubbleState(
     fun startDrag() {
         isDragging = true
         velocity = Offset.Zero
+        targetPosition = position
     }
     
     /**
-     * End dragging and animate back to equilibrium.
+     * End dragging - bubble stays at current position.
      */
-    suspend fun endDrag(scope: CoroutineScope, targetPosition: Offset) {
+    fun endDrag() {
         isDragging = false
+        velocity = Offset.Zero
+        targetPosition = position
+    }
+    
+    /**
+     * Animate to a specific position smoothly.
+     */
+    suspend fun animateTo(scope: CoroutineScope, targetPos: Offset) {
         scope.launch {
             animatablePosition.snapTo(position)
             animatablePosition.animateTo(
-                targetPosition,
+                targetPos,
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessLow
+                    stiffness = Spring.StiffnessMedium
                 )
             ) {
                 position = value
             }
+            targetPosition = targetPos
         }
     }
     
     /**
      * Update position from physics step.
      */
-    fun physicsStep(deltaTime: Float, damping: Float = 0.95f) {
+    fun physicsStep(deltaTime: Float, damping: Float = 0.92f) {
         if (!isDragging) {
             position += velocity * deltaTime
             velocity *= damping
@@ -115,10 +136,10 @@ class BubbleState(
 /**
  * Physics engine for bubble layout simulation.
  * 
- * Implements simple spring-repulsion physics:
- * - Center attraction: All bubbles are pulled toward center
- * - Repulsion: Bubbles push each other to avoid overlap
- * - Damping: Velocity decays over time
+ * Implements smooth dragging with collision avoidance:
+ * - Bubbles can be freely dragged within boundaries
+ * - Dragged bubbles push other bubbles away smoothly
+ * - Non-dragged bubbles maintain their positions unless pushed
  */
 class BubblePhysicsEngine(
     private val centerX: Float,
@@ -128,16 +149,16 @@ class BubblePhysicsEngine(
 ) {
     companion object {
         // Physics constants
-        const val CENTER_ATTRACTION = 0.02f      // Strength of center pull
-        const val REPULSION_STRENGTH = 800f      // Strength of bubble-to-bubble repulsion
-        const val BOUNDARY_REPULSION = 500f       // Strength of boundary repulsion
-        const val MIN_DISTANCE = 10f              // Minimum distance between bubbles
-        const val DAMPING = 0.92f                 // Velocity damping per frame
-        const val MAX_VELOCITY = 300f             // Maximum velocity cap
+        const val PUSH_STRENGTH = 1200f           // Strength of push force when bubbles collide
+        const val PUSH_VELOCITY_DAMPING = 0.85f   // How quickly pushed bubbles slow down
+        const val MIN_GAP = 8f                    // Minimum gap between bubbles
+        const val MAX_VELOCITY = 500f             // Maximum velocity cap
+        const val SETTLE_THRESHOLD = 0.5f         // Velocity below which bubble is considered settled
     }
     
     /**
      * Perform one physics simulation step.
+     * Handles collision detection and smooth pushing of bubbles.
      * 
      * @param bubbles List of bubble states to simulate
      * @param deltaTime Time step in seconds
@@ -145,78 +166,80 @@ class BubblePhysicsEngine(
     fun step(bubbles: List<BubbleState>, deltaTime: Float) {
         val dt = min(deltaTime, 0.05f) // Cap delta time to prevent explosions
         
-        // Calculate forces for each bubble
+        // Find the dragged bubble (if any)
+        val draggedBubble = bubbles.find { it.isDragging }
+        
+        // Calculate push forces for each non-dragged bubble
         bubbles.forEach { bubble ->
             if (bubble.isDragging || bubble.node.isCenter) return@forEach
             
-            var force = Offset.Zero
+            var pushForce = Offset.Zero
             
-            // 1. Center attraction (spring force toward center)
-            val toCenter = Offset(centerX, centerY) - bubble.position
-            force += toCenter * CENTER_ATTRACTION
-            
-            // 2. Bubble-to-bubble repulsion
+            // Check collision with all other bubbles
             bubbles.forEach { other ->
                 if (other.node.id == bubble.node.id) return@forEach
                 
                 val diff = bubble.position - other.position
                 val distance = diff.getDistance()
-                val minDist = bubble.node.radius + other.node.radius + MIN_DISTANCE
+                val minDist = bubble.node.radius + other.node.radius + MIN_GAP
                 
                 if (distance < minDist && distance > 0.1f) {
                     val overlap = minDist - distance
                     val direction = diff / distance
-                    force += direction * (overlap * REPULSION_STRENGTH / distance)
+                    
+                    // Stronger push from dragged bubble
+                    val strength = if (other.isDragging) PUSH_STRENGTH * 1.5f else PUSH_STRENGTH
+                    pushForce += direction * (overlap * strength * dt)
                 }
             }
             
-            // 3. Boundary repulsion
-            val margin = bubble.node.radius + 20f
-            
-            // Left boundary
-            if (bubble.position.x < margin) {
-                force += Offset(BOUNDARY_REPULSION / max(bubble.position.x, 1f), 0f)
+            // Apply push force directly to position for immediate response
+            if (pushForce.getDistance() > 0.1f) {
+                val newVelocity = bubble.velocity + pushForce
+                val speed = newVelocity.getDistance()
+                val cappedVelocity = if (speed > MAX_VELOCITY) {
+                    newVelocity * (MAX_VELOCITY / speed)
+                } else {
+                    newVelocity
+                }
+                bubble.applyVelocity(cappedVelocity)
             }
-            // Right boundary
-            if (bubble.position.x > boundaryWidth - margin) {
-                force += Offset(-BOUNDARY_REPULSION / max(boundaryWidth - bubble.position.x, 1f), 0f)
-            }
-            // Top boundary
-            if (bubble.position.y < margin) {
-                force += Offset(0f, BOUNDARY_REPULSION / max(bubble.position.y, 1f))
-            }
-            // Bottom boundary
-            if (bubble.position.y > boundaryHeight - margin) {
-                force += Offset(0f, -BOUNDARY_REPULSION / max(boundaryHeight - bubble.position.y, 1f))
-            }
-            
-            // Apply force to velocity
-            val newVelocity = bubble.velocity + force * dt
-            
-            // Cap velocity
-            val speed = newVelocity.getDistance()
-            val cappedVelocity = if (speed > MAX_VELOCITY) {
-                newVelocity * (MAX_VELOCITY / speed)
-            } else {
-                newVelocity
-            }
-            
-            bubble.applyVelocity(cappedVelocity)
         }
         
-        // Update positions
+        // Update positions for non-dragged bubbles
         bubbles.forEach { bubble ->
             if (!bubble.isDragging && !bubble.node.isCenter) {
-                bubble.physicsStep(dt, DAMPING)
+                bubble.physicsStep(dt, PUSH_VELOCITY_DAMPING)
                 
                 // Clamp to boundaries
-                val margin = bubble.node.radius
-                bubble.setPosition(
-                    Offset(
-                        bubble.position.x.coerceIn(margin, boundaryWidth - margin),
-                        bubble.position.y.coerceIn(margin, boundaryHeight - margin)
-                    )
-                )
+                val margin = bubble.node.radius + 4f
+                val clampedX = bubble.position.x.coerceIn(margin, boundaryWidth - margin)
+                val clampedY = bubble.position.y.coerceIn(margin, boundaryHeight - margin)
+                
+                // If hit boundary, zero out velocity in that direction
+                if (clampedX != bubble.position.x) {
+                    bubble.applyVelocity(Offset(0f, bubble.velocity.y * 0.5f))
+                }
+                if (clampedY != bubble.position.y) {
+                    bubble.applyVelocity(Offset(bubble.velocity.x * 0.5f, 0f))
+                }
+                
+                bubble.setPosition(Offset(clampedX, clampedY))
+                
+                // Settle velocity if very slow
+                if (bubble.velocity.getDistance() < SETTLE_THRESHOLD) {
+                    bubble.applyVelocity(Offset.Zero)
+                }
+            }
+        }
+        
+        // Also clamp dragged bubble to boundaries
+        draggedBubble?.let { bubble ->
+            val margin = bubble.node.radius + 4f
+            val clampedX = bubble.position.x.coerceIn(margin, boundaryWidth - margin)
+            val clampedY = bubble.position.y.coerceIn(margin, boundaryHeight - margin)
+            if (clampedX != bubble.position.x || clampedY != bubble.position.y) {
+                bubble.setPosition(Offset(clampedX, clampedY))
             }
         }
     }
@@ -225,7 +248,6 @@ class BubblePhysicsEngine(
      * Calculate initial positions for bubbles in a circular arrangement.
      */
     fun calculateInitialPositions(nodes: List<BubbleNode>): List<Offset> {
-        val centerNode = nodes.find { it.isCenter }
         val childNodes = nodes.filter { !it.isCenter }
         
         val positions = mutableListOf<Offset>()
@@ -247,6 +269,13 @@ class BubblePhysicsEngine(
         }
         
         return positions
+    }
+    
+    /**
+     * Get positions as a map of tagId -> Pair(x, y).
+     */
+    fun getPositionsMap(bubbles: List<BubbleState>): Map<String, Pair<Float, Float>> {
+        return bubbles.associate { it.node.id to Pair(it.position.x, it.position.y) }
     }
 }
 

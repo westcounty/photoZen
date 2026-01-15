@@ -8,6 +8,7 @@ import com.example.photozen.data.local.dao.TagDao
 import com.example.photozen.data.local.dao.TagWithCount
 import com.example.photozen.data.local.entity.AlbumCopyMode
 import com.example.photozen.data.local.entity.TagEntity
+import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.Album
 import com.example.photozen.domain.usecase.CreateLinkAlbumResult
 import com.example.photozen.domain.usecase.DeleteTagResult
@@ -30,7 +31,21 @@ import javax.inject.Inject
 data class PendingDeleteRequest(
     val intentSender: IntentSender,
     val tagIdToDeleteAfter: String? = null,  // For delete tag flow
+    val photoIdsToCleanup: List<String> = emptyList(), // Photo IDs to delete from DB after confirmation
     val message: String? = null               // Message to show after confirmation
+)
+
+/**
+ * Pending write permission request for moving photos.
+ */
+data class PendingWritePermissionRequest(
+    val intentSender: IntentSender,
+    val tagId: String,
+    val albumName: String,
+    val albumPath: String,
+    val pendingPhotoIds: List<String>,
+    val pendingUris: List<android.net.Uri>,
+    val alreadyMovedCount: Int
 )
 
 /**
@@ -44,7 +59,9 @@ data class TagBubbleUiState(
     val availableAlbums: List<Album> = emptyList(),
     val isLoadingAlbums: Boolean = false,
     val message: String? = null,
-    val pendingDeleteRequest: PendingDeleteRequest? = null
+    val pendingDeleteRequest: PendingDeleteRequest? = null,
+    val pendingWriteRequest: PendingWritePermissionRequest? = null,
+    val savedBubblePositions: Map<String, Pair<Float, Float>> = emptyMap()
 ) {
     val currentTitle: String = "标签"
 }
@@ -58,7 +75,8 @@ data class TagBubbleUiState(
 @HiltViewModel
 class TagBubbleViewModel @Inject constructor(
     private val tagDao: TagDao,
-    private val tagAlbumSyncUseCase: TagAlbumSyncUseCase
+    private val tagAlbumSyncUseCase: TagAlbumSyncUseCase,
+    private val preferencesRepository: PreferencesRepository
 ) : ViewModel() {
     
     companion object {
@@ -74,12 +92,55 @@ class TagBubbleViewModel @Inject constructor(
     
     init {
         loadTags()
+        loadBubblePositions()
         // Sync all linked tags on startup
         viewModelScope.launch {
             try {
                 tagAlbumSyncUseCase.syncAllLinkedTags()
             } catch (e: Exception) {
                 // Ignore sync errors on startup
+            }
+        }
+    }
+    
+    /**
+     * Load saved bubble positions.
+     */
+    private fun loadBubblePositions() {
+        viewModelScope.launch {
+            try {
+                val positions = preferencesRepository.getBubblePositions()
+                _uiState.update { it.copy(savedBubblePositions = positions) }
+            } catch (e: Exception) {
+                // Ignore errors, use default positions
+            }
+        }
+    }
+    
+    /**
+     * Save bubble positions.
+     */
+    fun saveBubblePositions(positions: Map<String, Pair<Float, Float>>) {
+        viewModelScope.launch {
+            try {
+                preferencesRepository.saveBubblePositions(positions)
+                _uiState.update { it.copy(savedBubblePositions = positions) }
+            } catch (e: Exception) {
+                // Ignore save errors
+            }
+        }
+    }
+    
+    /**
+     * Reset bubble positions to default layout.
+     */
+    fun resetBubblePositions() {
+        viewModelScope.launch {
+            try {
+                preferencesRepository.clearBubblePositions()
+                _uiState.update { it.copy(savedBubblePositions = emptyMap(), message = "已恢复默认布局") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "重置失败") }
             }
         }
     }
@@ -111,11 +172,24 @@ class TagBubbleViewModel @Inject constructor(
     }
     
     /**
-     * Create a new tag.
+     * Check if a tag name already exists.
+     */
+    suspend fun tagNameExists(name: String): Boolean {
+        return tagDao.tagNameExists(name)
+    }
+    
+    /**
+     * Create a new tag (checks for duplicates first).
      */
     fun createTag(name: String, color: Int) {
         viewModelScope.launch {
             try {
+                // Check for duplicate name
+                if (tagDao.tagNameExists(name)) {
+                    _uiState.update { it.copy(error = "标签「$name」已存在") }
+                    return@launch
+                }
+                
                 val tag = TagEntity(
                     id = UUID.randomUUID().toString(),
                     name = name,
@@ -123,6 +197,7 @@ class TagBubbleViewModel @Inject constructor(
                     color = color
                 )
                 tagDao.insert(tag)
+                _uiState.update { it.copy(message = "标签「$name」已创建") }
                 // Flow collection will auto-update the UI
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "创建标签失败: ${e.message}") }
@@ -175,6 +250,12 @@ class TagBubbleViewModel @Inject constructor(
             if (pending?.tagIdToDeleteAfter != null) {
                 tagAlbumSyncUseCase.completeTagDeletion(pending.tagIdToDeleteAfter)
             }
+            
+            // Clean up old photo records from database (for MOVE mode)
+            if (pending?.photoIdsToCleanup?.isNotEmpty() == true) {
+                tagAlbumSyncUseCase.cleanupPhotos(pending.photoIdsToCleanup)
+            }
+            
             _uiState.update { 
                 it.copy(
                     pendingDeleteRequest = null,
@@ -227,6 +308,26 @@ class TagBubbleViewModel @Inject constructor(
                             ) 
                         }
                     }
+                    is CreateLinkAlbumResult.RequiresWritePermission -> {
+                        // Need write permission to move remaining photos
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                pendingWriteRequest = PendingWritePermissionRequest(
+                                    intentSender = result.intentSender,
+                                    tagId = result.tagId,
+                                    albumName = result.albumName,
+                                    albumPath = result.albumPath,
+                                    pendingPhotoIds = result.pendingPhotoIds,
+                                    pendingUris = result.pendingUris,
+                                    alreadyMovedCount = result.alreadyMovedCount
+                                ),
+                                message = if (result.alreadyMovedCount > 0) {
+                                    "已移动 ${result.alreadyMovedCount} 张照片，需要授权移动剩余照片"
+                                } else null
+                            )
+                        }
+                    }
                     is CreateLinkAlbumResult.RequiresDeleteConfirmation -> {
                         // Album created and photos copied, but need user confirmation to delete originals
                         _uiState.update { 
@@ -235,6 +336,7 @@ class TagBubbleViewModel @Inject constructor(
                                 pendingDeleteRequest = PendingDeleteRequest(
                                     intentSender = result.intentSender,
                                     tagIdToDeleteAfter = null,
+                                    photoIdsToCleanup = result.photoIdsToCleanup,
                                     message = "已创建相册「${result.albumName}」并移动 ${result.photosAdded} 张照片"
                                 )
                             )
@@ -247,6 +349,61 @@ class TagBubbleViewModel @Inject constructor(
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, error = "关联相册失败: ${e.message}") }
             }
+        }
+    }
+    
+    /**
+     * Called after user grants write permission.
+     */
+    fun onWritePermissionGranted() {
+        val pending = _uiState.value.pendingWriteRequest ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, pendingWriteRequest = null) }
+            try {
+                val result = tagAlbumSyncUseCase.completeMoveAfterWritePermission(
+                    tagId = pending.tagId,
+                    albumName = pending.albumName,
+                    albumPath = pending.albumPath,
+                    pendingPhotoIds = pending.pendingPhotoIds,
+                    pendingUris = pending.pendingUris
+                )
+                when (result) {
+                    is CreateLinkAlbumResult.Success -> {
+                        val totalMoved = pending.alreadyMovedCount + result.photosAdded
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                message = "已创建相册「${result.albumName}」并移动 $totalMoved 张照片"
+                            )
+                        }
+                    }
+                    is CreateLinkAlbumResult.Error -> {
+                        _uiState.update { it.copy(isLoading = false, error = result.message) }
+                    }
+                    else -> {
+                        _uiState.update { it.copy(isLoading = false) }
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoading = false, error = "移动失败: ${e.message}") }
+            }
+        }
+    }
+    
+    /**
+     * Called when user denies write permission.
+     */
+    fun onWritePermissionDenied() {
+        val pending = _uiState.value.pendingWriteRequest
+        _uiState.update { 
+            it.copy(
+                pendingWriteRequest = null,
+                message = if (pending?.alreadyMovedCount ?: 0 > 0) {
+                    "已移动 ${pending?.alreadyMovedCount} 张照片，部分照片未移动"
+                } else {
+                    "移动已取消"
+                }
+            )
         }
     }
     
@@ -264,6 +421,26 @@ class TagBubbleViewModel @Inject constructor(
                             it.copy(
                                 isLoading = false,
                                 message = "已关联相册「${result.albumName}」，已同步 ${result.photosAdded} 张照片"
+                            )
+                        }
+                    }
+                    is CreateLinkAlbumResult.RequiresWritePermission -> {
+                        // Need write permission to move remaining photos
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                pendingWriteRequest = PendingWritePermissionRequest(
+                                    intentSender = result.intentSender,
+                                    tagId = result.tagId,
+                                    albumName = result.albumName,
+                                    albumPath = result.albumPath,
+                                    pendingPhotoIds = result.pendingPhotoIds,
+                                    pendingUris = result.pendingUris,
+                                    alreadyMovedCount = result.alreadyMovedCount
+                                ),
+                                message = if (result.alreadyMovedCount > 0) {
+                                    "已移动 ${result.alreadyMovedCount} 张照片，需要授权移动剩余照片"
+                                } else null
                             )
                         }
                     }

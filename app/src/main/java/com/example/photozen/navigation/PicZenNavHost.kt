@@ -1,11 +1,17 @@
 package com.example.photozen.navigation
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import com.example.photozen.ui.components.AchievementCelebration
 import com.example.photozen.ui.screens.achievements.AchievementsScreen
 import com.example.photozen.ui.screens.editor.PhotoEditorScreen
 import com.example.photozen.ui.screens.filterselection.PhotoFilterSelectionScreen
@@ -27,9 +33,13 @@ import com.example.photozen.ui.screens.workflow.WorkflowScreen
 @Composable
 fun PicZenNavHost(
     navController: NavHostController,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    achievementViewModel: AchievementCelebrationViewModel = hiltViewModel()
 ) {
-    NavHost(
+    val celebrationState by achievementViewModel.currentCelebration.collectAsState()
+    
+    Box(modifier = modifier.fillMaxSize()) {
+        NavHost(
         navController = navController,
         startDestination = Screen.Home,
         modifier = modifier
@@ -95,6 +105,9 @@ fun PicZenNavHost(
                 },
                 onNavigateToQuickTag = {
                     navController.navigate(Screen.QuickTag)
+                },
+                onNavigateToLightTable = {
+                    navController.navigate(Screen.LightTable)
                 }
             )
         }
@@ -191,6 +204,17 @@ fun PicZenNavHost(
                     // Note: The filter parameters are stored in a shared ViewModel or PreferencesRepository
                     // for use by FlowSorter/QuickTag
                 }
+            )
+        }
+    }
+    
+        // Achievement Celebration Overlay
+        celebrationState?.let { event ->
+            AchievementCelebration(
+                achievementName = event.achievement.name,
+                achievementDescription = event.achievement.description,
+                isVisible = true,
+                onDismiss = { achievementViewModel.clearCelebration() }
             )
         }
     }

@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PhotoAlbum
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -136,6 +137,19 @@ fun TagBubbleScreen(
         }
     }
     
+    // Launcher for write permission
+    val writePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            // User granted write permission
+            viewModel.onWritePermissionGranted()
+        } else {
+            // User denied
+            viewModel.onWritePermissionDenied()
+        }
+    }
+    
     // Handle pending delete request
     LaunchedEffect(uiState.pendingDeleteRequest) {
         uiState.pendingDeleteRequest?.let { request ->
@@ -145,6 +159,19 @@ fun TagBubbleScreen(
                 )
             } catch (e: Exception) {
                 viewModel.onDeleteCancelled()
+            }
+        }
+    }
+    
+    // Handle pending write permission request
+    LaunchedEffect(uiState.pendingWriteRequest) {
+        uiState.pendingWriteRequest?.let { request ->
+            try {
+                writePermissionLauncher.launch(
+                    IntentSenderRequest.Builder(request.intentSender).build()
+                )
+            } catch (e: Exception) {
+                viewModel.onWritePermissionDenied()
             }
         }
     }
@@ -181,6 +208,17 @@ fun TagBubbleScreen(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "返回"
                         )
+                    }
+                },
+                actions = {
+                    // Reset layout button - only show when there are tags
+                    if (uiState.bubbleNodes.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.resetBubblePositions() }) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "恢复默认布局"
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -246,6 +284,10 @@ fun TagBubbleScreen(
                             onBubbleLongClick = { node ->
                                 // Long press = show options sheet
                                 showTagOptionsSheet = node
+                            },
+                            savedPositions = uiState.savedBubblePositions,
+                            onPositionsChanged = { positions ->
+                                viewModel.saveBubblePositions(positions)
                             },
                             modifier = Modifier
                                 .weight(1f)

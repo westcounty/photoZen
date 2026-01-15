@@ -777,6 +777,178 @@ class MediaStoreDataSource @Inject constructor(
     }
     
     /**
+     * Request write permission for multiple photos using createWriteRequest.
+     * Returns IntentSender if user confirmation needed, null if not needed or not supported.
+     */
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.R)
+    suspend fun requestWritePermission(uris: List<Uri>): IntentSender? = withContext(Dispatchers.IO) {
+        if (uris.isEmpty()) return@withContext null
+        try {
+            MediaStore.createWriteRequest(contentResolver, uris).intentSender
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    /**
+     * Move photo after write permission has been granted.
+     * This should succeed if write permission was granted via createWriteRequest.
+     */
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
+    suspend fun movePhotoAfterPermission(
+        sourceUri: Uri,
+        targetAlbumPath: String
+    ): PhotoEntity? = withContext(Dispatchers.IO) {
+        tryDirectMove(sourceUri, targetAlbumPath)
+    }
+    
+    /**
+     * Batch move photos to album. For Android 11+, this may return a write permission request.
+     * 
+     * @return BatchMoveResult with either success info or pending permission request
+     */
+    suspend fun batchMovePhotosToAlbum(
+        photos: List<Pair<Uri, String>>, // (sourceUri, photoId)
+        targetAlbumPath: String
+    ): BatchMoveResult = withContext(Dispatchers.IO) {
+        val movedPhotos = mutableListOf<Pair<String, PhotoEntity>>() // (originalId, newPhoto)
+        val needsPermissionUris = mutableListOf<Pair<Uri, String>>() // (uri, photoId)
+        
+        // First pass: try direct move for each photo
+        for ((sourceUri, photoId) in photos) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val directMoveResult = tryDirectMove(sourceUri, targetAlbumPath)
+                if (directMoveResult != null) {
+                    movedPhotos.add(photoId to directMoveResult)
+                } else {
+                    // This photo needs write permission
+                    needsPermissionUris.add(sourceUri to photoId)
+                }
+            } else {
+                // Pre-Android 10: try direct move
+                val directMoveResult = tryDirectMovePreQ(sourceUri, targetAlbumPath)
+                if (directMoveResult != null) {
+                    movedPhotos.add(photoId to directMoveResult)
+                }
+            }
+        }
+        
+        // If all photos were moved successfully, return success
+        if (needsPermissionUris.isEmpty()) {
+            return@withContext BatchMoveResult.Success(movedPhotos)
+        }
+        
+        // On Android 11+, request write permission for remaining photos
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                val uris = needsPermissionUris.map { it.first }
+                val intentSender = MediaStore.createWriteRequest(contentResolver, uris).intentSender
+                return@withContext BatchMoveResult.RequiresWritePermission(
+                    alreadyMoved = movedPhotos,
+                    pendingUris = needsPermissionUris,
+                    intentSender = intentSender,
+                    targetAlbumPath = targetAlbumPath
+                )
+            } catch (e: Exception) {
+                // Fall through to copy+delete
+            }
+        }
+        
+        // Fall back to copy+delete for remaining photos
+        val copiedPhotos = mutableListOf<Triple<String, PhotoEntity, Uri>>() // (originalId, newPhoto, originalUri)
+        for ((sourceUri, photoId) in needsPermissionUris) {
+            val newPhoto = copyPhotoToAlbum(sourceUri, targetAlbumPath)
+            if (newPhoto != null) {
+                copiedPhotos.add(Triple(photoId, newPhoto, sourceUri))
+            }
+        }
+        
+        // Request delete permission for originals
+        if (copiedPhotos.isNotEmpty() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                val deleteUris = copiedPhotos.map { it.third }
+                val intentSender = MediaStore.createDeleteRequest(contentResolver, deleteUris).intentSender
+                return@withContext BatchMoveResult.RequiresDeletePermission(
+                    alreadyMoved = movedPhotos,
+                    copiedPhotos = copiedPhotos.map { it.first to it.second },
+                    pendingDeleteUris = deleteUris,
+                    photoIdsToCleanup = copiedPhotos.map { it.first },
+                    intentSender = intentSender
+                )
+            } catch (e: Exception) {
+                // Just return what we have
+            }
+        }
+        
+        // Pre-Android 11 or failed to create delete request: try direct delete
+        for ((_, _, originalUri) in copiedPhotos) {
+            try {
+                contentResolver.delete(originalUri, null, null)
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+        
+        // Combine moved and copied photos
+        val allMoved = movedPhotos + copiedPhotos.map { it.first to it.second }
+        return@withContext BatchMoveResult.Success(allMoved)
+    }
+    
+    /**
+     * Complete batch move after write permission was granted.
+     */
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
+    suspend fun completeBatchMoveAfterPermission(
+        pendingUris: List<Pair<Uri, String>>,
+        targetAlbumPath: String
+    ): List<Pair<String, PhotoEntity>> = withContext(Dispatchers.IO) {
+        val movedPhotos = mutableListOf<Pair<String, PhotoEntity>>()
+        for ((sourceUri, photoId) in pendingUris) {
+            val result = tryDirectMove(sourceUri, targetAlbumPath)
+            if (result != null) {
+                movedPhotos.add(photoId to result)
+            }
+        }
+        movedPhotos
+    }
+    
+    /**
+     * Try direct move for pre-Android Q using file system operations.
+     */
+    private suspend fun tryDirectMovePreQ(sourceUri: Uri, targetAlbumPath: String): PhotoEntity? {
+        // Pre-Android Q doesn't support RELATIVE_PATH, so we can't do direct moves easily
+        // Return null to trigger copy+delete fallback
+        return null
+    }
+    
+    /**
+     * Result of batch move operation.
+     */
+    sealed class BatchMoveResult {
+        /** All photos moved successfully */
+        data class Success(
+            val movedPhotos: List<Pair<String, PhotoEntity>> // (originalId, newPhoto)
+        ) : BatchMoveResult()
+        
+        /** Need write permission to move remaining photos */
+        data class RequiresWritePermission(
+            val alreadyMoved: List<Pair<String, PhotoEntity>>,
+            val pendingUris: List<Pair<Uri, String>>, // (uri, photoId)
+            val intentSender: IntentSender,
+            val targetAlbumPath: String
+        ) : BatchMoveResult()
+        
+        /** Photos were copied, need delete permission for originals */
+        data class RequiresDeletePermission(
+            val alreadyMoved: List<Pair<String, PhotoEntity>>,
+            val copiedPhotos: List<Pair<String, PhotoEntity>>, // (originalId, newPhoto)
+            val pendingDeleteUris: List<Uri>,
+            val photoIdsToCleanup: List<String>,
+            val intentSender: IntentSender
+        ) : BatchMoveResult()
+    }
+    
+    /**
      * Try to move photo by directly updating its RELATIVE_PATH.
      * This is more efficient than copy-delete but requires write permission.
      */
