@@ -1,13 +1,18 @@
 package com.example.photozen.ui.screens.settings
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -41,16 +46,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.photozen.data.repository.PhotoFilterMode
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.cos
+import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.random.Random
 
 /**
  * Settings Screen - App preferences and achievements.
@@ -64,6 +80,7 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var showAboutDialog by remember { mutableStateOf(false) }
     var showChangelogDialog by remember { mutableStateOf(false) }
     
     // Show error messages
@@ -118,11 +135,19 @@ fun SettingsScreen(
             // About Section
             SectionTitle(title = "关于")
             
-            AboutCard(onVersionClick = { showChangelogDialog = true })
+            AboutCard(
+                onInfoClick = { showAboutDialog = true },
+                onVersionClick = { showChangelogDialog = true }
+            )
         }
     }
     
-    // Changelog Dialog
+    // About Dialog (App Introduction)
+    if (showAboutDialog) {
+        AboutDialog(onDismiss = { showAboutDialog = false })
+    }
+    
+    // Changelog Dialog (Version History)
     if (showChangelogDialog) {
         ChangelogDialog(onDismiss = { showChangelogDialog = false })
     }
@@ -260,7 +285,7 @@ private fun FilterOption(
  * App introduction dialog showing features and highlights.
  */
 @Composable
-private fun ChangelogDialog(onDismiss: () -> Unit) {
+private fun AboutDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -336,6 +361,109 @@ private fun ChangelogDialog(onDismiss: () -> Unit) {
 }
 
 /**
+ * Changelog dialog showing version history from CHANGELOG.md.
+ */
+@Composable
+private fun ChangelogDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.History,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("更新日志")
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Version header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "v1.0.0.001",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "2026-01-16",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                Text(
+                    text = "🎉 第一个正式版本！",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                
+                Text(
+                    text = "PhotoZen 图禅 —— 让整理照片变成一种享受。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                HorizontalDivider()
+                
+                // Core features list
+                Text(
+                    text = "核心功能",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                
+                ChangelogItem("🎴 滑动整理", "Tinder 风格滑动、Spring 动画、批量选择、1/2/3 列切换")
+                ChangelogItem("🔍 照片对比", "同时对比 2-4 张照片、同步缩放、快速决策")
+                ChangelogItem("🏷️ 标签气泡", "物理模拟拖拽、弹性碰撞、位置记忆、层级结构")
+                ChangelogItem("✂️ 无损编辑", "非破坏性裁切、虚拟副本、图片导出")
+                ChangelogItem("🚀 心流模式", "一站式整理、连击系统、胜利动画")
+                ChangelogItem("🏆 成就系统", "50+ 成就、5 个稀有度等级、进度追踪")
+                ChangelogItem("📁 照片管理", "智能筛选、批量操作、回收站、外部删除同步")
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
+}
+
+/**
+ * Single changelog item.
+ */
+@Composable
+private fun ChangelogItem(title: String, description: String) {
+    Column(modifier = Modifier.padding(start = 8.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/**
  * Feature section in the about dialog.
  */
 @Composable
@@ -361,64 +489,183 @@ private fun FeatureSection(
 
 
 /**
- * Acknowledgement card for early testers.
+ * Data class for floating heart animation.
+ */
+private data class FloatingHeart(
+    val id: Long,
+    val angle: Float,      // Direction in radians
+    val distance: Float,   // How far to travel
+    val duration: Int,     // Animation duration in ms
+    val startDelay: Int,   // Delay before starting
+    val color: Color,      // Heart color
+    val maxScale: Float    // Maximum scale
+)
+
+/**
+ * Acknowledgement card for early testers with floating hearts animation.
  */
 @Composable
 private fun AcknowledgementCard() {
+    // List of floating hearts
+    val floatingHearts = remember { mutableStateListOf<FloatingHeart>() }
+    
+    // Heart colors palette
+    val heartColors = listOf(
+        Color(0xFFFF6B6B),  // Coral red
+        Color(0xFFFF8E8E),  // Light red
+        Color(0xFFFFB3B3),  // Pink
+        Color(0xFFFF69B4),  // Hot pink
+        Color(0xFFFF1493),  // Deep pink
+        Color(0xFFE91E63),  // Material pink
+        Color(0xFFF48FB1),  // Light pink
+    )
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Default.Favorite,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(28.dp)
-            )
+            // Floating hearts layer
+            floatingHearts.forEach { heart ->
+                FloatingHeartAnimation(
+                    heart = heart,
+                    onAnimationEnd = { floatingHearts.remove(heart) }
+                )
+            }
             
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            Text(
-                text = "感谢以下早期体验者",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Text(
-                text = "土土酱 · 涵涵酱",
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Text(
-                text = "感谢你们的宝贵建议和反馈\n让 PhotoZen 变得更好",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
+            // Main content
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Clickable heart icon
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clickable {
+                            // Create a new floating heart
+                            val newHeart = FloatingHeart(
+                                id = System.currentTimeMillis() + Random.nextLong(1000),
+                                angle = Random.nextFloat() * 2 * Math.PI.toFloat(),
+                                distance = 80f + Random.nextFloat() * 60f,
+                                duration = 1200 + Random.nextInt(600),
+                                startDelay = 0,
+                                color = heartColors.random(),
+                                maxScale = 1.2f + Random.nextFloat() * 0.6f
+                            )
+                            floatingHearts.add(newHeart)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Favorite,
+                        contentDescription = "点击发送爱心",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Text(
+                    text = "感谢以下早期体验者",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = "土土酱 · 涵涵酱",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = "感谢你们的宝贵建议和反馈\n让 PhotoZen 变得更好",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }
 
 /**
- * About card with clickable version number to show changelog.
+ * Animated floating heart that grows, floats away, and fades out.
  */
 @Composable
-private fun AboutCard(onVersionClick: () -> Unit) {
+private fun FloatingHeartAnimation(
+    heart: FloatingHeart,
+    onAnimationEnd: () -> Unit
+) {
+    // Animation progress (0 to 1)
+    val progress = remember { Animatable(0f) }
+    
+    LaunchedEffect(heart.id) {
+        delay(heart.startDelay.toLong())
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(
+                durationMillis = heart.duration,
+                easing = LinearEasing
+            )
+        )
+        onAnimationEnd()
+    }
+    
+    val currentProgress = progress.value
+    
+    // Scale: starts small, grows to max, then slightly shrinks
+    val scale = when {
+        currentProgress < 0.3f -> currentProgress / 0.3f * heart.maxScale
+        currentProgress < 0.7f -> heart.maxScale
+        else -> heart.maxScale * (1f - (currentProgress - 0.7f) / 0.3f * 0.3f)
+    }
+    
+    // Alpha: fully visible until 60%, then fade out
+    val alpha = when {
+        currentProgress < 0.6f -> 1f
+        else -> 1f - (currentProgress - 0.6f) / 0.4f
+    }
+    
+    // Position: move outward from center
+    val distance = heart.distance * currentProgress
+    val offsetX = (cos(heart.angle) * distance).roundToInt()
+    val offsetY = (sin(heart.angle) * distance - currentProgress * 30f).roundToInt() // Slight upward drift
+    
+    Icon(
+        imageVector = Icons.Default.Favorite,
+        contentDescription = null,
+        tint = heart.color,
+        modifier = Modifier
+            .offset { IntOffset(offsetX, offsetY) }
+            .scale(scale)
+            .alpha(alpha)
+            .size(20.dp)
+    )
+}
+
+/**
+ * About card with clickable info icon and version number.
+ */
+@Composable
+private fun AboutCard(
+    onInfoClick: () -> Unit,
+    onVersionClick: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -431,14 +678,22 @@ private fun AboutCard(onVersionClick: () -> Unit) {
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                imageVector = Icons.Default.Info,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(32.dp)
-            )
+            // Clickable info icon for app introduction
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable(onClick = onInfoClick),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = "了解更多",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
             
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             
             Text(
                 text = "PhotoZen",
@@ -446,7 +701,7 @@ private fun AboutCard(onVersionClick: () -> Unit) {
                 fontWeight = FontWeight.Bold
             )
             
-            // Clickable version number
+            // Clickable version number for changelog
             Text(
                 text = "版本 1.0.0.001",
                 style = MaterialTheme.typography.bodySmall,
@@ -457,7 +712,7 @@ private fun AboutCard(onVersionClick: () -> Unit) {
             )
 
             Text(
-                text = "点击了解更多",
+                text = "点击图标了解功能 · 点击版本号查看更新",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
