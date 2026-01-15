@@ -49,4 +49,18 @@ class GetUnsortedPhotosUseCase @Inject constructor(
     fun getCount(): Flow<Int> {
         return photoRepository.getUnsortedCount()
     }
+    
+    /**
+     * Get count of unsorted photos filtered by bucket IDs.
+     */
+    fun getCountByBuckets(bucketIds: List<String>): Flow<Int> {
+        return photoRepository.getUnsortedCountByBuckets(bucketIds)
+    }
+    
+    /**
+     * Get count of unsorted photos excluding specific bucket IDs.
+     */
+    fun getCountExcludingBuckets(bucketIds: List<String>): Flow<Int> {
+        return photoRepository.getUnsortedCountExcludingBuckets(bucketIds)
+    }
 }

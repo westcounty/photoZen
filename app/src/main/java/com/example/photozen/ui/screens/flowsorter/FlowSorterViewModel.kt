@@ -123,8 +123,8 @@ class FlowSorterViewModel @Inject constructor(
     private val _counters = MutableStateFlow(SortCounters())
     private val _combo = MutableStateFlow(ComboState())
     
-    // Camera album IDs cache
-    private var cameraAlbumIds: List<String> = emptyList()
+    // Camera album IDs as StateFlow for reactive updates
+    private val _cameraAlbumIds = MutableStateFlow<List<String>>(emptyList())
     
     // Job for auto-hiding combo after timeout
     private var comboTimeoutJob: Job? = null
@@ -145,19 +145,25 @@ class FlowSorterViewModel @Inject constructor(
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun getFilteredPhotosFlow(): Flow<List<PhotoEntity>> {
-        return preferencesRepository.getPhotoFilterMode().flatMapLatest { filterMode ->
+        return combine(
+            preferencesRepository.getPhotoFilterMode(),
+            _cameraAlbumIds
+        ) { filterMode, cameraIds ->
+            Pair(filterMode, cameraIds)
+        }.flatMapLatest { (filterMode, cameraIds) ->
             when (filterMode) {
                 PhotoFilterMode.ALL -> getUnsortedPhotosUseCase()
                 PhotoFilterMode.CAMERA_ONLY -> {
-                    if (cameraAlbumIds.isNotEmpty()) {
-                        getUnsortedPhotosUseCase.byBuckets(cameraAlbumIds)
+                    if (cameraIds.isNotEmpty()) {
+                        getUnsortedPhotosUseCase.byBuckets(cameraIds)
                     } else {
+                        // Return empty flow while loading camera IDs
                         getUnsortedPhotosUseCase()
                     }
                 }
                 PhotoFilterMode.EXCLUDE_CAMERA -> {
-                    if (cameraAlbumIds.isNotEmpty()) {
-                        getUnsortedPhotosUseCase.excludingBuckets(cameraAlbumIds)
+                    if (cameraIds.isNotEmpty()) {
+                        getUnsortedPhotosUseCase.excludingBuckets(cameraIds)
                     } else {
                         getUnsortedPhotosUseCase()
                     }
@@ -231,7 +237,7 @@ class FlowSorterViewModel @Inject constructor(
     private suspend fun loadCameraAlbumIds() {
         try {
             val albums = mediaStoreDataSource.getAllAlbums()
-            cameraAlbumIds = albums.filter { it.isCamera }.map { it.id }
+            _cameraAlbumIds.value = albums.filter { it.isCamera }.map { it.id }
         } catch (e: Exception) {
             // Ignore errors, just use empty list
         }
