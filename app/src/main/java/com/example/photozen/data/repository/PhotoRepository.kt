@@ -92,6 +92,26 @@ interface PhotoRepository {
     fun getUnsortedCountExcludingBuckets(bucketIds: List<String>): Flow<Int>
     
     /**
+     * Get total count filtered by bucket IDs.
+     */
+    fun getTotalCountByBuckets(bucketIds: List<String>): Flow<Int>
+    
+    /**
+     * Get total count excluding specific bucket IDs.
+     */
+    fun getTotalCountExcludingBuckets(bucketIds: List<String>): Flow<Int>
+    
+    /**
+     * Get sorted count filtered by bucket IDs.
+     */
+    fun getSortedCountByBuckets(bucketIds: List<String>): Flow<Int>
+    
+    /**
+     * Get sorted count excluding specific bucket IDs.
+     */
+    fun getSortedCountExcludingBuckets(bucketIds: List<String>): Flow<Int>
+    
+    /**
      * Get "Maybe" photos for Light Table.
      */
     fun getMaybePhotos(): Flow<List<PhotoEntity>>

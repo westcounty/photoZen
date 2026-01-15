@@ -3,16 +3,21 @@ package com.example.photozen.ui.screens.photolist
 import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -20,14 +25,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.QuestionMark
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -127,44 +136,42 @@ fun PhotoListScreen(
                 )
             )
         },
-        floatingActionButton = {
-            // Show Quick Tag FAB only for KEEP status
-            if (uiState.status == PhotoStatus.KEEP && uiState.photos.isNotEmpty()) {
-                ExtendedFloatingActionButton(
-                    onClick = onNavigateToQuickTag,
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                ) {
-                    Icon(Icons.Default.Label, contentDescription = null)
-                    Text(
-                        text = "快速分类",
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
-                }
-            }
-        }
     ) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            when {
-                uiState.isLoading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                }
-                uiState.photos.isEmpty() -> {
-                    EmptyState(status = uiState.status, color = color)
-                }
-                else -> {
-                    PhotoGrid(
-                        photos = uiState.photos,
-                        onPhotoLongPress = { photoId, photoUri ->
-                            selectedPhotoId = photoId
-                            selectedPhotoUri = photoUri
-                            showActionSheet = true
-                        }
-                    )
+            // Prominent Quick Tag Banner for KEEP status
+            if (uiState.status == PhotoStatus.KEEP && uiState.photos.isNotEmpty()) {
+                QuickTagBanner(
+                    photoCount = uiState.photos.size,
+                    onClick = onNavigateToQuickTag
+                )
+            }
+            
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f)
+            ) {
+                when {
+                    uiState.isLoading -> {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    }
+                    uiState.photos.isEmpty() -> {
+                        EmptyState(status = uiState.status, color = color)
+                    }
+                    else -> {
+                        PhotoGrid(
+                            photos = uiState.photos,
+                            onPhotoLongPress = { photoId, photoUri ->
+                                selectedPhotoId = photoId
+                                selectedPhotoUri = photoUri
+                                showActionSheet = true
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -203,6 +210,85 @@ fun PhotoListScreen(
                 }
             }
         )
+    }
+}
+
+/**
+ * Prominent Quick Tag Banner - highly visible call-to-action.
+ */
+@Composable
+private fun QuickTagBanner(
+    photoCount: Int,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Label,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                
+                Column(
+                    modifier = Modifier.padding(start = 16.dp)
+                ) {
+                    Text(
+                        text = "快速分类",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Text(
+                        text = "为 $photoCount 张照片添加标签",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    )
+                }
+            }
+            
+            Button(
+                onClick = onClick,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("开始")
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
     }
 }
 

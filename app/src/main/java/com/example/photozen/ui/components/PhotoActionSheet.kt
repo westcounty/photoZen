@@ -27,11 +27,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocalOffer
-import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -126,6 +128,19 @@ fun openImageWithChooser(context: Context, imageUri: Uri) {
 }
 
 /**
+ * Share image using system share sheet.
+ */
+fun shareImage(context: Context, imageUri: Uri) {
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "image/*"
+        putExtra(Intent.EXTRA_STREAM, imageUri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    val chooser = Intent.createChooser(intent, "分享图片")
+    context.startActivity(chooser)
+}
+
+/**
  * Modern action sheet for photo operations in tagged photos screen.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -208,7 +223,7 @@ fun TaggedPhotoActionSheet(
                 )
                 
                 ActionSheetItem(
-                    icon = Icons.Default.OpenInNew,
+                    icon = Icons.AutoMirrored.Filled.OpenInNew,
                     title = "使用其他应用打开",
                     subtitle = if (defaultAppPackage != null) "默认: ${getAppName(context, defaultAppPackage)}" else "选择应用查看或编辑",
                     onClick = {
@@ -220,6 +235,17 @@ fun TaggedPhotoActionSheet(
                         }
                     },
                     onLongClick = { showAppChooser = true }
+                )
+                
+                ActionSheetItem(
+                    icon = Icons.Default.Share,
+                    title = "分享",
+                    subtitle = "发送到其他应用",
+                    iconTint = Color(0xFF1E88E5),
+                    onClick = {
+                        shareImage(context, uri)
+                        onDismiss()
+                    }
                 )
                 
                 HorizontalDivider(
@@ -568,7 +594,7 @@ fun PhotoListActionSheet(
                 )
                 
                 ActionSheetItem(
-                    icon = Icons.Default.OpenInNew,
+                    icon = Icons.AutoMirrored.Filled.OpenInNew,
                     title = "使用其他应用打开",
                     subtitle = if (defaultAppPackage != null) "默认: ${getAppName(context, defaultAppPackage)}" else "选择应用查看或编辑",
                     onClick = {
@@ -578,6 +604,17 @@ fun PhotoListActionSheet(
                         } else {
                             showAppChooser = true
                         }
+                    }
+                )
+                
+                ActionSheetItem(
+                    icon = Icons.Default.Share,
+                    title = "分享",
+                    subtitle = "发送到其他应用",
+                    iconTint = Color(0xFF1E88E5),
+                    onClick = {
+                        shareImage(context, uri)
+                        onDismiss()
                     }
                 )
                 
@@ -623,7 +660,7 @@ fun PhotoListActionSheet(
                 }
                 
                 ActionSheetItem(
-                    icon = Icons.Default.Share,
+                    icon = Icons.Default.Restore,
                     title = "恢复未整理",
                     subtitle = "将照片状态重置为未整理",
                     iconTint = MaterialTheme.colorScheme.tertiary,

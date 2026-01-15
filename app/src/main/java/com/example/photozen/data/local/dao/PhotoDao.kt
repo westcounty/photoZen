@@ -264,6 +264,30 @@ interface PhotoDao {
     @Query("SELECT COUNT(*) FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL)")
     fun getUnsortedCountExcludingBuckets(bucketIds: List<String>): Flow<Int>
     
+    /**
+     * Get total count of photos filtered by bucket IDs (for camera only mode).
+     */
+    @Query("SELECT COUNT(*) FROM photos WHERE is_virtual_copy = 0 AND bucket_id IN (:bucketIds)")
+    fun getTotalCountByBuckets(bucketIds: List<String>): Flow<Int>
+    
+    /**
+     * Get total count of photos excluding specific bucket IDs (for exclude camera mode).
+     */
+    @Query("SELECT COUNT(*) FROM photos WHERE is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL)")
+    fun getTotalCountExcludingBuckets(bucketIds: List<String>): Flow<Int>
+    
+    /**
+     * Get sorted count of photos filtered by bucket IDs.
+     */
+    @Query("SELECT COUNT(*) FROM photos WHERE status != 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds)")
+    fun getSortedCountByBuckets(bucketIds: List<String>): Flow<Int>
+    
+    /**
+     * Get sorted count of photos excluding specific bucket IDs.
+     */
+    @Query("SELECT COUNT(*) FROM photos WHERE status != 'UNSORTED' AND is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL)")
+    fun getSortedCountExcludingBuckets(bucketIds: List<String>): Flow<Int>
+    
     // ==================== QUERY - Search ====================
     
     /**

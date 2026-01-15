@@ -72,6 +72,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.ui.components.AchievementSummaryCard
 import com.example.photozen.ui.components.generateAchievements
 import com.example.photozen.ui.theme.KeepGreen
@@ -205,13 +206,20 @@ fun HomeScreen(
                 LoadingCard()
             }
             
-            // Statistics Card
-            AnimatedVisibility(
-                visible = !uiState.isLoading && uiState.hasPhotos,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                StatisticsCard(uiState = uiState)
+            // Action Cards
+            if (!uiState.isLoading) {
+                // Mission Card - Start Flow (The main workflow experience) - ALWAYS at top
+                if (uiState.filteredUnsorted > 0) {
+                    MissionCard(
+                        unsortedCount = uiState.filteredUnsorted,
+                        sortedCount = uiState.filteredSorted,
+                        totalCount = uiState.filteredTotal,
+                        maybeCount = uiState.maybeCount,
+                        progress = uiState.filteredProgress,
+                        filterMode = uiState.photoFilterMode,
+                        onStartFlow = onNavigateToWorkflow
+                    )
+                }
             }
             
             // Quick Stats Row - clickable
@@ -226,16 +234,6 @@ fun HomeScreen(
             
             // Action Cards
             if (!uiState.isLoading) {
-                // Mission Card - Start Flow (The main workflow experience)
-                if (uiState.unsortedCount > 0) {
-                    MissionCard(
-                        unsortedCount = uiState.unsortedCount,
-                        totalCount = uiState.totalPhotos,
-                        maybeCount = uiState.maybeCount,
-                        onStartFlow = onNavigateToWorkflow
-                    )
-                }
-                
                 // Quick Action: Flow Sorter (standalone)
                 ActionCard(
                     title = "快速整理",
@@ -333,63 +331,6 @@ private fun LoadingCard() {
                 text = "正在加载照片...",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-/**
- * Statistics overview card.
- */
-@Composable
-private fun StatisticsCard(uiState: HomeUiState) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = "整理进度",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "${uiState.sortedCount} / ${uiState.totalPhotos} 张",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                Text(
-                    text = "${(uiState.progress * 100).toInt()}%",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            LinearProgressIndicator(
-                progress = { uiState.progress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp)),
-                color = KeepGreen,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
         }
     }
@@ -501,20 +442,26 @@ private fun StatChip(
  * Mission Card - The main "Start Flow" card for beginning a workflow session.
  * 
  * Shows:
- * - Task progress (X / Y photos)
+ * - Task progress within filtered range
+ * - Unsorted / Sorted / Total counts
  * - Big "Start Flow" button
- * - Visual indicator of pending work
  */
 @Composable
 private fun MissionCard(
     unsortedCount: Int,
+    sortedCount: Int,
     totalCount: Int,
     maybeCount: Int,
+    progress: Float,
+    filterMode: PhotoFilterMode,
     onStartFlow: () -> Unit
 ) {
-    val progress = if (totalCount > 0) {
-        1f - (unsortedCount.toFloat() / totalCount)
-    } else 0f
+    val filterModeText = when (filterMode) {
+        PhotoFilterMode.ALL -> "全部照片"
+        PhotoFilterMode.CAMERA_ONLY -> "相机照片"
+        PhotoFilterMode.EXCLUDE_CAMERA -> "非相机照片"
+        PhotoFilterMode.CUSTOM -> "自定义范围"
+    }
     
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -550,7 +497,7 @@ private fun MissionCard(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "沉浸式整理体验",
+                        text = filterModeText,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -585,24 +532,74 @@ private fun MissionCard(
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
             
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             
-            // Task details
+            // Stats row with unsorted highlighted
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
             ) {
-                Text(
-                    text = "$unsortedCount 张待整理",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (maybeCount > 0) {
+                // Unsorted - Highlighted
+                Column {
                     Text(
-                        text = "+ $maybeCount 张待对比",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaybeAmber
+                        text = unsortedCount.toString(),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
                     )
+                    Text(
+                        text = "待整理",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                // Sorted
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = sortedCount.toString(),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = KeepGreen
+                    )
+                    Text(
+                        text = "已整理",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                // Total
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = totalCount.toString(),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "总计",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                // Maybe - if any
+                if (maybeCount > 0) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = maybeCount.toString(),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaybeAmber
+                        )
+                        Text(
+                            text = "待对比",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
             

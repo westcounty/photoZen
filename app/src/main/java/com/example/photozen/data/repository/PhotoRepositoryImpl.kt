@@ -170,6 +170,22 @@ class PhotoRepositoryImpl @Inject constructor(
         return photoDao.getUnsortedCountExcludingBuckets(bucketIds)
     }
     
+    override fun getTotalCountByBuckets(bucketIds: List<String>): Flow<Int> {
+        return photoDao.getTotalCountByBuckets(bucketIds)
+    }
+    
+    override fun getTotalCountExcludingBuckets(bucketIds: List<String>): Flow<Int> {
+        return photoDao.getTotalCountExcludingBuckets(bucketIds)
+    }
+    
+    override fun getSortedCountByBuckets(bucketIds: List<String>): Flow<Int> {
+        return photoDao.getSortedCountByBuckets(bucketIds)
+    }
+    
+    override fun getSortedCountExcludingBuckets(bucketIds: List<String>): Flow<Int> {
+        return photoDao.getSortedCountExcludingBuckets(bucketIds)
+    }
+    
     override fun getMaybePhotos(): Flow<List<PhotoEntity>> {
         return photoDao.getMaybePhotos()
     }

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.AchievementData
 import com.example.photozen.data.repository.PhotoFilterMode
+import com.example.photozen.data.repository.PhotoRepository
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.MediaStoreDataSource
 import com.example.photozen.domain.usecase.GetPhotosUseCase
@@ -31,6 +32,9 @@ data class HomeUiState(
     val keepCount: Int = 0,
     val trashCount: Int = 0,
     val maybeCount: Int = 0,
+    // Filtered counts based on current filter mode
+    val filteredTotal: Int = 0,
+    val filteredSorted: Int = 0,
     val hasPermission: Boolean = false,
     val isLoading: Boolean = true,
     val isSyncing: Boolean = false,
@@ -53,6 +57,18 @@ data class HomeUiState(
      */
     val needsFilterSelection: Boolean
         get() = photoFilterMode == PhotoFilterMode.CUSTOM
+    
+    /**
+     * Progress within the filtered range.
+     */
+    val filteredProgress: Float
+        get() = if (filteredTotal > 0) filteredSorted.toFloat() / filteredTotal else 0f
+    
+    /**
+     * Unsorted count within the filtered range.
+     */
+    val filteredUnsorted: Int
+        get() = filteredTotal - filteredSorted
 }
 
 /**
@@ -65,7 +81,8 @@ class HomeViewModel @Inject constructor(
     private val getUnsortedPhotosUseCase: GetUnsortedPhotosUseCase,
     private val syncPhotosUseCase: SyncPhotosUseCase,
     private val preferencesRepository: PreferencesRepository,
-    private val mediaStoreDataSource: MediaStoreDataSource
+    private val mediaStoreDataSource: MediaStoreDataSource,
+    private val photoRepository: PhotoRepository
 ) : ViewModel() {
     
     private val _hasPermission = MutableStateFlow(false)
@@ -111,6 +128,90 @@ class HomeViewModel @Inject constructor(
     }
     
     /**
+     * Get filtered total count based on filter mode.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun getFilteredTotalCount() = combine(
+        preferencesRepository.getPhotoFilterMode(),
+        _cameraAlbumIds
+    ) { filterMode, cameraIds ->
+        Pair(filterMode, cameraIds)
+    }.flatMapLatest { (filterMode, cameraIds) ->
+        when (filterMode) {
+            PhotoFilterMode.ALL -> photoRepository.getTotalCount()
+            PhotoFilterMode.CAMERA_ONLY -> {
+                if (cameraIds.isNotEmpty()) {
+                    photoRepository.getTotalCountByBuckets(cameraIds)
+                } else {
+                    photoRepository.getTotalCount()
+                }
+            }
+            PhotoFilterMode.EXCLUDE_CAMERA -> {
+                if (cameraIds.isNotEmpty()) {
+                    photoRepository.getTotalCountExcludingBuckets(cameraIds)
+                } else {
+                    photoRepository.getTotalCount()
+                }
+            }
+            PhotoFilterMode.CUSTOM -> {
+                // For custom mode, show total count
+                photoRepository.getTotalCount()
+            }
+        }
+    }
+    
+    /**
+     * Get filtered sorted count based on filter mode.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun getFilteredSortedCount() = combine(
+        preferencesRepository.getPhotoFilterMode(),
+        _cameraAlbumIds
+    ) { filterMode, cameraIds ->
+        Pair(filterMode, cameraIds)
+    }.flatMapLatest { (filterMode, cameraIds) ->
+        when (filterMode) {
+            PhotoFilterMode.ALL -> {
+                // Sorted = Keep + Trash + Maybe
+                combine(
+                    getPhotosUseCase.getCountByStatus(PhotoStatus.KEEP),
+                    getPhotosUseCase.getCountByStatus(PhotoStatus.TRASH),
+                    getPhotosUseCase.getCountByStatus(PhotoStatus.MAYBE)
+                ) { keep, trash, maybe -> keep + trash + maybe }
+            }
+            PhotoFilterMode.CAMERA_ONLY -> {
+                if (cameraIds.isNotEmpty()) {
+                    photoRepository.getSortedCountByBuckets(cameraIds)
+                } else {
+                    combine(
+                        getPhotosUseCase.getCountByStatus(PhotoStatus.KEEP),
+                        getPhotosUseCase.getCountByStatus(PhotoStatus.TRASH),
+                        getPhotosUseCase.getCountByStatus(PhotoStatus.MAYBE)
+                    ) { keep, trash, maybe -> keep + trash + maybe }
+                }
+            }
+            PhotoFilterMode.EXCLUDE_CAMERA -> {
+                if (cameraIds.isNotEmpty()) {
+                    photoRepository.getSortedCountExcludingBuckets(cameraIds)
+                } else {
+                    combine(
+                        getPhotosUseCase.getCountByStatus(PhotoStatus.KEEP),
+                        getPhotosUseCase.getCountByStatus(PhotoStatus.TRASH),
+                        getPhotosUseCase.getCountByStatus(PhotoStatus.MAYBE)
+                    ) { keep, trash, maybe -> keep + trash + maybe }
+                }
+            }
+            PhotoFilterMode.CUSTOM -> {
+                combine(
+                    getPhotosUseCase.getCountByStatus(PhotoStatus.KEEP),
+                    getPhotosUseCase.getCountByStatus(PhotoStatus.TRASH),
+                    getPhotosUseCase.getCountByStatus(PhotoStatus.MAYBE)
+                ) { keep, trash, maybe -> keep + trash + maybe }
+            }
+        }
+    }
+    
+    /**
      * UI State exposed to the screen.
      */
     val uiState: StateFlow<HomeUiState> = combine(
@@ -126,31 +227,46 @@ class HomeViewModel @Inject constructor(
         combine(
             _error, 
             preferencesRepository.getAllAchievementData(),
-            preferencesRepository.getPhotoFilterMode()
-        ) { error, achievementData, filterMode ->
-            Triple(error, achievementData, filterMode)
+            preferencesRepository.getPhotoFilterMode(),
+            getFilteredTotalCount(),
+            getFilteredSortedCount()
+        ) { error, achievementData, filterMode, filteredTotal, filteredSorted ->
+            FilteredData(error, achievementData, filterMode, filteredTotal, filteredSorted)
         }
     ) { values ->
         @Suppress("UNCHECKED_CAST")
-        val combined = values[9] as Triple<String?, AchievementData, PhotoFilterMode>
+        val combined = values[9] as FilteredData
         HomeUiState(
             totalPhotos = values[0] as Int,
             unsortedCount = values[1] as Int,
             keepCount = values[2] as Int,
             trashCount = values[3] as Int,
             maybeCount = values[4] as Int,
+            filteredTotal = combined.filteredTotal,
+            filteredSorted = combined.filteredSorted,
             hasPermission = values[5] as Boolean,
             isLoading = values[6] as Boolean,
             isSyncing = values[7] as Boolean,
             syncResult = values[8] as String?,
-            error = combined.first,
-            achievementData = combined.second,
-            photoFilterMode = combined.third
+            error = combined.error,
+            achievementData = combined.achievementData,
+            photoFilterMode = combined.filterMode
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = HomeUiState()
+    )
+    
+    /**
+     * Helper data class for combining filtered data.
+     */
+    private data class FilteredData(
+        val error: String?,
+        val achievementData: AchievementData,
+        val filterMode: PhotoFilterMode,
+        val filteredTotal: Int,
+        val filteredSorted: Int
     )
     
     init {
