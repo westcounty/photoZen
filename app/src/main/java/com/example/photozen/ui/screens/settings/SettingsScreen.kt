@@ -16,7 +16,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
@@ -110,11 +109,6 @@ fun SettingsScreen(
                 onModeSelected = { viewModel.setPhotoFilterMode(it) }
             )
             
-            // Changelog Section
-            SectionTitle(title = "更新日志")
-            
-            ChangelogCard(onClick = { showChangelogDialog = true })
-            
             // Acknowledgement Section
             SectionTitle(title = "鸣谢")
             
@@ -123,7 +117,7 @@ fun SettingsScreen(
             // About Section
             SectionTitle(title = "关于")
             
-            AboutCard()
+            AboutCard(onVersionClick = { showChangelogDialog = true })
         }
     }
     
@@ -255,54 +249,6 @@ private fun FilterOption(
                 imageVector = Icons.Default.Check,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-}
-
-/**
- * Changelog card - clickable to show changelog dialog.
- */
-@Composable
-private fun ChangelogCard(onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.History,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "查看更新日志",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = "了解最新版本的更新内容",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -466,10 +412,10 @@ private fun AcknowledgementCard() {
 }
 
 /**
- * About card.
+ * About card with clickable version number to show changelog.
  */
 @Composable
-private fun AboutCard() {
+private fun AboutCard(onVersionClick: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -497,10 +443,20 @@ private fun AboutCard() {
                 fontWeight = FontWeight.Bold
             )
             
+            // Clickable version number
             Text(
                 text = "版本 1.4.0",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clickable(onClick = onVersionClick)
+                    .padding(vertical = 4.dp)
+            )
+            
+            Text(
+                text = "点击查看更新日志",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
             
             Spacer(modifier = Modifier.height(8.dp))

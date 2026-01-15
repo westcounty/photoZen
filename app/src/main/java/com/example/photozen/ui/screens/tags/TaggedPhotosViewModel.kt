@@ -89,33 +89,33 @@ class TaggedPhotosViewModel @Inject constructor(
      */
     fun loadPhotosForTag(tagId: String) {
         if (_uiState.value.tagId == tagId) return
-        
+
         // Cancel any existing collection job
         photoCollectionJob?.cancel()
-        
+
         _uiState.update { it.copy(isLoading = true, tagId = tagId) }
-        
+
         viewModelScope.launch {
             try {
                 // Get tag info including linked album info
                 val tag = tagDao.getById(tagId)
-                _uiState.update { 
+                _uiState.update {
                     it.copy(
                         tagName = tag?.name,
                         tagLinkedAlbumId = tag?.linkedAlbumId
-                    ) 
+                    )
                 }
             } catch (e: Exception) {
-                _uiState.update { 
+                _uiState.update {
                     it.copy(
-                        isLoading = false, 
+                        isLoading = false,
                         error = "加载标签信息失败: ${e.message}"
-                    ) 
+                    )
                 }
                 return@launch
             }
         }
-        
+
         // Start collecting photos with the reactive query
         photoCollectionJob = viewModelScope.launch {
             try {
@@ -123,16 +123,61 @@ class TaggedPhotosViewModel @Inject constructor(
                 // - Photos are added/removed from the tag
                 // - Photo entities are updated/deleted
                 photoDao.getPhotosByTagId(tagId).collect { photos ->
-                    _uiState.update { 
-                        it.copy(isLoading = false, photos = photos) 
+                    _uiState.update {
+                        it.copy(isLoading = false, photos = photos)
                     }
                 }
             } catch (e: Exception) {
-                _uiState.update { 
+                _uiState.update {
                     it.copy(
-                        isLoading = false, 
+                        isLoading = false,
                         error = "加载失败: ${e.message}"
-                    ) 
+                    )
+                }
+            }
+        }
+    }
+    
+    /**
+     * Force refresh photos for the current tag.
+     * Re-starts the photo collection to get the latest data.
+     */
+    fun refreshPhotos() {
+        val currentTagId = _uiState.value.tagId ?: return
+        
+        // Cancel existing job and force reload
+        photoCollectionJob?.cancel()
+        _uiState.update { it.copy(isLoading = true) }
+        
+        // Reload tag info
+        viewModelScope.launch {
+            try {
+                val tag = tagDao.getById(currentTagId)
+                _uiState.update {
+                    it.copy(
+                        tagName = tag?.name,
+                        tagLinkedAlbumId = tag?.linkedAlbumId
+                    )
+                }
+            } catch (e: Exception) {
+                // Ignore tag info errors
+            }
+        }
+        
+        // Restart photo collection
+        photoCollectionJob = viewModelScope.launch {
+            try {
+                photoDao.getPhotosByTagId(currentTagId).collect { photos ->
+                    _uiState.update {
+                        it.copy(isLoading = false, photos = photos, message = "已刷新")
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = "刷新失败: ${e.message}"
+                    )
                 }
             }
         }
