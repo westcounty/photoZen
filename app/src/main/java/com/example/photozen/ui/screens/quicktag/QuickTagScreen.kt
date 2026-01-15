@@ -40,7 +40,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -129,6 +131,25 @@ fun QuickTagScreen(
                     }
                 },
                 actions = {
+                    // Sort order button
+                    if (!uiState.isComplete && !uiState.isLoading && uiState.photos.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.cycleSortOrder()
+                            }
+                        ) {
+                            Icon(
+                                imageVector = when (uiState.sortOrder) {
+                                    QuickTagSortOrder.DATE_DESC -> Icons.Default.Sort
+                                    QuickTagSortOrder.DATE_ASC -> Icons.Default.Sort
+                                    QuickTagSortOrder.RANDOM -> Icons.Default.Shuffle
+                                },
+                                contentDescription = "排序: ${uiState.sortOrder.displayName}"
+                            )
+                        }
+                    }
+                    
                     // Skip button
                     if (!uiState.isComplete && uiState.currentPhoto != null) {
                         TextButton(

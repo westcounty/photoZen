@@ -69,6 +69,15 @@ enum class FlowSorterViewMode {
 }
 
 /**
+ * Sort order for photos.
+ */
+enum class PhotoSortOrder(val displayName: String) {
+    DATE_DESC("时间倒序"),  // Newest first (default)
+    DATE_ASC("时间正序"),   // Oldest first
+    RANDOM("随机排序")      // Random shuffle
+}
+
+/**
  * UI State for Flow Sorter screen.
  */
 data class FlowSorterUiState(
@@ -85,7 +94,8 @@ data class FlowSorterUiState(
     val error: String? = null,
     val combo: ComboState = ComboState(),
     val viewMode: FlowSorterViewMode = FlowSorterViewMode.CARD,
-    val selectedPhotoIds: Set<String> = emptySet()
+    val selectedPhotoIds: Set<String> = emptySet(),
+    val sortOrder: PhotoSortOrder = PhotoSortOrder.DATE_DESC
 ) {
     val currentPhoto: PhotoEntity?
         get() = photos.getOrNull(currentIndex)
@@ -140,6 +150,10 @@ class FlowSorterViewModel @Inject constructor(
     private val _combo = MutableStateFlow(ComboState())
     private val _viewMode = MutableStateFlow(FlowSorterViewMode.CARD)
     private val _selectedPhotoIds = MutableStateFlow<Set<String>>(emptySet())
+    private val _sortOrder = MutableStateFlow(PhotoSortOrder.DATE_DESC)
+    
+    // Random seed for consistent random sorting until changed
+    private var randomSeed = System.currentTimeMillis()
     
     // Camera album IDs as StateFlow for reactive updates
     private val _cameraAlbumIds = MutableStateFlow<List<String>>(emptyList())
@@ -209,7 +223,7 @@ class FlowSorterViewModel @Inject constructor(
         _lastAction,
         combine(_error, _counters, _combo) { e, c, co -> Triple(e, c, co) },
         _viewMode,
-        _selectedPhotoIds
+        combine(_selectedPhotoIds, _sortOrder) { ids, order -> Pair(ids, order) }
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val photos = values[0] as List<PhotoEntity>
@@ -219,18 +233,23 @@ class FlowSorterViewModel @Inject constructor(
         val lastAction = values[4] as SortAction?
         val combined = values[5] as Triple<String?, SortCounters, ComboState>
         val viewMode = values[6] as FlowSorterViewMode
-        val selectedIds = values[7] as Set<String>
+        val selectionAndSort = values[7] as Pair<Set<String>, PhotoSortOrder>
         
         val error = combined.first
         val counters = combined.second
         val combo = combined.third
+        val selectedIds = selectionAndSort.first
+        val sortOrder = selectionAndSort.second
+        
+        // Apply sorting to photos
+        val sortedPhotos = applySortOrder(photos, sortOrder)
         
         FlowSorterUiState(
-            photos = photos,
+            photos = sortedPhotos,
             currentIndex = 0, // Always 0 since we remove sorted photos from list
-            isLoading = isLoading && photos.isEmpty(),
+            isLoading = isLoading && sortedPhotos.isEmpty(),
             isSyncing = isSyncing,
-            totalCount = photos.size + counters.total,
+            totalCount = sortedPhotos.size + counters.total,
             sortedCount = counters.total,
             keepCount = counters.keep,
             trashCount = counters.trash,
@@ -239,13 +258,25 @@ class FlowSorterViewModel @Inject constructor(
             error = error,
             combo = combo,
             viewMode = viewMode,
-            selectedPhotoIds = selectedIds
+            selectedPhotoIds = selectedIds,
+            sortOrder = sortOrder
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = FlowSorterUiState()
     )
+    
+    /**
+     * Apply sort order to photos list.
+     */
+    private fun applySortOrder(photos: List<PhotoEntity>, sortOrder: PhotoSortOrder): List<PhotoEntity> {
+        return when (sortOrder) {
+            PhotoSortOrder.DATE_DESC -> photos.sortedByDescending { it.dateTaken.takeIf { d -> d > 0 } ?: it.dateAdded * 1000 }
+            PhotoSortOrder.DATE_ASC -> photos.sortedBy { it.dateTaken.takeIf { d -> d > 0 } ?: it.dateAdded * 1000 }
+            PhotoSortOrder.RANDOM -> photos.shuffled(kotlin.random.Random(randomSeed))
+        }
+    }
     
     init {
         // Load camera album IDs first, then sync
@@ -401,6 +432,30 @@ class FlowSorterViewModel @Inject constructor(
     }
     
     /**
+     * Set sort order for photos.
+     * Takes effect immediately.
+     */
+    fun setSortOrder(order: PhotoSortOrder) {
+        // If switching to random, generate new seed
+        if (order == PhotoSortOrder.RANDOM) {
+            randomSeed = System.currentTimeMillis()
+        }
+        _sortOrder.value = order
+    }
+    
+    /**
+     * Cycle through sort orders: DATE_DESC -> DATE_ASC -> RANDOM -> DATE_DESC
+     */
+    fun cycleSortOrder() {
+        val nextOrder = when (_sortOrder.value) {
+            PhotoSortOrder.DATE_DESC -> PhotoSortOrder.DATE_ASC
+            PhotoSortOrder.DATE_ASC -> PhotoSortOrder.RANDOM
+            PhotoSortOrder.RANDOM -> PhotoSortOrder.DATE_DESC
+        }
+        setSortOrder(nextOrder)
+    }
+    
+    /**
      * Update selected photo IDs.
      */
     fun updateSelection(selectedIds: Set<String>) {
@@ -423,19 +478,21 @@ class FlowSorterViewModel @Inject constructor(
     
     /**
      * Batch keep selected photos.
+     * Clears selection first to prevent UI crash during batch operation.
      */
     fun keepSelectedPhotos() {
         val selectedIds = _selectedPhotoIds.value.toList()
         if (selectedIds.isEmpty()) return
         
+        // Clear selection immediately to prevent UI accessing removed items
+        _selectedPhotoIds.value = emptySet()
+        
         viewModelScope.launch {
             try {
-                selectedIds.forEach { photoId ->
-                    sortPhotoUseCase.keepPhoto(photoId)
-                }
+                // Use batch operation for better performance and atomicity
+                sortPhotoUseCase.batchUpdateStatus(selectedIds, PhotoStatus.KEEP)
                 _counters.value = _counters.value.copy(keep = _counters.value.keep + selectedIds.size)
                 preferencesRepository.incrementSortedCount(selectedIds.size)
-                _selectedPhotoIds.value = emptySet()
             } catch (e: Exception) {
                 _error.value = "批量操作失败: ${e.message}"
             }
@@ -444,19 +501,21 @@ class FlowSorterViewModel @Inject constructor(
     
     /**
      * Batch trash selected photos.
+     * Clears selection first to prevent UI crash during batch operation.
      */
     fun trashSelectedPhotos() {
         val selectedIds = _selectedPhotoIds.value.toList()
         if (selectedIds.isEmpty()) return
         
+        // Clear selection immediately to prevent UI accessing removed items
+        _selectedPhotoIds.value = emptySet()
+        
         viewModelScope.launch {
             try {
-                selectedIds.forEach { photoId ->
-                    sortPhotoUseCase.trashPhoto(photoId)
-                }
+                // Use batch operation for better performance and atomicity
+                sortPhotoUseCase.batchUpdateStatus(selectedIds, PhotoStatus.TRASH)
                 _counters.value = _counters.value.copy(trash = _counters.value.trash + selectedIds.size)
                 preferencesRepository.incrementSortedCount(selectedIds.size)
-                _selectedPhotoIds.value = emptySet()
             } catch (e: Exception) {
                 _error.value = "批量操作失败: ${e.message}"
             }
@@ -465,19 +524,21 @@ class FlowSorterViewModel @Inject constructor(
     
     /**
      * Batch maybe selected photos.
+     * Clears selection first to prevent UI crash during batch operation.
      */
     fun maybeSelectedPhotos() {
         val selectedIds = _selectedPhotoIds.value.toList()
         if (selectedIds.isEmpty()) return
         
+        // Clear selection immediately to prevent UI accessing removed items
+        _selectedPhotoIds.value = emptySet()
+        
         viewModelScope.launch {
             try {
-                selectedIds.forEach { photoId ->
-                    sortPhotoUseCase.maybePhoto(photoId)
-                }
+                // Use batch operation for better performance and atomicity
+                sortPhotoUseCase.batchUpdateStatus(selectedIds, PhotoStatus.MAYBE)
                 _counters.value = _counters.value.copy(maybe = _counters.value.maybe + selectedIds.size)
                 preferencesRepository.incrementSortedCount(selectedIds.size)
-                _selectedPhotoIds.value = emptySet()
             } catch (e: Exception) {
                 _error.value = "批量操作失败: ${e.message}"
             }

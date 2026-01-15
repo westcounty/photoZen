@@ -20,6 +20,15 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
+ * Sort order for photos in Quick Tag.
+ */
+enum class QuickTagSortOrder(val displayName: String) {
+    DATE_DESC("时间倒序"),  // Newest first (default)
+    DATE_ASC("时间正序"),   // Oldest first
+    RANDOM("随机排序")      // Random shuffle
+}
+
+/**
  * UI State for Quick Tag screen.
  */
 data class QuickTagUiState(
@@ -31,7 +40,8 @@ data class QuickTagUiState(
     val isComplete: Boolean = false,
     val taggedCount: Int = 0,
     val skippedCount: Int = 0,
-    val error: String? = null
+    val error: String? = null,
+    val sortOrder: QuickTagSortOrder = QuickTagSortOrder.DATE_DESC
 ) {
     val currentPhoto: PhotoEntity?
         get() = photos.getOrNull(currentIndex)
@@ -64,6 +74,10 @@ class QuickTagViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(true)
     private val _error = MutableStateFlow<String?>(null)
     private val _currentPhotoTags = MutableStateFlow<List<TagEntity>>(emptyList())
+    private val _sortOrder = MutableStateFlow(QuickTagSortOrder.DATE_DESC)
+    
+    // Random seed for consistent random sorting until changed
+    private var randomSeed = System.currentTimeMillis()
     
     // Cache photos list to avoid reloading
     private var cachedPhotos: List<PhotoEntity> = emptyList()
@@ -73,27 +87,29 @@ class QuickTagViewModel @Inject constructor(
         tagDao.getAllTags(),
         _currentIndex,
         _taggedCount,
-        _skippedCount,
-        _isLoading,
-        _error,
-        _currentPhotoTags
+        combine(_skippedCount, _isLoading, _error, _currentPhotoTags, _sortOrder) { s, l, e, p, o ->
+            listOf(s, l, e, p, o)
+        }
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val photos = values[0] as List<PhotoEntity>
         val tags = values[1] as List<TagEntity>
         val currentIndex = values[2] as Int
         val taggedCount = values[3] as Int
-        val skippedCount = values[4] as Int
-        val isLoading = values[5] as Boolean
-        val error = values[6] as String?
-        val currentPhotoTags = values[7] as List<TagEntity>
+        val combined = values[4] as List<Any?>
         
-        // Update cached photos
-        if (photos.isNotEmpty() && cachedPhotos.isEmpty()) {
-            cachedPhotos = photos
+        val skippedCount = combined[0] as Int
+        val isLoading = combined[1] as Boolean
+        val error = combined[2] as String?
+        val currentPhotoTags = combined[3] as List<TagEntity>
+        val sortOrder = combined[4] as QuickTagSortOrder
+        
+        // Update cached photos with sorting applied
+        if (photos.isNotEmpty()) {
+            cachedPhotos = applySortOrder(photos, sortOrder)
         }
         
-        val displayPhotos = if (cachedPhotos.isNotEmpty()) cachedPhotos else photos
+        val displayPhotos = if (cachedPhotos.isNotEmpty()) cachedPhotos else applySortOrder(photos, sortOrder)
         
         QuickTagUiState(
             photos = displayPhotos,
@@ -104,13 +120,52 @@ class QuickTagViewModel @Inject constructor(
             isComplete = currentIndex >= displayPhotos.size && displayPhotos.isNotEmpty(),
             taggedCount = taggedCount,
             skippedCount = skippedCount,
-            error = error
+            error = error,
+            sortOrder = sortOrder
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = QuickTagUiState()
     )
+    
+    /**
+     * Apply sort order to photos list.
+     */
+    private fun applySortOrder(photos: List<PhotoEntity>, sortOrder: QuickTagSortOrder): List<PhotoEntity> {
+        return when (sortOrder) {
+            QuickTagSortOrder.DATE_DESC -> photos.sortedByDescending { it.dateTaken.takeIf { d -> d > 0 } ?: it.dateAdded * 1000 }
+            QuickTagSortOrder.DATE_ASC -> photos.sortedBy { it.dateTaken.takeIf { d -> d > 0 } ?: it.dateAdded * 1000 }
+            QuickTagSortOrder.RANDOM -> photos.shuffled(kotlin.random.Random(randomSeed))
+        }
+    }
+    
+    /**
+     * Set sort order for photos.
+     * Takes effect immediately. Resets the current index and re-sorts cached photos.
+     */
+    fun setSortOrder(order: QuickTagSortOrder) {
+        // If switching to random, generate new seed
+        if (order == QuickTagSortOrder.RANDOM) {
+            randomSeed = System.currentTimeMillis()
+        }
+        _sortOrder.value = order
+        // Reset position when sort order changes
+        _currentIndex.value = 0
+        cachedPhotos = emptyList() // Clear cache to trigger re-sort
+    }
+    
+    /**
+     * Cycle through sort orders: DATE_DESC -> DATE_ASC -> RANDOM -> DATE_DESC
+     */
+    fun cycleSortOrder() {
+        val nextOrder = when (_sortOrder.value) {
+            QuickTagSortOrder.DATE_DESC -> QuickTagSortOrder.DATE_ASC
+            QuickTagSortOrder.DATE_ASC -> QuickTagSortOrder.RANDOM
+            QuickTagSortOrder.RANDOM -> QuickTagSortOrder.DATE_DESC
+        }
+        setSortOrder(nextOrder)
+    }
     
     init {
         viewModelScope.launch {

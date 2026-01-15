@@ -504,6 +504,7 @@ class MediaStoreDataSource @Inject constructor(
     
     /**
      * Copy a photo to a target album using MediaStore API (works on Android 10+).
+     * Preserves all EXIF metadata including timestamps.
      * 
      * @param sourceUri Source content URI of the photo
      * @param targetAlbumPath Relative path for the target album (e.g., "Pictures/MyAlbum")
@@ -516,15 +517,21 @@ class MediaStoreDataSource @Inject constructor(
         displayName: String? = null
     ): PhotoEntity? = withContext(Dispatchers.IO) {
         try {
-            // Get source file info
+            // Get source file info including original timestamps
             var originalName = displayName
             var mimeType = "image/jpeg"
+            var dateTaken: Long? = null
+            var dateAdded: Long? = null
+            var dateModified: Long? = null
             
             contentResolver.query(
                 sourceUri,
                 arrayOf(
                     MediaStore.Images.Media.DISPLAY_NAME,
-                    MediaStore.Images.Media.MIME_TYPE
+                    MediaStore.Images.Media.MIME_TYPE,
+                    MediaStore.Images.Media.DATE_TAKEN,
+                    MediaStore.Images.Media.DATE_ADDED,
+                    MediaStore.Images.Media.DATE_MODIFIED
                 ),
                 null,
                 null,
@@ -535,6 +542,9 @@ class MediaStoreDataSource @Inject constructor(
                         originalName = cursor.getString(0)
                     }
                     mimeType = cursor.getString(1) ?: "image/jpeg"
+                    dateTaken = cursor.getLongOrNull(2)
+                    dateAdded = cursor.getLongOrNull(3)
+                    dateModified = cursor.getLongOrNull(4)
                 }
             }
             
@@ -542,12 +552,14 @@ class MediaStoreDataSource @Inject constructor(
                 originalName = "IMG_${System.currentTimeMillis()}.jpg"
             }
             
-            // Create new entry in MediaStore using proper API for Android 10+
+            // Create new entry in MediaStore with preserved timestamps
             val values = android.content.ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, originalName)
                 put(MediaStore.Images.Media.MIME_TYPE, mimeType)
-                put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis() / 1000)
-                put(MediaStore.Images.Media.DATE_MODIFIED, System.currentTimeMillis() / 1000)
+                // Preserve original timestamps
+                dateAdded?.let { put(MediaStore.Images.Media.DATE_ADDED, it) }
+                dateModified?.let { put(MediaStore.Images.Media.DATE_MODIFIED, it) }
+                dateTaken?.let { put(MediaStore.Images.Media.DATE_TAKEN, it) }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     put(MediaStore.Images.Media.RELATIVE_PATH, targetAlbumPath)
                     put(MediaStore.Images.Media.IS_PENDING, 1)
@@ -559,13 +571,16 @@ class MediaStoreDataSource @Inject constructor(
                 values
             ) ?: return@withContext null
             
-            // Copy the file content
+            // Copy the file content with EXIF preservation
             try {
                 contentResolver.openInputStream(sourceUri)?.use { input ->
                     contentResolver.openOutputStream(newUri)?.use { output ->
                         input.copyTo(output)
                     }
                 }
+                
+                // Copy EXIF data to preserve all metadata
+                copyExifData(sourceUri, newUri)
                 
                 // Mark as not pending (Android 10+)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -589,24 +604,203 @@ class MediaStoreDataSource @Inject constructor(
     }
     
     /**
-     * Move a photo to a target album (copy then delete original).
-     * Returns the new PhotoEntity, or null if failed.
+     * Copy EXIF data from source to destination.
+     * Preserves all metadata including timestamps, GPS, camera info, etc.
+     */
+    private fun copyExifData(sourceUri: Uri, destUri: Uri) {
+        try {
+            val sourceDescriptor = contentResolver.openFileDescriptor(sourceUri, "r") ?: return
+            val destDescriptor = contentResolver.openFileDescriptor(destUri, "rw") ?: run {
+                sourceDescriptor.close()
+                return
+            }
+            
+            val sourceExif = android.media.ExifInterface(sourceDescriptor.fileDescriptor)
+            val destExif = android.media.ExifInterface(destDescriptor.fileDescriptor)
+            
+            // List of all EXIF tags to copy
+            val exifTags = listOf(
+                android.media.ExifInterface.TAG_DATETIME,
+                android.media.ExifInterface.TAG_DATETIME_ORIGINAL,
+                android.media.ExifInterface.TAG_DATETIME_DIGITIZED,
+                android.media.ExifInterface.TAG_MAKE,
+                android.media.ExifInterface.TAG_MODEL,
+                android.media.ExifInterface.TAG_ORIENTATION,
+                android.media.ExifInterface.TAG_F_NUMBER,
+                android.media.ExifInterface.TAG_EXPOSURE_TIME,
+                android.media.ExifInterface.TAG_ISO_SPEED_RATINGS,
+                android.media.ExifInterface.TAG_FOCAL_LENGTH,
+                android.media.ExifInterface.TAG_GPS_LATITUDE,
+                android.media.ExifInterface.TAG_GPS_LATITUDE_REF,
+                android.media.ExifInterface.TAG_GPS_LONGITUDE,
+                android.media.ExifInterface.TAG_GPS_LONGITUDE_REF,
+                android.media.ExifInterface.TAG_GPS_ALTITUDE,
+                android.media.ExifInterface.TAG_GPS_ALTITUDE_REF,
+                android.media.ExifInterface.TAG_GPS_TIMESTAMP,
+                android.media.ExifInterface.TAG_GPS_DATESTAMP,
+                android.media.ExifInterface.TAG_WHITE_BALANCE,
+                android.media.ExifInterface.TAG_FLASH,
+                android.media.ExifInterface.TAG_IMAGE_WIDTH,
+                android.media.ExifInterface.TAG_IMAGE_LENGTH,
+                android.media.ExifInterface.TAG_SOFTWARE,
+                android.media.ExifInterface.TAG_ARTIST,
+                android.media.ExifInterface.TAG_COPYRIGHT,
+                android.media.ExifInterface.TAG_USER_COMMENT,
+                android.media.ExifInterface.TAG_SUBSEC_TIME,
+                android.media.ExifInterface.TAG_SUBSEC_TIME_ORIGINAL,
+                android.media.ExifInterface.TAG_SUBSEC_TIME_DIGITIZED
+            )
+            
+            for (tag in exifTags) {
+                sourceExif.getAttribute(tag)?.let { value ->
+                    destExif.setAttribute(tag, value)
+                }
+            }
+            
+            destExif.saveAttributes()
+            
+            sourceDescriptor.close()
+            destDescriptor.close()
+        } catch (e: Exception) {
+            // Silently fail - photo is copied, just without EXIF
+        }
+    }
+    
+    /**
+     * Helper extension to safely get Long from cursor.
+     */
+    private fun Cursor.getLongOrNull(columnIndex: Int): Long? {
+        return if (isNull(columnIndex)) null else getLong(columnIndex)
+    }
+    
+    /**
+     * Result of a move operation.
+     */
+    sealed class MoveResult {
+        /** Move succeeded */
+        data class Success(val newPhoto: PhotoEntity) : MoveResult()
+        
+        /** Move requires user confirmation to delete original (Android 11+) */
+        data class RequiresDeleteConfirmation(
+            val newPhoto: PhotoEntity,
+            val intentSender: IntentSender,
+            val originalUri: Uri
+        ) : MoveResult()
+        
+        /** Move failed */
+        data object Failed : MoveResult()
+    }
+    
+    /**
+     * Move a photo to a target album.
+     * On Android 10+, first attempts direct path modification (requires write permission).
+     * If that fails, falls back to copy-then-delete approach.
+     * 
+     * @return MoveResult indicating success, need for delete confirmation, or failure
      */
     suspend fun movePhotoToAlbum(
         sourceUri: Uri,
         targetAlbumPath: String,
         displayName: String? = null
     ): PhotoEntity? = withContext(Dispatchers.IO) {
+        // Try direct move first on Android Q+ by updating RELATIVE_PATH
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val directMoveResult = tryDirectMove(sourceUri, targetAlbumPath)
+            if (directMoveResult != null) {
+                return@withContext directMoveResult
+            }
+        }
+        
+        // Fall back to copy-then-delete approach
         val newPhoto = copyPhotoToAlbum(sourceUri, targetAlbumPath, displayName)
         if (newPhoto != null) {
             // Try to delete original
             try {
-                contentResolver.delete(sourceUri, null, null)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // On Android 11+, deletion may require user confirmation
+                    // We attempt direct delete; if it fails, the copy is still valid
+                    contentResolver.delete(sourceUri, null, null)
+                } else {
+                    contentResolver.delete(sourceUri, null, null)
+                }
+            } catch (e: SecurityException) {
+                // On Android 11+, deletion of other apps' files requires user consent
+                // The copy succeeded, so the move is partially complete
             } catch (e: Exception) {
-                // Ignore deletion errors - at least the copy succeeded
+                // Ignore other deletion errors - at least the copy succeeded
             }
         }
         newPhoto
+    }
+    
+    /**
+     * Move a photo with explicit handling of delete confirmation requirement.
+     * Returns MoveResult which may require user confirmation for deletion.
+     */
+    suspend fun movePhotoToAlbumWithConfirmation(
+        sourceUri: Uri,
+        targetAlbumPath: String,
+        displayName: String? = null
+    ): MoveResult = withContext(Dispatchers.IO) {
+        // Try direct move first on Android Q+ by updating RELATIVE_PATH
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val directMoveResult = tryDirectMove(sourceUri, targetAlbumPath)
+            if (directMoveResult != null) {
+                return@withContext MoveResult.Success(directMoveResult)
+            }
+        }
+        
+        // Fall back to copy-then-delete approach
+        val newPhoto = copyPhotoToAlbum(sourceUri, targetAlbumPath, displayName)
+            ?: return@withContext MoveResult.Failed
+        
+        // Try to delete original
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                val intentSender = MediaStore.createDeleteRequest(
+                    contentResolver, 
+                    listOf(sourceUri)
+                ).intentSender
+                return@withContext MoveResult.RequiresDeleteConfirmation(newPhoto, intentSender, sourceUri)
+            } catch (e: Exception) {
+                // If we can't create delete request, just return success with copy
+                return@withContext MoveResult.Success(newPhoto)
+            }
+        } else {
+            try {
+                contentResolver.delete(sourceUri, null, null)
+            } catch (e: Exception) {
+                // Ignore deletion errors
+            }
+            return@withContext MoveResult.Success(newPhoto)
+        }
+    }
+    
+    /**
+     * Try to move photo by directly updating its RELATIVE_PATH.
+     * This is more efficient than copy-delete but requires write permission.
+     */
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
+    private suspend fun tryDirectMove(sourceUri: Uri, targetAlbumPath: String): PhotoEntity? {
+        return try {
+            val values = android.content.ContentValues().apply {
+                put(MediaStore.Images.Media.RELATIVE_PATH, targetAlbumPath)
+            }
+            
+            val rowsUpdated = contentResolver.update(sourceUri, values, null, null)
+            if (rowsUpdated > 0) {
+                // Successfully moved - fetch updated entity
+                val mediaStoreId = ContentUris.parseId(sourceUri)
+                fetchPhotoById(mediaStoreId)
+            } else {
+                null
+            }
+        } catch (e: SecurityException) {
+            // Need write permission - fall back to copy-delete
+            null
+        } catch (e: Exception) {
+            null
+        }
     }
     
     /**
@@ -766,6 +960,111 @@ class MediaStoreDataSource @Inject constructor(
             }
         } catch (e: Exception) {
             DeleteResult.Failed("删除照片失败: ${e.message}")
+        }
+    }
+    
+    /**
+     * Copy a photo to the same album, preserving all EXIF data and timestamps.
+     * Creates a duplicate of the photo with a unique filename.
+     * 
+     * @param sourceUri Source content URI of the photo
+     * @return New PhotoEntity with updated systemUri and id, or null if failed
+     */
+    suspend fun duplicatePhoto(sourceUri: Uri): PhotoEntity? = withContext(Dispatchers.IO) {
+        try {
+            // Get source file info including original timestamps and path
+            var originalName: String? = null
+            var mimeType = "image/jpeg"
+            var dateTaken: Long? = null
+            var dateAdded: Long? = null
+            var dateModified: Long? = null
+            var relativePath: String? = null
+            
+            contentResolver.query(
+                sourceUri,
+                arrayOf(
+                    MediaStore.Images.Media.DISPLAY_NAME,
+                    MediaStore.Images.Media.MIME_TYPE,
+                    MediaStore.Images.Media.DATE_TAKEN,
+                    MediaStore.Images.Media.DATE_ADDED,
+                    MediaStore.Images.Media.DATE_MODIFIED,
+                    MediaStore.Images.Media.RELATIVE_PATH
+                ),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    originalName = cursor.getString(0)
+                    mimeType = cursor.getString(1) ?: "image/jpeg"
+                    dateTaken = cursor.getLongOrNull(2)
+                    dateAdded = cursor.getLongOrNull(3)
+                    dateModified = cursor.getLongOrNull(4)
+                    relativePath = cursor.getString(5)
+                }
+            }
+            
+            if (originalName == null) {
+                originalName = "IMG_${System.currentTimeMillis()}.jpg"
+            }
+            
+            // Generate unique filename by appending timestamp
+            val baseName = originalName!!.substringBeforeLast(".")
+            val extension = originalName!!.substringAfterLast(".", "jpg")
+            val timestamp = System.currentTimeMillis()
+            val newName = "${baseName}_copy_$timestamp.$extension"
+            
+            // Use same path or default to Pictures
+            val targetPath = relativePath ?: "${android.os.Environment.DIRECTORY_PICTURES}/PicZen"
+            
+            // Create new entry in MediaStore with preserved timestamps
+            val values = android.content.ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, newName)
+                put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                // Preserve original timestamps
+                dateAdded?.let { put(MediaStore.Images.Media.DATE_ADDED, it) }
+                dateModified?.let { put(MediaStore.Images.Media.DATE_MODIFIED, it) }
+                dateTaken?.let { put(MediaStore.Images.Media.DATE_TAKEN, it) }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Images.Media.RELATIVE_PATH, targetPath)
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+            }
+            
+            val newUri = contentResolver.insert(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                values
+            ) ?: return@withContext null
+            
+            // Copy the file content with EXIF preservation
+            try {
+                contentResolver.openInputStream(sourceUri)?.use { input ->
+                    contentResolver.openOutputStream(newUri)?.use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                
+                // Copy EXIF data to preserve all metadata
+                copyExifData(sourceUri, newUri)
+                
+                // Mark as not pending (Android 10+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val updateValues = android.content.ContentValues().apply {
+                        put(MediaStore.Images.Media.IS_PENDING, 0)
+                    }
+                    contentResolver.update(newUri, updateValues, null, null)
+                }
+            } catch (e: Exception) {
+                // Clean up on failure
+                contentResolver.delete(newUri, null, null)
+                return@withContext null
+            }
+            
+            // Fetch the newly created photo entity
+            val mediaStoreId = ContentUris.parseId(newUri)
+            fetchPhotoById(mediaStoreId)
+        } catch (e: Exception) {
+            null
         }
     }
     

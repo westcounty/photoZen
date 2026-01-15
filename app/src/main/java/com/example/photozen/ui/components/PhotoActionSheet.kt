@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Restore
@@ -562,6 +563,7 @@ fun PhotoListActionSheet(
     onOpenWithApp: (String) -> Unit,
     defaultAppPackage: String? = null,
     onSetDefaultApp: (String?) -> Unit = {},
+    onDuplicatePhoto: (() -> Unit)? = null,
     sheetState: SheetState = rememberModalBottomSheetState()
 ) {
     val context = LocalContext.current
@@ -651,6 +653,20 @@ fun PhotoListActionSheet(
                         onDismiss()
                     }
                 )
+                
+                // Duplicate photo option (only for KEEP status)
+                onDuplicatePhoto?.let {
+                    ActionSheetItem(
+                        icon = Icons.Default.ContentCopy,
+                        title = "复制照片",
+                        subtitle = "创建副本并保留所有信息",
+                        iconTint = Color(0xFF9C27B0),
+                        onClick = {
+                            it()
+                            onDismiss()
+                        }
+                    )
+                }
                 
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),

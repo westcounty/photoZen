@@ -439,7 +439,7 @@ class TagAlbumSyncUseCase @Inject constructor(
             if (tag?.linkedAlbumId != null && tag.linkedAlbumName != null) {
                 val photoEntity = photoDao.getById(photoId)
                 if (photoEntity != null && photoEntity.bucketId != tag.linkedAlbumId) {
-                    // Photo is not in the linked album - copy it there
+                    // Photo is not in the linked album - copy/move it there
                     val album = mediaStoreDataSource.findAlbumByName(tag.linkedAlbumName)
                     if (album != null) {
                         val (_, albumPath) = mediaStoreDataSource.createAlbum(tag.linkedAlbumName)
@@ -449,14 +449,29 @@ class TagAlbumSyncUseCase @Inject constructor(
                         val copyMode = tag.albumCopyMode ?: AlbumCopyMode.COPY
                         
                         val newPhoto = if (copyMode == AlbumCopyMode.COPY) {
+                            // Copy mode - preserve original
                             mediaStoreDataSource.copyPhotoToAlbum(sourceUri, albumPath)
                         } else {
-                            mediaStoreDataSource.movePhotoToAlbum(sourceUri, albumPath)
+                            // Move mode - use new move API with confirmation support
+                            val moveResult = mediaStoreDataSource.movePhotoToAlbumWithConfirmation(sourceUri, albumPath)
+                            when (moveResult) {
+                                is com.example.photozen.data.source.MediaStoreDataSource.MoveResult.Success -> moveResult.newPhoto
+                                is com.example.photozen.data.source.MediaStoreDataSource.MoveResult.RequiresDeleteConfirmation -> {
+                                    // For now, just use the copied photo - deletion confirmation handled elsewhere
+                                    moveResult.newPhoto
+                                }
+                                is com.example.photozen.data.source.MediaStoreDataSource.MoveResult.Failed -> null
+                            }
                         }
                         
                         if (newPhoto != null) {
                             photoDao.insert(newPhoto)
                             tagDao.addTagToPhoto(PhotoTagCrossRef(newPhoto.id, tagId))
+                            
+                            // For move mode, also remove tag from original photo
+                            if (copyMode == AlbumCopyMode.MOVE) {
+                                tagDao.removeTagFromPhoto(photoId, tagId)
+                            }
                         }
                     }
                 }

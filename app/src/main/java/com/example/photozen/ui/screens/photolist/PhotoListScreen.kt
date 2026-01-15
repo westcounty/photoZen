@@ -208,7 +208,11 @@ fun PhotoListScreen(
                 scope.launch {
                     viewModel.setDefaultExternalApp(packageName)
                 }
-            }
+            },
+            // Only show duplicate option for KEEP status photos
+            onDuplicatePhoto = if (uiState.status == PhotoStatus.KEEP) {
+                { viewModel.duplicatePhoto(photoId) }
+            } else null
         )
     }
 }

@@ -37,6 +37,8 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material3.BottomAppBar
@@ -173,6 +175,18 @@ fun FlowSorterScreen(
                                 )
                             }
                         } else {
+                            // Sort order button
+                            IconButton(onClick = { viewModel.cycleSortOrder() }) {
+                                Icon(
+                                    imageVector = when (uiState.sortOrder) {
+                                        PhotoSortOrder.DATE_DESC -> Icons.Default.Sort
+                                        PhotoSortOrder.DATE_ASC -> Icons.Default.Sort
+                                        PhotoSortOrder.RANDOM -> Icons.Default.Shuffle
+                                    },
+                                    contentDescription = "排序: ${uiState.sortOrder.displayName}"
+                                )
+                            }
+                            
                             // View mode toggle
                             IconButton(onClick = { viewModel.toggleViewMode() }) {
                                 Icon(
@@ -836,6 +850,24 @@ fun FlowSorterContent(
                             )
                         }
                     } else {
+                        // Sort order button
+                        IconButton(
+                            onClick = { viewModel.cycleSortOrder() },
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
+                        ) {
+                            Icon(
+                                imageVector = when (uiState.sortOrder) {
+                                    PhotoSortOrder.DATE_DESC -> Icons.Default.Sort
+                                    PhotoSortOrder.DATE_ASC -> Icons.Default.Sort
+                                    PhotoSortOrder.RANDOM -> Icons.Default.Shuffle
+                                },
+                                contentDescription = "排序: ${uiState.sortOrder.displayName}",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
                         // View mode toggle button
                         IconButton(
                             onClick = {

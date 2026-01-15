@@ -1,11 +1,14 @@
 package com.example.photozen.ui.screens.photolist
 
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.PreferencesRepository
+import com.example.photozen.data.source.MediaStoreDataSource
 import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.SortPhotoUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -37,7 +40,9 @@ class PhotoListViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getPhotosUseCase: GetPhotosUseCase,
     private val sortPhotoUseCase: SortPhotoUseCase,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    private val mediaStoreDataSource: MediaStoreDataSource,
+    private val photoDao: PhotoDao
 ) : ViewModel() {
     
     private val statusName: String = savedStateHandle.get<String>("statusName") ?: "UNSORTED"
@@ -130,5 +135,37 @@ class PhotoListViewModel @Inject constructor(
     
     fun clearMessage() {
         _internalState.update { it.copy(message = null) }
+    }
+    
+    /**
+     * Duplicate a photo, preserving all EXIF metadata and timestamps.
+     * The copy will have the same status as the original photo.
+     */
+    fun duplicatePhoto(photoId: String) {
+        viewModelScope.launch {
+            try {
+                // Get the original photo
+                val originalPhoto = photoDao.getById(photoId)
+                if (originalPhoto == null) {
+                    _internalState.update { it.copy(message = "找不到照片") }
+                    return@launch
+                }
+                
+                // Duplicate the photo in MediaStore
+                val sourceUri = Uri.parse(originalPhoto.systemUri)
+                val newPhoto = mediaStoreDataSource.duplicatePhoto(sourceUri)
+                
+                if (newPhoto != null) {
+                    // Save the new photo to our database with the same status
+                    val photoWithStatus = newPhoto.copy(status = originalPhoto.status)
+                    photoDao.insert(photoWithStatus)
+                    _internalState.update { it.copy(message = "照片已复制") }
+                } else {
+                    _internalState.update { it.copy(message = "复制照片失败") }
+                }
+            } catch (e: Exception) {
+                _internalState.update { it.copy(message = "复制照片失败: ${e.message}") }
+            }
+        }
     }
 }
