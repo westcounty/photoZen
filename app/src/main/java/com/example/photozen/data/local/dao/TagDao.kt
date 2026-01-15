@@ -140,11 +140,13 @@ interface TagDao {
     
     /**
      * Get all tags with their photo counts for bubble graph.
+     * Only counts photos that still exist in the photos table.
      */
     @Query("""
-        SELECT t.*, COUNT(ptc.photo_id) as photo_count
+        SELECT t.*, COUNT(p.id) as photo_count
         FROM tags t
         LEFT JOIN photo_tag_cross_ref ptc ON t.id = ptc.tag_id
+        LEFT JOIN photos p ON ptc.photo_id = p.id
         GROUP BY t.id
         ORDER BY photo_count DESC, t.name ASC
     """)
@@ -152,11 +154,13 @@ interface TagDao {
     
     /**
      * Get root tags with their photo counts.
+     * Only counts photos that still exist in the photos table.
      */
     @Query("""
-        SELECT t.*, COUNT(ptc.photo_id) as photo_count
+        SELECT t.*, COUNT(p.id) as photo_count
         FROM tags t
         LEFT JOIN photo_tag_cross_ref ptc ON t.id = ptc.tag_id
+        LEFT JOIN photos p ON ptc.photo_id = p.id
         WHERE t.parent_id IS NULL
         GROUP BY t.id
         ORDER BY photo_count DESC, t.name ASC
@@ -165,11 +169,13 @@ interface TagDao {
     
     /**
      * Get child tags with their photo counts.
+     * Only counts photos that still exist in the photos table.
      */
     @Query("""
-        SELECT t.*, COUNT(ptc.photo_id) as photo_count
+        SELECT t.*, COUNT(p.id) as photo_count
         FROM tags t
         LEFT JOIN photo_tag_cross_ref ptc ON t.id = ptc.tag_id
+        LEFT JOIN photos p ON ptc.photo_id = p.id
         WHERE t.parent_id = :parentId
         GROUP BY t.id
         ORDER BY photo_count DESC, t.name ASC

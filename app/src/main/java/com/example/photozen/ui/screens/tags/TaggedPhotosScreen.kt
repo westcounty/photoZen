@@ -2,18 +2,25 @@
 
 package com.example.photozen.ui.screens.tags
 
+import android.app.Activity
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
@@ -26,18 +33,22 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -94,15 +105,58 @@ fun TaggedPhotosScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     var showFullscreen by remember { mutableStateOf(false) }
     var fullscreenStartIndex by remember { mutableIntStateOf(0) }
     var selectedPhotoId by remember { mutableStateOf<String?>(null) }
     var selectedPhotoUri by remember { mutableStateOf<String?>(null) }
     var showActionSheet by remember { mutableStateOf(false) }
     var showChangeTagDialog by remember { mutableStateOf(false) }
+    var showRemoveTagDialog by remember { mutableStateOf(false) }
+    var photoToRemoveTag by remember { mutableStateOf<String?>(null) }
+    
+    // Launcher for delete confirmation
+    val deleteConfirmLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            viewModel.onPhotoDeleteConfirmed()
+        } else {
+            viewModel.onPhotoDeleteCancelled()
+        }
+    }
+    
+    // Handle pending delete request
+    LaunchedEffect(uiState.pendingDeleteRequest) {
+        uiState.pendingDeleteRequest?.let { request ->
+            try {
+                deleteConfirmLauncher.launch(
+                    IntentSenderRequest.Builder(request.intentSender).build()
+                )
+            } catch (e: Exception) {
+                viewModel.onPhotoDeleteCancelled()
+            }
+        }
+    }
+    
+    // Show messages
+    LaunchedEffect(uiState.message) {
+        uiState.message?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearMessage()
+        }
+    }
+    
+    // Show errors
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let { error ->
+            snackbarHostState.showSnackbar(error)
+            viewModel.clearError()
+        }
+    }
     
     // Load photos for this tag
-    androidx.compose.runtime.LaunchedEffect(tagId) {
+    LaunchedEffect(tagId) {
         viewModel.loadPhotosForTag(tagId)
     }
     
@@ -138,6 +192,7 @@ fun TaggedPhotosScreen(
                 )
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         modifier = modifier
     ) { padding ->
         Box(
@@ -193,7 +248,15 @@ fun TaggedPhotosScreen(
                 onNavigateToEditor(photoId)
             },
             onRemoveTag = {
-                viewModel.removeTagFromPhoto(photoId)
+                // If tag is linked to album, show confirmation dialog
+                if (viewModel.isTagLinkedToAlbum()) {
+                    photoToRemoveTag = photoId
+                    showActionSheet = false
+                    showRemoveTagDialog = true
+                } else {
+                    // No album linked, just remove tag
+                    viewModel.removeTagFromPhoto(photoId)
+                }
             },
             onChangeTag = {
                 showActionSheet = false
@@ -207,6 +270,26 @@ fun TaggedPhotosScreen(
                 scope.launch {
                     viewModel.setDefaultExternalApp(packageName)
                 }
+            }
+        )
+    }
+    
+    // Remove tag confirmation dialog (for tags linked to albums)
+    if (showRemoveTagDialog && photoToRemoveTag != null) {
+        RemoveTagConfirmDialog(
+            onDismiss = {
+                showRemoveTagDialog = false
+                photoToRemoveTag = null
+            },
+            onConfirm = { alsoDeletePhoto ->
+                val photoId = photoToRemoveTag!!
+                if (alsoDeletePhoto) {
+                    viewModel.removeTagAndDeletePhoto(photoId)
+                } else {
+                    viewModel.removeTagFromPhoto(photoId)
+                }
+                showRemoveTagDialog = false
+                photoToRemoveTag = null
             }
         )
     }
@@ -376,6 +459,80 @@ private fun ChangeTagDialog(
             }
         },
         confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+/**
+ * Dialog to confirm removing tag from a photo.
+ * Shows option to also delete the photo (for tags linked to albums).
+ */
+@Composable
+private fun RemoveTagConfirmDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (alsoDeletePhoto: Boolean) -> Unit
+) {
+    var alsoDeletePhoto by remember { mutableStateOf(false) }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("移除标签") },
+        text = {
+            Column {
+                Text(
+                    text = "确定要从这张照片移除标签吗？",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Checkbox(
+                        checked = alsoDeletePhoto,
+                        onCheckedChange = { alsoDeletePhoto = it }
+                    )
+                    Text(
+                        text = "同时删除这张照片",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (alsoDeletePhoto) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                }
+                
+                if (alsoDeletePhoto) {
+                    Text(
+                        text = "⚠️ 照片将从设备中永久删除",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(start = 48.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(alsoDeletePhoto) }
+            ) {
+                Text(
+                    text = if (alsoDeletePhoto) "删除" else "移除",
+                    color = if (alsoDeletePhoto) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
+                )
+            }
+        },
+        dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("取消")
             }

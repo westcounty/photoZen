@@ -1,6 +1,10 @@
 package com.example.photozen.ui.screens.tags
 
+import android.app.Activity
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -118,6 +122,32 @@ fun TagBubbleScreen(
     var tagToDelete by remember { mutableStateOf<BubbleNode?>(null) }
     var tagToLinkAlbum by remember { mutableStateOf<BubbleNode?>(null) }
     var showTagOptionsSheet by remember { mutableStateOf<BubbleNode?>(null) }
+    
+    // Launcher for delete confirmation
+    val deleteConfirmLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            // User confirmed deletion
+            viewModel.onDeleteConfirmed()
+        } else {
+            // User cancelled
+            viewModel.onDeleteCancelled()
+        }
+    }
+    
+    // Handle pending delete request
+    LaunchedEffect(uiState.pendingDeleteRequest) {
+        uiState.pendingDeleteRequest?.let { request ->
+            try {
+                deleteConfirmLauncher.launch(
+                    IntentSenderRequest.Builder(request.intentSender).build()
+                )
+            } catch (e: Exception) {
+                viewModel.onDeleteCancelled()
+            }
+        }
+    }
     
     // Show error messages
     LaunchedEffect(uiState.error) {

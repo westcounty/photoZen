@@ -151,7 +151,7 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "PicZen 图禅",
+                            text = "PhotoZen",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold
                         )
@@ -781,7 +781,7 @@ private fun PermissionDeniedCard(
             Spacer(modifier = Modifier.height(8.dp))
             
             Text(
-                text = "PicZen 需要访问您的照片才能进行整理",
+                text = "PhotoZen 需要访问您的照片才能进行整理",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center

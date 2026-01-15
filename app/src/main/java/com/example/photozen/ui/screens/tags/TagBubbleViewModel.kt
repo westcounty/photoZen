@@ -1,5 +1,7 @@
 package com.example.photozen.ui.screens.tags
 
+import android.content.IntentSender
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.dao.TagDao
@@ -7,6 +9,8 @@ import com.example.photozen.data.local.dao.TagWithCount
 import com.example.photozen.data.local.entity.AlbumCopyMode
 import com.example.photozen.data.local.entity.TagEntity
 import com.example.photozen.data.source.Album
+import com.example.photozen.domain.usecase.CreateLinkAlbumResult
+import com.example.photozen.domain.usecase.DeleteTagResult
 import com.example.photozen.domain.usecase.LinkAlbumResult
 import com.example.photozen.domain.usecase.TagAlbumSyncUseCase
 import com.example.photozen.ui.components.bubble.BubbleNode
@@ -22,6 +26,15 @@ import java.util.UUID
 import javax.inject.Inject
 
 /**
+ * Pending delete confirmation request.
+ */
+data class PendingDeleteRequest(
+    val intentSender: IntentSender,
+    val tagIdToDeleteAfter: String? = null,  // For delete tag flow
+    val message: String? = null               // Message to show after confirmation
+)
+
+/**
  * UI State for the Tag Bubble screen.
  * Simplified: Only one level of tags (no hierarchy for now).
  */
@@ -31,7 +44,8 @@ data class TagBubbleUiState(
     val error: String? = null,
     val availableAlbums: List<Album> = emptyList(),
     val isLoadingAlbums: Boolean = false,
-    val message: String? = null
+    val message: String? = null,
+    val pendingDeleteRequest: PendingDeleteRequest? = null
 ) {
     val currentTitle: String = "标签"
 }
@@ -126,11 +140,56 @@ class TagBubbleViewModel @Inject constructor(
     fun deleteTag(tagId: String, deleteLinkedAlbum: Boolean = false) {
         viewModelScope.launch {
             try {
-                tagAlbumSyncUseCase.deleteTagWithAlbum(tagId, deleteLinkedAlbum)
+                when (val result = tagAlbumSyncUseCase.deleteTagWithAlbum(tagId, deleteLinkedAlbum)) {
+                    is DeleteTagResult.Success -> {
+                        _uiState.update { it.copy(message = "标签已删除") }
+                    }
+                    is DeleteTagResult.RequiresConfirmation -> {
+                        // Need user confirmation to delete album photos
+                        _uiState.update { 
+                            it.copy(
+                                pendingDeleteRequest = PendingDeleteRequest(
+                                    intentSender = result.intentSender,
+                                    tagIdToDeleteAfter = result.tagId,
+                                    message = "标签和相册已删除"
+                                )
+                            )
+                        }
+                    }
+                    is DeleteTagResult.Failed -> {
+                        _uiState.update { it.copy(error = result.message) }
+                    }
+                }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "删除标签失败: ${e.message}") }
             }
         }
+    }
+    
+    /**
+     * Called after user confirms the delete request.
+     * Completes the pending deletion.
+     */
+    fun onDeleteConfirmed() {
+        val pending = _uiState.value.pendingDeleteRequest
+        viewModelScope.launch {
+            if (pending?.tagIdToDeleteAfter != null) {
+                tagAlbumSyncUseCase.completeTagDeletion(pending.tagIdToDeleteAfter)
+            }
+            _uiState.update { 
+                it.copy(
+                    pendingDeleteRequest = null,
+                    message = pending?.message
+                )
+            }
+        }
+    }
+    
+    /**
+     * Called when user cancels the delete request.
+     */
+    fun onDeleteCancelled() {
+        _uiState.update { it.copy(pendingDeleteRequest = null) }
     }
     
     /**
@@ -161,7 +220,7 @@ class TagBubbleViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true) }
             try {
                 when (val result = tagAlbumSyncUseCase.createAndLinkAlbum(tagId, albumName, copyMode)) {
-                    is LinkAlbumResult.Success -> {
+                    is CreateLinkAlbumResult.Success -> {
                         _uiState.update { 
                             it.copy(
                                 isLoading = false,
@@ -169,7 +228,20 @@ class TagBubbleViewModel @Inject constructor(
                             ) 
                         }
                     }
-                    is LinkAlbumResult.Error -> {
+                    is CreateLinkAlbumResult.RequiresDeleteConfirmation -> {
+                        // Album created and photos copied, but need user confirmation to delete originals
+                        _uiState.update { 
+                            it.copy(
+                                isLoading = false,
+                                pendingDeleteRequest = PendingDeleteRequest(
+                                    intentSender = result.intentSender,
+                                    tagIdToDeleteAfter = null,
+                                    message = "已创建相册「${result.albumName}」并移动 ${result.photosAdded} 张照片"
+                                )
+                            )
+                        }
+                    }
+                    is CreateLinkAlbumResult.Error -> {
                         _uiState.update { it.copy(isLoading = false, error = result.message) }
                     }
                 }

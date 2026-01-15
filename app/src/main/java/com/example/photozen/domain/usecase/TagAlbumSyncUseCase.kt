@@ -1,5 +1,6 @@
 package com.example.photozen.domain.usecase
 
+import android.content.IntentSender
 import android.net.Uri
 import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.dao.TagDao
@@ -7,6 +8,7 @@ import com.example.photozen.data.local.entity.AlbumCopyMode
 import com.example.photozen.data.local.entity.PhotoTagCrossRef
 import com.example.photozen.data.local.entity.TagEntity
 import com.example.photozen.data.source.Album
+import com.example.photozen.data.source.DeleteResult
 import com.example.photozen.data.source.MediaStoreDataSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -34,6 +36,46 @@ data class SyncResult(
     val photosRemovedFromTag: Int,
     val photosCopiedToAlbum: Int
 )
+
+/**
+ * Result of deleting a tag with its linked album.
+ */
+sealed class DeleteTagResult {
+    /** Tag deleted successfully (no album deletion or album deleted without confirmation) */
+    data object Success : DeleteTagResult()
+    
+    /** User confirmation required to delete album photos */
+    data class RequiresConfirmation(
+        val tagId: String,
+        val intentSender: IntentSender,
+        val uris: List<Uri>
+    ) : DeleteTagResult()
+    
+    /** Deletion failed */
+    data class Failed(val message: String) : DeleteTagResult()
+}
+
+/**
+ * Result of creating and linking album (with potential pending deletions for MOVE mode).
+ */
+sealed class CreateLinkAlbumResult {
+    data class Success(
+        val albumId: String,
+        val albumName: String,
+        val photosAdded: Int
+    ) : CreateLinkAlbumResult()
+    
+    /** User confirmation required to delete original photos (MOVE mode) */
+    data class RequiresDeleteConfirmation(
+        val albumId: String,
+        val albumName: String,
+        val photosAdded: Int,
+        val intentSender: IntentSender,
+        val pendingDeleteUris: List<Uri>
+    ) : CreateLinkAlbumResult()
+    
+    data class Error(val message: String) : CreateLinkAlbumResult()
+}
 
 /**
  * UseCase for managing tag-album synchronization.
@@ -68,23 +110,23 @@ class TagAlbumSyncUseCase @Inject constructor(
      * @param tagId The tag to link
      * @param albumName Name for the new album
      * @param copyMode Whether to COPY or MOVE photos
-     * @return Result indicating success or failure
+     * @return Result indicating success, need for confirmation (MOVE mode), or failure
      */
     suspend fun createAndLinkAlbum(
         tagId: String,
         albumName: String,
         copyMode: AlbumCopyMode
-    ): LinkAlbumResult = withContext(Dispatchers.IO) {
+    ): CreateLinkAlbumResult = withContext(Dispatchers.IO) {
         try {
             // Check if album name already exists
             val existingAlbum = mediaStoreDataSource.findAlbumByName(albumName)
             if (existingAlbum != null) {
-                return@withContext LinkAlbumResult.Error("相册「$albumName」已存在")
+                return@withContext CreateLinkAlbumResult.Error("相册「$albumName」已存在")
             }
             
             // Get the relative path for the new album
             val albumInfo = mediaStoreDataSource.createAlbum(albumName)
-                ?: return@withContext LinkAlbumResult.Error("无法创建相册路径")
+                ?: return@withContext CreateLinkAlbumResult.Error("无法创建相册路径")
             
             val (tempBucketId, albumPath) = albumInfo
             
@@ -93,16 +135,17 @@ class TagAlbumSyncUseCase @Inject constructor(
             var photosCopied = 0
             var actualBucketId = tempBucketId
             
-            // Copy/move each photo to the album
+            // Collect URIs of original photos for MOVE mode deletion
+            val originalUrisToDelete = mutableListOf<Uri>()
+            
+            // Always use copy first (for both COPY and MOVE modes)
             for (photoId in photoIds) {
                 val photo = photoDao.getById(photoId)
                 if (photo != null) {
                     val sourceUri = Uri.parse(photo.systemUri)
-                    val newPhoto = if (copyMode == AlbumCopyMode.COPY) {
-                        mediaStoreDataSource.copyPhotoToAlbum(sourceUri, albumPath)
-                    } else {
-                        mediaStoreDataSource.movePhotoToAlbum(sourceUri, albumPath)
-                    }
+                    
+                    // Always copy first
+                    val newPhoto = mediaStoreDataSource.copyPhotoToAlbum(sourceUri, albumPath)
                     
                     if (newPhoto != null) {
                         // Save the new photo to our database
@@ -115,9 +158,12 @@ class TagAlbumSyncUseCase @Inject constructor(
                             actualBucketId = newPhoto.bucketId
                         }
                         
+                        // Always remove the old photo-tag relationship to avoid duplicates
+                        tagDao.removeTagFromPhoto(photoId, tagId)
+                        
+                        // For MOVE mode, collect original URIs for deletion
                         if (copyMode == AlbumCopyMode.MOVE) {
-                            // Remove the old photo-tag relationship
-                            tagDao.removeTagFromPhoto(photoId, tagId)
+                            originalUrisToDelete.add(sourceUri)
                         }
                         
                         photosCopied++
@@ -126,7 +172,6 @@ class TagAlbumSyncUseCase @Inject constructor(
             }
             
             // If we didn't copy any photos, try to find the album anyway
-            // (in case it was created by previous operations)
             if (photosCopied == 0) {
                 val foundAlbum = mediaStoreDataSource.findAlbumByName(albumName)
                 if (foundAlbum != null) {
@@ -137,13 +182,44 @@ class TagAlbumSyncUseCase @Inject constructor(
             // Update the tag with album link
             tagDao.updateAlbumLink(tagId, actualBucketId, albumName, copyMode.name)
             
-            LinkAlbumResult.Success(
-                albumId = actualBucketId,
-                albumName = albumName,
-                photosAdded = photosCopied
-            )
+            // For MOVE mode, request deletion of original photos
+            if (copyMode == AlbumCopyMode.MOVE && originalUrisToDelete.isNotEmpty()) {
+                when (val deleteResult = mediaStoreDataSource.deletePhotos(originalUrisToDelete)) {
+                    is DeleteResult.RequiresConfirmation -> {
+                        CreateLinkAlbumResult.RequiresDeleteConfirmation(
+                            albumId = actualBucketId,
+                            albumName = albumName,
+                            photosAdded = photosCopied,
+                            intentSender = deleteResult.intentSender,
+                            pendingDeleteUris = deleteResult.uris
+                        )
+                    }
+                    is DeleteResult.Success -> {
+                        CreateLinkAlbumResult.Success(
+                            albumId = actualBucketId,
+                            albumName = albumName,
+                            photosAdded = photosCopied
+                        )
+                    }
+                    is DeleteResult.Failed -> {
+                        // Photos copied but original deletion failed - still return success
+                        // User can manually delete originals
+                        CreateLinkAlbumResult.Success(
+                            albumId = actualBucketId,
+                            albumName = albumName,
+                            photosAdded = photosCopied
+                        )
+                    }
+                }
+            } else {
+                CreateLinkAlbumResult.Success(
+                    albumId = actualBucketId,
+                    albumName = albumName,
+                    photosAdded = photosCopied
+                )
+            }
         } catch (e: Exception) {
-            LinkAlbumResult.Error("关联相册失败: ${e.message}")
+            CreateLinkAlbumResult.Error("关联相册失败: ${e.message}")
         }
     }
     
@@ -330,22 +406,52 @@ class TagAlbumSyncUseCase @Inject constructor(
      * 
      * @param tagId The tag to delete
      * @param deleteLinkedAlbum Whether to also delete the linked album
+     * @return DeleteTagResult indicating success, need for confirmation, or failure
      */
     suspend fun deleteTagWithAlbum(
         tagId: String,
         deleteLinkedAlbum: Boolean
-    ): Boolean = withContext(Dispatchers.IO) {
+    ): DeleteTagResult = withContext(Dispatchers.IO) {
         try {
             val tag = tagDao.getById(tagId)
             
             // Delete linked album if requested
             if (deleteLinkedAlbum && tag?.linkedAlbumId != null) {
-                mediaStoreDataSource.deleteAlbum(tag.linkedAlbumId)
+                when (val deleteResult = mediaStoreDataSource.deleteAlbum(tag.linkedAlbumId)) {
+                    is DeleteResult.Success -> {
+                        // Album deleted, now delete the tag
+                        tagDao.deleteById(tagId)
+                        DeleteTagResult.Success
+                    }
+                    is DeleteResult.RequiresConfirmation -> {
+                        // Need user confirmation - don't delete tag yet
+                        DeleteTagResult.RequiresConfirmation(
+                            tagId = tagId,
+                            intentSender = deleteResult.intentSender,
+                            uris = deleteResult.uris
+                        )
+                    }
+                    is DeleteResult.Failed -> {
+                        DeleteTagResult.Failed(deleteResult.message)
+                    }
+                }
+            } else {
+                // No album to delete, just delete the tag
+                tagDao.deleteById(tagId)
+                DeleteTagResult.Success
             }
-            
-            // Delete the tag
+        } catch (e: Exception) {
+            DeleteTagResult.Failed("删除标签失败: ${e.message}")
+        }
+    }
+    
+    /**
+     * Complete tag deletion after user confirms album photo deletion.
+     * Called after user confirms the delete request.
+     */
+    suspend fun completeTagDeletion(tagId: String): Boolean = withContext(Dispatchers.IO) {
+        try {
             tagDao.deleteById(tagId)
-            
             true
         } catch (e: Exception) {
             false

@@ -16,9 +16,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,13 +34,16 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +64,7 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var showChangelogDialog by remember { mutableStateOf(false) }
     
     // Show error messages
     LaunchedEffect(uiState.error) {
@@ -103,6 +110,11 @@ fun SettingsScreen(
                 onModeSelected = { viewModel.setPhotoFilterMode(it) }
             )
             
+            // Changelog Section
+            SectionTitle(title = "更新日志")
+            
+            ChangelogCard(onClick = { showChangelogDialog = true })
+            
             // Acknowledgement Section
             SectionTitle(title = "鸣谢")
             
@@ -113,6 +125,11 @@ fun SettingsScreen(
             
             AboutCard()
         }
+    }
+    
+    // Changelog Dialog
+    if (showChangelogDialog) {
+        ChangelogDialog(onDismiss = { showChangelogDialog = false })
     }
 }
 
@@ -245,6 +262,156 @@ private fun FilterOption(
 }
 
 /**
+ * Changelog card - clickable to show changelog dialog.
+ */
+@Composable
+private fun ChangelogCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.History,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "查看更新日志",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "了解最新版本的更新内容",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Changelog dialog showing version history.
+ */
+@Composable
+private fun ChangelogDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.History,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("更新日志")
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Version 1.4.0
+                ChangelogVersion(
+                    version = "1.4.0",
+                    date = "2026-01-15",
+                    changes = listOf(
+                        "🎨 全新简洁现代的应用图标",
+                        "✨ 首页名称更新为 PhotoZen",
+                        "🔄 标签照片数量现在实时更新",
+                        "🗑️ 移除标签时可选择是否同时删除照片",
+                        "📝 新增更新日志查看入口",
+                        "🐛 修复解除标签相册关联后UI不更新的问题",
+                        "🐛 修复删除标签时相册照片未删除的问题",
+                        "🐛 修复移动模式创建相册时原照片未删除的问题"
+                    )
+                )
+                
+                HorizontalDivider()
+                
+                // Version 1.3.0
+                ChangelogVersion(
+                    version = "1.3.0",
+                    date = "2026-01-10",
+                    changes = listOf(
+                        "✨ Flow 模式新增视图切换功能",
+                        "🔗 标签与相册关联同步功能",
+                        "🏷️ 复制模式创建相册时自动移除原照片标签",
+                        "🐛 多项 bug 修复和性能优化"
+                    )
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
+}
+
+/**
+ * Single version changelog entry.
+ */
+@Composable
+private fun ChangelogVersion(
+    version: String,
+    date: String,
+    changes: List<String>
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "v$version",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = date,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        changes.forEach { change ->
+            Text(
+                text = change,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(vertical = 2.dp)
+            )
+        }
+    }
+}
+
+/**
  * Acknowledgement card for early testers.
  */
 @Composable
@@ -289,7 +456,7 @@ private fun AcknowledgementCard() {
             Spacer(modifier = Modifier.height(8.dp))
             
             Text(
-                text = "感谢你们的宝贵建议和反馈\n让 PicZen 变得更好",
+                text = "感谢你们的宝贵建议和反馈\n让 PhotoZen 变得更好",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -325,13 +492,13 @@ private fun AboutCard() {
             Spacer(modifier = Modifier.height(12.dp))
             
             Text(
-                text = "PicZen 图禅",
+                text = "PhotoZen",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
             
             Text(
-                text = "版本 1.3.0",
+                text = "版本 1.4.0",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

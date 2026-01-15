@@ -4,8 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.dao.TagDao
-import com.example.photozen.data.local.entity.PhotoTagCrossRef
 import com.example.photozen.data.local.entity.TagEntity
+import com.example.photozen.domain.usecase.TagAlbumSyncUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,7 +23,8 @@ import javax.inject.Inject
 @HiltViewModel
 class TaggingViewModel @Inject constructor(
     private val tagDao: TagDao,
-    private val photoDao: PhotoDao
+    private val photoDao: PhotoDao,
+    private val tagAlbumSyncUseCase: TagAlbumSyncUseCase
 ) : ViewModel() {
     
     /**
@@ -74,6 +75,7 @@ class TaggingViewModel @Inject constructor(
     /**
      * Toggle tag assignment for a photo.
      * If already assigned, remove it. Otherwise, add it.
+     * Uses TagAlbumSyncUseCase to sync with linked albums.
      */
     fun togglePhotoTag(photoId: String, tag: TagEntity) {
         viewModelScope.launch {
@@ -85,8 +87,8 @@ class TaggingViewModel @Inject constructor(
                 tagDao.removeTagFromPhoto(photoId, tag.id)
                 _currentPhotoTags.value = currentTags.filter { it.id != tag.id }
             } else {
-                // Add tag
-                tagDao.addTagToPhoto(PhotoTagCrossRef(photoId, tag.id))
+                // Add tag with album sync (copies photo to linked album if applicable)
+                tagAlbumSyncUseCase.addPhotoToTagWithSync(photoId, tag.id)
                 _currentPhotoTags.value = currentTags + tag
             }
         }

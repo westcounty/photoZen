@@ -1,8 +1,10 @@
 package com.example.photozen.data.source
 
+import android.app.PendingIntent
 import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
+import android.content.IntentSender
 import android.database.Cursor
 import android.net.Uri
 import android.os.Build
@@ -16,6 +18,20 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * Result of a delete operation that may require user confirmation.
+ */
+sealed class DeleteResult {
+    /** Deletion succeeded without user confirmation needed */
+    data object Success : DeleteResult()
+    
+    /** User confirmation is required via IntentSender */
+    data class RequiresConfirmation(val intentSender: IntentSender, val uris: List<Uri>) : DeleteResult()
+    
+    /** Deletion failed */
+    data class Failed(val message: String) : DeleteResult()
+}
 
 /**
  * Represents an album (bucket) in MediaStore.
@@ -632,23 +648,84 @@ class MediaStoreDataSource @Inject constructor(
     
     /**
      * Delete an album and all its photos.
-     * Returns true if successful.
+     * On Android 10+, this may require user confirmation.
+     * 
+     * @return DeleteResult indicating success, failure, or need for user confirmation
      */
-    suspend fun deleteAlbum(bucketId: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun deleteAlbum(bucketId: String): DeleteResult = withContext(Dispatchers.IO) {
         try {
-            // Delete all photos in the album
-            val selection = "${MediaStore.Images.Media.BUCKET_ID} = ?"
-            val selectionArgs = arrayOf(bucketId)
+            // Get all photo URIs in the album
+            val uris = mutableListOf<Uri>()
             
-            contentResolver.delete(
+            contentResolver.query(
                 imageCollection,
-                selection,
-                selectionArgs
-            )
+                arrayOf(MediaStore.Images.Media._ID),
+                "${MediaStore.Images.Media.BUCKET_ID} = ?",
+                arrayOf(bucketId),
+                null
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idColumn)
+                    uris.add(ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id))
+                }
+            }
             
-            true
+            if (uris.isEmpty()) {
+                return@withContext DeleteResult.Success
+            }
+            
+            // On Android 11+, use createDeleteRequest for user confirmation
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val intentSender = MediaStore.createDeleteRequest(contentResolver, uris).intentSender
+                DeleteResult.RequiresConfirmation(intentSender, uris)
+            } else {
+                // On older versions, try direct deletion
+                var deleted = 0
+                uris.forEach { uri ->
+                    try {
+                        deleted += contentResolver.delete(uri, null, null)
+                    } catch (e: Exception) {
+                        // Ignore individual deletion errors
+                    }
+                }
+                if (deleted > 0) DeleteResult.Success else DeleteResult.Failed("无法删除照片")
+            }
         } catch (e: Exception) {
-            false
+            DeleteResult.Failed("删除相册失败: ${e.message}")
+        }
+    }
+    
+    /**
+     * Delete specific photos by their URIs.
+     * On Android 10+, this may require user confirmation.
+     * 
+     * @return DeleteResult indicating success, failure, or need for user confirmation
+     */
+    suspend fun deletePhotos(uris: List<Uri>): DeleteResult = withContext(Dispatchers.IO) {
+        if (uris.isEmpty()) {
+            return@withContext DeleteResult.Success
+        }
+        
+        try {
+            // On Android 11+, use createDeleteRequest for user confirmation
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val intentSender = MediaStore.createDeleteRequest(contentResolver, uris).intentSender
+                DeleteResult.RequiresConfirmation(intentSender, uris)
+            } else {
+                // On older versions, try direct deletion
+                var deleted = 0
+                uris.forEach { uri ->
+                    try {
+                        deleted += contentResolver.delete(uri, null, null)
+                    } catch (e: Exception) {
+                        // Ignore individual deletion errors
+                    }
+                }
+                if (deleted > 0) DeleteResult.Success else DeleteResult.Failed("无法删除照片")
+            }
+        } catch (e: Exception) {
+            DeleteResult.Failed("删除照片失败: ${e.message}")
         }
     }
     

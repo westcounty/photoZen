@@ -634,9 +634,16 @@ fun FlowSorterContent(
     
     var fullscreenPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
     
-    // Handle back press in fullscreen
-    BackHandler(enabled = fullscreenPhoto != null) {
-        fullscreenPhoto = null
+    // Local view mode state for workflow mode (since we don't have TopAppBar)
+    var localViewMode by remember { mutableStateOf(FlowSorterViewMode.CARD) }
+    val effectiveViewMode = if (isWorkflowMode) localViewMode else uiState.viewMode
+    
+    // Handle back press in fullscreen or selection mode
+    BackHandler(enabled = fullscreenPhoto != null || uiState.isSelectionMode) {
+        when {
+            fullscreenPhoto != null -> fullscreenPhoto = null
+            uiState.isSelectionMode -> viewModel.clearSelection()
+        }
     }
     
     // Notify workflow of completion
@@ -702,6 +709,20 @@ fun FlowSorterContent(
                             )
                         }
                     }
+                    effectiveViewMode == FlowSorterViewMode.LIST -> {
+                        // List view with staggered grid
+                        SelectableStaggeredPhotoGrid(
+                            photos = uiState.photos,
+                            selectedIds = uiState.selectedPhotoIds,
+                            onSelectionChanged = { viewModel.updateSelection(it) },
+                            onPhotoClick = { photoId, index ->
+                                val photo = uiState.photos.find { it.id == photoId }
+                                if (photo != null) {
+                                    fullscreenPhoto = photo
+                                }
+                            }
+                        )
+                    }
                     else -> {
                         // Card stack with combo overlay
                         Box(modifier = Modifier.fillMaxSize()) {
@@ -748,6 +769,99 @@ fun FlowSorterContent(
                 }
             }
             
+            // Bottom bar for batch actions when in selection mode (list view)
+            AnimatedVisibility(
+                visible = uiState.isSelectionMode,
+                enter = slideInVertically { it },
+                exit = slideOutVertically { it }
+            ) {
+                BatchActionBar(
+                    selectedCount = uiState.selectedCount,
+                    onKeep = { viewModel.keepSelectedPhotos() },
+                    onTrash = { viewModel.trashSelectedPhotos() },
+                    onMaybe = { viewModel.maybeSelectedPhotos() }
+                )
+            }
+        }
+        
+        // View mode toggle button - shown in top right corner for workflow mode
+        if (isWorkflowMode && !uiState.isComplete && !uiState.isLoading) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 8.dp, end = 8.dp)
+            ) {
+                // View mode toggle with selection mode actions
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Show selection mode controls when in selection mode
+                    if (uiState.isSelectionMode) {
+                        // Clear selection button
+                        IconButton(
+                            onClick = { viewModel.clearSelection() },
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "取消选择",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        // Selected count badge
+                        Text(
+                            text = "${uiState.selectedCount}",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.primary)
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        // Select all button
+                        IconButton(
+                            onClick = { viewModel.selectAll() },
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SelectAll,
+                                contentDescription = "全选",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        // View mode toggle button
+                        IconButton(
+                            onClick = {
+                                localViewMode = if (localViewMode == FlowSorterViewMode.CARD) {
+                                    FlowSorterViewMode.LIST
+                                } else {
+                                    FlowSorterViewMode.CARD
+                                }
+                                // Clear selection when switching modes
+                                viewModel.clearSelection()
+                            },
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
+                        ) {
+                            Icon(
+                                imageVector = if (localViewMode == FlowSorterViewMode.CARD) 
+                                    Icons.Default.GridView else Icons.Default.ViewCarousel,
+                                contentDescription = if (localViewMode == FlowSorterViewMode.CARD)
+                                    "列表视图" else "卡片视图",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
         }
         
         // Fullscreen viewer

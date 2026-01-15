@@ -4,10 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.dao.TagDao
 import com.example.photozen.data.local.entity.PhotoEntity
-import com.example.photozen.data.local.entity.PhotoTagCrossRef
 import com.example.photozen.data.local.entity.TagEntity
 import com.example.photozen.data.repository.PhotoRepository
 import com.example.photozen.data.repository.PreferencesRepository
+import com.example.photozen.domain.usecase.TagAlbumSyncUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -54,7 +54,8 @@ data class QuickTagUiState(
 class QuickTagViewModel @Inject constructor(
     private val photoRepository: PhotoRepository,
     private val tagDao: TagDao,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    private val tagAlbumSyncUseCase: TagAlbumSyncUseCase
 ) : ViewModel() {
     
     private val _currentIndex = MutableStateFlow(0)
@@ -144,14 +145,15 @@ class QuickTagViewModel @Inject constructor(
     /**
      * Add tag to current photo and advance to next.
      * Single-tap = assign tag + next photo.
+     * Uses TagAlbumSyncUseCase to sync with linked albums.
      */
     fun tagCurrentPhotoAndNext(tag: TagEntity) {
         val photo = uiState.value.currentPhoto ?: return
         
         viewModelScope.launch {
             try {
-                // Add tag to photo
-                tagDao.addTagToPhoto(PhotoTagCrossRef(photo.id, tag.id))
+                // Add tag to photo with album sync (copies photo to linked album if applicable)
+                tagAlbumSyncUseCase.addPhotoToTagWithSync(photo.id, tag.id)
                 _taggedCount.value++
                 
                 // Increment tag achievement count

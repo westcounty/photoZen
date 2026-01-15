@@ -68,6 +68,10 @@ fun BubbleGraphView(
     val bubbleStates = remember { mutableStateListOf<BubbleState>() }
     var lastFrameTime by remember { mutableStateOf(0L) }
     
+    // Track nodes changes to update bubble states
+    var lastNodesVersion by remember { mutableStateOf(0) }
+    val currentNodesVersion = remember(nodes) { nodes.hashCode() }
+    
     // Dragging state
     var draggedBubbleIndex by remember { mutableStateOf(-1) }
     
@@ -192,6 +196,37 @@ fun BubbleGraphView(
                 nodes.forEachIndexed { index, node ->
                     bubbleStates.add(BubbleState(initialPositions[index], node))
                 }
+                lastNodesVersion = currentNodesVersion
+            }
+            
+            // Update bubble states when nodes change (e.g., after unlinking album)
+            if (lastNodesVersion != currentNodesVersion && physicsEngine != null && size.width > 0) {
+                // Update existing bubbles or add/remove as needed
+                val existingIds = bubbleStates.map { it.node.id }.toSet()
+                val newIds = nodes.map { it.id }.toSet()
+                
+                // Remove bubbles that no longer exist
+                bubbleStates.removeAll { it.node.id !in newIds }
+                
+                // Update existing bubbles with new node data (preserving positions)
+                bubbleStates.forEachIndexed { index, state ->
+                    val newNode = nodes.find { it.id == state.node.id }
+                    if (newNode != null && newNode != state.node) {
+                        // Replace with updated node, keeping position
+                        val position = state.position
+                        bubbleStates[index] = BubbleState(position, newNode)
+                    }
+                }
+                
+                // Add new bubbles
+                val initialPositions = physicsEngine!!.calculateInitialPositions(nodes)
+                nodes.forEachIndexed { index, node ->
+                    if (node.id !in existingIds) {
+                        bubbleStates.add(BubbleState(initialPositions[index], node))
+                    }
+                }
+                
+                lastNodesVersion = currentNodesVersion
             }
             
             // Draw connections from center to children
