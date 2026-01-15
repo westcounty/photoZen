@@ -93,30 +93,41 @@ class HomeViewModel @Inject constructor(
     
     // Camera album IDs - loaded once and cached
     private val _cameraAlbumIds = MutableStateFlow<List<String>>(emptyList())
+    private val _cameraAlbumsLoaded = MutableStateFlow(false)
     
     /**
      * Get filtered unsorted count based on filter mode.
+     * IMPORTANT: Wait for camera albums to load before returning filtered counts.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun getFilteredUnsortedCount() = combine(
         preferencesRepository.getPhotoFilterMode(),
-        _cameraAlbumIds
-    ) { filterMode, cameraIds ->
-        Pair(filterMode, cameraIds)
-    }.flatMapLatest { (filterMode, cameraIds) ->
+        _cameraAlbumIds,
+        _cameraAlbumsLoaded
+    ) { filterMode, cameraIds, loaded ->
+        Triple(filterMode, cameraIds, loaded)
+    }.flatMapLatest { (filterMode, cameraIds, loaded) ->
         when (filterMode) {
             PhotoFilterMode.ALL -> getUnsortedPhotosUseCase.getCount()
             PhotoFilterMode.CAMERA_ONLY -> {
-                if (cameraIds.isNotEmpty()) {
+                // Must wait for camera albums to load
+                if (!loaded) {
+                    kotlinx.coroutines.flow.flowOf(0) // Show 0 while loading
+                } else if (cameraIds.isNotEmpty()) {
                     getUnsortedPhotosUseCase.getCountByBuckets(cameraIds)
                 } else {
-                    getUnsortedPhotosUseCase.getCount()
+                    // No camera albums found
+                    kotlinx.coroutines.flow.flowOf(0)
                 }
             }
             PhotoFilterMode.EXCLUDE_CAMERA -> {
-                if (cameraIds.isNotEmpty()) {
+                // Must wait for camera albums to load
+                if (!loaded) {
+                    kotlinx.coroutines.flow.flowOf(0) // Show 0 while loading
+                } else if (cameraIds.isNotEmpty()) {
                     getUnsortedPhotosUseCase.getCountExcludingBuckets(cameraIds)
                 } else {
+                    // No camera albums found, show all photos
                     getUnsortedPhotosUseCase.getCount()
                 }
             }
@@ -133,28 +144,32 @@ class HomeViewModel @Inject constructor(
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun getFilteredTotalCount() = combine(
         preferencesRepository.getPhotoFilterMode(),
-        _cameraAlbumIds
-    ) { filterMode, cameraIds ->
-        Pair(filterMode, cameraIds)
-    }.flatMapLatest { (filterMode, cameraIds) ->
+        _cameraAlbumIds,
+        _cameraAlbumsLoaded
+    ) { filterMode, cameraIds, loaded ->
+        Triple(filterMode, cameraIds, loaded)
+    }.flatMapLatest { (filterMode, cameraIds, loaded) ->
         when (filterMode) {
             PhotoFilterMode.ALL -> photoRepository.getTotalCount()
             PhotoFilterMode.CAMERA_ONLY -> {
-                if (cameraIds.isNotEmpty()) {
+                if (!loaded) {
+                    kotlinx.coroutines.flow.flowOf(0)
+                } else if (cameraIds.isNotEmpty()) {
                     photoRepository.getTotalCountByBuckets(cameraIds)
                 } else {
-                    photoRepository.getTotalCount()
+                    kotlinx.coroutines.flow.flowOf(0)
                 }
             }
             PhotoFilterMode.EXCLUDE_CAMERA -> {
-                if (cameraIds.isNotEmpty()) {
+                if (!loaded) {
+                    kotlinx.coroutines.flow.flowOf(0)
+                } else if (cameraIds.isNotEmpty()) {
                     photoRepository.getTotalCountExcludingBuckets(cameraIds)
                 } else {
                     photoRepository.getTotalCount()
                 }
             }
             PhotoFilterMode.CUSTOM -> {
-                // For custom mode, show total count
                 photoRepository.getTotalCount()
             }
         }
@@ -166,13 +181,13 @@ class HomeViewModel @Inject constructor(
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun getFilteredSortedCount() = combine(
         preferencesRepository.getPhotoFilterMode(),
-        _cameraAlbumIds
-    ) { filterMode, cameraIds ->
-        Pair(filterMode, cameraIds)
-    }.flatMapLatest { (filterMode, cameraIds) ->
+        _cameraAlbumIds,
+        _cameraAlbumsLoaded
+    ) { filterMode, cameraIds, loaded ->
+        Triple(filterMode, cameraIds, loaded)
+    }.flatMapLatest { (filterMode, cameraIds, loaded) ->
         when (filterMode) {
             PhotoFilterMode.ALL -> {
-                // Sorted = Keep + Trash + Maybe
                 combine(
                     getPhotosUseCase.getCountByStatus(PhotoStatus.KEEP),
                     getPhotosUseCase.getCountByStatus(PhotoStatus.TRASH),
@@ -180,18 +195,18 @@ class HomeViewModel @Inject constructor(
                 ) { keep, trash, maybe -> keep + trash + maybe }
             }
             PhotoFilterMode.CAMERA_ONLY -> {
-                if (cameraIds.isNotEmpty()) {
+                if (!loaded) {
+                    kotlinx.coroutines.flow.flowOf(0)
+                } else if (cameraIds.isNotEmpty()) {
                     photoRepository.getSortedCountByBuckets(cameraIds)
                 } else {
-                    combine(
-                        getPhotosUseCase.getCountByStatus(PhotoStatus.KEEP),
-                        getPhotosUseCase.getCountByStatus(PhotoStatus.TRASH),
-                        getPhotosUseCase.getCountByStatus(PhotoStatus.MAYBE)
-                    ) { keep, trash, maybe -> keep + trash + maybe }
+                    kotlinx.coroutines.flow.flowOf(0)
                 }
             }
             PhotoFilterMode.EXCLUDE_CAMERA -> {
-                if (cameraIds.isNotEmpty()) {
+                if (!loaded) {
+                    kotlinx.coroutines.flow.flowOf(0)
+                } else if (cameraIds.isNotEmpty()) {
                     photoRepository.getSortedCountExcludingBuckets(cameraIds)
                 } else {
                     combine(
@@ -289,6 +304,8 @@ class HomeViewModel @Inject constructor(
             _cameraAlbumIds.value = albums.filter { it.isCamera }.map { it.id }
         } catch (e: Exception) {
             // Ignore errors, just use empty list
+        } finally {
+            _cameraAlbumsLoaded.value = true
         }
     }
     

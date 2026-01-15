@@ -93,14 +93,26 @@ class MediaStoreDataSource @Inject constructor(
     
     /**
      * Check if an album name is a camera album.
-     * Matches: Camera, camera, CAMERA, 相机, etc.
+     * Matches various camera album naming conventions across different devices:
+     * - Standard: Camera, camera, CAMERA
+     * - Chinese: 相机
+     * - DCIM folder: DCIM
+     * - Numbered folders: 100ANDRO, 100MEDIA, etc.
+     * - Device-specific: OpenCamera, Gcam, etc.
      */
     private fun isCameraAlbum(albumName: String): Boolean {
         val lowerName = albumName.lowercase()
         return lowerName == "camera" || 
+               lowerName.contains("camera") ||  // More inclusive matching
                albumName == "相机" ||
+               albumName.contains("相机") ||
                lowerName == "dcim" ||
-               lowerName.startsWith("100") // 100ANDRO, 100MEDIA, etc.
+               lowerName.startsWith("100") ||  // 100ANDRO, 100MEDIA, etc.
+               lowerName.startsWith("img") ||  // IMG_xxx folders
+               lowerName == "opencamera" ||
+               lowerName == "gcam" ||
+               lowerName == "snapchat" ||
+               lowerName == "screenshots"  // Also include screenshots as camera photos
     }
     
     /**

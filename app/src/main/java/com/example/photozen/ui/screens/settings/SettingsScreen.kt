@@ -279,25 +279,24 @@ private fun ChangelogDialog(onDismiss: () -> Unit) {
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Version 1.5.8 - Current
+                // Version 1.5.9 - Current
+                ChangelogVersion(
+                    version = "1.5.9",
+                    date = "2026-01-16",
+                    changes = listOf(
+                        "🔧 彻底修复筛选：首页正确显示筛选后的待整理数量",
+                        "⏳ 加载状态：相机相册加载完成前不显示错误数据",
+                        "📷 增强相机识别：覆盖更多设备和相册命名"
+                    )
+                )
+                
+                // Version 1.5.8
                 ChangelogVersion(
                     version = "1.5.8",
                     date = "2026-01-16",
                     changes = listOf(
                         "🔧 彻底修复Flow筛选：自定义筛选条件改为响应式，实时生效",
                         "🚀 CUSTOM模式正确导航：每次整理前选择会正确跳转到筛选界面"
-                    )
-                )
-                
-                // Version 1.5.7
-                ChangelogVersion(
-                    version = "1.5.7",
-                    date = "2026-01-16",
-                    changes = listOf(
-                        "🔧 修复Flow筛选：筛选条件（如排除相机照片）现在正确生效",
-                        "📸 会话照片追踪：待定筛选和快速打标只显示本次Flow中的照片",
-                        "📊 Flow列表视图列数切换：支持1/2/3列切换",
-                        "❓ 回收站批量待定：新增批量设置为待定操作"
                     )
                 )
             }
@@ -437,7 +436,7 @@ private fun AboutCard(onVersionClick: () -> Unit) {
             
             // Clickable version number
             Text(
-                text = "版本 1.5.8",
+                text = "版本 1.5.9",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
