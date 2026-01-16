@@ -156,7 +156,7 @@ fun SettingsScreen(
                 onVersionClick = { showChangelogDialog = true }
             )
             
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             
             // Feedback Link
             FeedbackLink()
@@ -1314,7 +1314,7 @@ private fun AcknowledgementCard(
 }
 
 /**
- * Feedback link - Small text link to feedback page.
+ * Feedback link - Text link to feedback page.
  */
 @Composable
 private fun FeedbackLink() {
@@ -1327,8 +1327,8 @@ private fun FeedbackLink() {
         horizontalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "意见反馈与功能许愿",
-            style = MaterialTheme.typography.labelSmall,
+            text = "💬 意见反馈与功能许愿",
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.clickable {
                 uriHandler.openUri("https://xhslink.com/m/2Mb9Y6fyvMS")

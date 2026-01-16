@@ -371,13 +371,12 @@ private fun CompactStatsHeader(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Unsorted count
+        // Unsorted count - left aligned
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f)
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = Icons.Default.PhotoLibrary,
@@ -400,29 +399,28 @@ private fun CompactStatsHeader(
             )
         }
         
-        // Sorted count
+        // Sorted count - right aligned
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f)
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                tint = KeepGreen,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "已整理",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = sortedCount.toString(),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = KeepGreen
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "已整理",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = KeepGreen,
+                modifier = Modifier.size(18.dp)
             )
         }
     }
