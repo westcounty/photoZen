@@ -1,7 +1,7 @@
 # PhotoZen 图禅 📷
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-1.2.0.020-blue" alt="Version">
+  <img src="https://img.shields.io/badge/Version-1.3.0.007-blue" alt="Version">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?logo=android" alt="Platform">
   <img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF?logo=kotlin" alt="Kotlin">
   <img src="https://img.shields.io/badge/Min%20SDK-26-brightgreen" alt="Min SDK">
