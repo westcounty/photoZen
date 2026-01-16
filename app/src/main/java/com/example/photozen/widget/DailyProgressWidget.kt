@@ -10,23 +10,34 @@ import android.util.Log
 import android.widget.RemoteViews
 import com.example.photozen.MainActivity
 import com.example.photozen.R
-import com.example.photozen.domain.usecase.GetDailyTaskStatusUseCase
-import dagger.hilt.android.AndroidEntryPoint
+import com.example.photozen.data.local.dao.DailyStatsDao
+import com.example.photozen.data.repository.PreferencesRepository
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import javax.inject.Inject
+
+/**
+ * Entry point for accessing dependencies in Widget.
+ * Using EntryPoint instead of @AndroidEntryPoint for more reliable injection in widgets.
+ */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface DailyProgressWidgetEntryPoint {
+    fun preferencesRepository(): PreferencesRepository
+    fun dailyStatsDao(): DailyStatsDao
+}
 
 /**
  * Widget to display daily sorting progress.
+ * Uses EntryPointAccessors for reliable dependency access in widget lifecycle.
  */
-@AndroidEntryPoint
 class DailyProgressWidget : AppWidgetProvider() {
-
-    @Inject
-    lateinit var getDailyTaskStatusUseCase: GetDailyTaskStatusUseCase
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -57,40 +68,72 @@ class DailyProgressWidget : AppWidgetProvider() {
         
         scope.launch {
             try {
-                val status = getDailyTaskStatusUseCase().first()
-                Log.d(TAG, "Daily status: current=${status.current}, target=${status.target}, completed=${status.isCompleted}")
+                // Use EntryPointAccessors for reliable dependency injection
+                val entryPoint = EntryPointAccessors.fromApplication(
+                    context.applicationContext,
+                    DailyProgressWidgetEntryPoint::class.java
+                )
+                val preferencesRepository = entryPoint.preferencesRepository()
+                val dailyStatsDao = entryPoint.dailyStatsDao()
+                
+                // Read values directly to ensure we get the latest data
+                val isEnabled = preferencesRepository.getDailyTaskEnabled().first()
+                val target = preferencesRepository.getDailyTaskTarget().first()
+                
+                val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                    .format(java.util.Date())
+                val stats = dailyStatsDao.getStatsByDateOneShot(today)
+                val current = stats?.count ?: 0
+                
+                Log.d(TAG, "Direct read - enabled=$isEnabled, target=$target, current=$current, today=$today")
                 
                 val views = RemoteViews(context.packageName, R.layout.widget_daily_progress)
                 
-                // Determine emoji and status text based on actual completion status
-                // Check if task is truly completed (current >= target)
-                val isActuallyCompleted = status.current >= status.target
-                
-                val emoji = when {
-                    isActuallyCompleted -> "🥳"
-                    status.current > 0 -> "🙂"
-                    else -> "😢"
-                }
-                
-                val statusText = when {
-                    isActuallyCompleted -> "任务完成！"
-                    status.current > 0 -> "继续加油"
-                    else -> "开始整理吧"
-                }
-                
-                Log.d(TAG, "Setting emoji: $emoji, statusText: $statusText")
-                
-                views.setTextViewText(R.id.widget_emoji, emoji)
-                views.setTextViewText(R.id.widget_status_text, statusText)
-                
-                if (isActuallyCompleted) {
+                // If daily task is not enabled, show disabled state
+                if (!isEnabled) {
+                    Log.d(TAG, "Daily task is disabled")
+                    views.setTextViewText(R.id.widget_emoji, "😴")
+                    views.setTextViewText(R.id.widget_status_text, "任务未开启")
                     views.setViewVisibility(R.id.widget_progress_bar, android.view.View.GONE)
                     views.setViewVisibility(R.id.widget_progress_text, android.view.View.GONE)
                 } else {
-                    views.setViewVisibility(R.id.widget_progress_bar, android.view.View.VISIBLE)
-                    views.setViewVisibility(R.id.widget_progress_text, android.view.View.VISIBLE)
-                    views.setProgressBar(R.id.widget_progress_bar, status.target, status.current, false)
-                    views.setTextViewText(R.id.widget_progress_text, "${status.current} / ${status.target}")
+                    // Determine state based on actual progress
+                    // States: NOT_STARTED (0), IN_PROGRESS (1 to target-1), COMPLETED (>= target)
+                    val isCompleted = target > 0 && current >= target
+                    val isInProgress = current > 0 && !isCompleted
+                    val notStarted = current == 0
+                    
+                    // Set emoji based on state
+                    val emoji = when {
+                        isCompleted -> "🥳"      // Celebration - task done!
+                        isInProgress -> "💪"    // Flexed arm - working on it!
+                        else -> "😴"             // Sleeping - not started yet
+                    }
+                    
+                    // Set status text based on state (progress numbers shown below in progress bar)
+                    val statusText = when {
+                        isCompleted -> "任务完成！"
+                        isInProgress -> "进行中"
+                        else -> "开始整理吧"
+                    }
+                    
+                    Log.d(TAG, "Setting emoji: $emoji, statusText: $statusText, isCompleted=$isCompleted, isInProgress=$isInProgress (current=$current, target=$target)")
+                    
+                    views.setTextViewText(R.id.widget_emoji, emoji)
+                    views.setTextViewText(R.id.widget_status_text, statusText)
+                    
+                    // Show/hide progress bar based on state
+                    if (isCompleted) {
+                        // Completed - hide progress bar, show celebration
+                        views.setViewVisibility(R.id.widget_progress_bar, android.view.View.GONE)
+                        views.setViewVisibility(R.id.widget_progress_text, android.view.View.GONE)
+                    } else {
+                        // Not completed (either in progress or not started) - show progress bar
+                        views.setViewVisibility(R.id.widget_progress_bar, android.view.View.VISIBLE)
+                        views.setViewVisibility(R.id.widget_progress_text, android.view.View.VISIBLE)
+                        views.setProgressBar(R.id.widget_progress_bar, target, current, false)
+                        views.setTextViewText(R.id.widget_progress_text, "$current / $target")
+                    }
                 }
                 
                 // Click to open app
@@ -111,6 +154,28 @@ class DailyProgressWidget : AppWidgetProvider() {
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Error updating widget", e)
+                // Show error state so user can at least click to open app
+                try {
+                    val views = RemoteViews(context.packageName, R.layout.widget_daily_progress)
+                    views.setTextViewText(R.id.widget_emoji, "⚠️")
+                    views.setTextViewText(R.id.widget_status_text, "点击打开")
+                    views.setViewVisibility(R.id.widget_progress_bar, android.view.View.GONE)
+                    views.setViewVisibility(R.id.widget_progress_text, android.view.View.GONE)
+                    
+                    val intent = Intent(context, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    }
+                    val pendingIntent = PendingIntent.getActivity(
+                        context,
+                        appWidgetId,
+                        intent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    views.setOnClickPendingIntent(R.id.widget_container, pendingIntent)
+                    appWidgetManager.updateAppWidget(appWidgetId, views)
+                } catch (e2: Exception) {
+                    Log.e(TAG, "Failed to show error state", e2)
+                }
             } finally {
                 pendingResult.finish()
             }

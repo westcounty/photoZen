@@ -39,7 +39,6 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.random.Random
 
-import com.example.photozen.data.repository.WidgetPhotoSource
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.lazy.LazyRow
@@ -73,7 +72,6 @@ fun SettingsScreen(
     // Dialog states
     var showDailyTaskDialog by remember { mutableStateOf(false) }
     var showFilterDialog by remember { mutableStateOf(false) }
-    var showWidgetDialog by remember { mutableStateOf(false) } // Placeholder for now
     var showAboutDialog by remember { mutableStateOf(false) }
     var showChangelogDialog by remember { mutableStateOf(false) }
     var showAcknowledgementDialog by remember { mutableStateOf(false) }
@@ -134,17 +132,6 @@ fun SettingsScreen(
                 onClick = { showFilterDialog = true }
             )
             
-            SettingsMenuItem(
-                icon = Icons.Default.Widgets,
-                title = "桌面小组件",
-                subtitle = when (uiState.widgetPhotoSource) {
-                    WidgetPhotoSource.ALL -> "显示全部照片"
-                    WidgetPhotoSource.CAMERA -> "仅显示相机照片"
-                    WidgetPhotoSource.CUSTOM -> "显示自定义相册"
-                },
-                onClick = { showWidgetDialog = true }
-            )
-            
             Spacer(modifier = Modifier.height(24.dp))
             
             // Acknowledgement Card - Flat display
@@ -191,18 +178,6 @@ fun SettingsScreen(
         )
     }
     
-    if (showWidgetDialog) {
-        WidgetSettingsDialog(
-            currentSource = uiState.widgetPhotoSource,
-            currentAlbumIds = uiState.widgetCustomAlbumIds,
-            currentStartDate = uiState.widgetStartDate,
-            currentEndDate = uiState.widgetEndDate,
-            onDismiss = { showWidgetDialog = false },
-            onSourceSelected = { viewModel.setWidgetPhotoSource(it) },
-            onAlbumsSelected = { viewModel.setWidgetCustomAlbumIds(it) },
-            onDateRangeSelected = { start, end -> viewModel.setWidgetDateRange(start, end) }
-        )
-    }
     
     if (showAboutDialog) {
         AboutDialog(
@@ -267,6 +242,50 @@ fun SettingsMenuItem(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/**
+ * Settings item with a toggle switch.
+ */
+@Composable
+fun SettingsSwitchItem(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange
         )
     }
 }
@@ -764,208 +783,118 @@ fun PhotoFilterSettingsDialog(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Album picker dialog for selecting multiple albums.
+ */
 @Composable
-fun WidgetSettingsDialog(
-    currentSource: WidgetPhotoSource,
-    currentAlbumIds: Set<String>,
-    currentStartDate: Long?,
-    currentEndDate: Long?,
+private fun AlbumPickerDialog(
+    albums: List<com.example.photozen.data.source.Album>,
+    selectedIds: Set<String>,
     onDismiss: () -> Unit,
-    onSourceSelected: (WidgetPhotoSource) -> Unit,
-    onAlbumsSelected: (Set<String>) -> Unit,
-    onDateRangeSelected: (Long?, Long?) -> Unit
+    onConfirm: (Set<String>) -> Unit
 ) {
-    var showCustomOptions by remember { mutableStateOf(currentSource == WidgetPhotoSource.CUSTOM) }
-    var showDatePicker by remember { mutableStateOf(false) }
-    var localStartDate by remember { mutableStateOf(currentStartDate) }
-    var localEndDate by remember { mutableStateOf(currentEndDate) }
-    
-    val dateFormat = remember { java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault()) }
+    var localSelectedIds by remember { mutableStateOf(selectedIds) }
     
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("小组件照片来源") },
+        title = { Text("选择相册") },
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                WidgetSourceOption(
-                    title = "显示全部照片",
-                    description = "显示设备上的所有照片",
-                    selected = currentSource == WidgetPhotoSource.ALL,
-                    onClick = { 
-                        onSourceSelected(WidgetPhotoSource.ALL)
-                        showCustomOptions = false
-                    }
-                )
-                
-                WidgetSourceOption(
-                    title = "仅显示相机照片",
-                    description = "只显示由手机相机拍摄的照片",
-                    selected = currentSource == WidgetPhotoSource.CAMERA,
-                    onClick = { 
-                        onSourceSelected(WidgetPhotoSource.CAMERA)
-                        showCustomOptions = false
-                    }
-                )
-                
-                WidgetSourceOption(
-                    title = "自定义范围",
-                    description = "按日期范围筛选",
-                    selected = currentSource == WidgetPhotoSource.CUSTOM,
-                    onClick = { 
-                        onSourceSelected(WidgetPhotoSource.CUSTOM)
-                        showCustomOptions = true
-                    }
-                )
-                
-                // Custom options - date range
-                if (showCustomOptions) {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-                    
+            if (albums.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
-                        text = "日期范围",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium,
+                        text = "正在加载相册...",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                Column {
+                    Text(
+                        text = "已选择 ${localSelectedIds.size} 个相册",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     
-                    if (localStartDate != null || localEndDate != null) {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                            )
-                        ) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(300.dp)
+                    ) {
+                        items(albums.size) { index ->
+                            val album = albums[index]
+                            val isSelected = album.id in localSelectedIds
+                            
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                    .clickable {
+                                        localSelectedIds = if (isSelected) {
+                                            localSelectedIds - album.id
+                                        } else {
+                                            localSelectedIds + album.id
+                                        }
+                                    }
+                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
+                                Checkbox(
+                                    checked = isSelected,
+                                    onCheckedChange = { checked ->
+                                        localSelectedIds = if (checked) {
+                                            localSelectedIds + album.id
+                                        } else {
+                                            localSelectedIds - album.id
+                                        }
+                                    }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = buildString {
-                                            append(localStartDate?.let { dateFormat.format(java.util.Date(it)) } ?: "不限")
-                                            append(" ~ ")
-                                            append(localEndDate?.let { dateFormat.format(java.util.Date(it)) } ?: "不限")
-                                        },
-                                        style = MaterialTheme.typography.bodyMedium
+                                        text = album.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal
+                                    )
+                                    Text(
+                                        text = "${album.photoCount} 张照片",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                Row {
-                                    TextButton(onClick = { showDatePicker = true }) {
-                                        Text("修改")
-                                    }
-                                    TextButton(onClick = { 
-                                        localStartDate = null
-                                        localEndDate = null
-                                        onDateRangeSelected(null, null)
-                                    }) {
-                                        Text("清除")
-                                    }
+                                if (album.isCamera) {
+                                    Text(
+                                        text = "相机",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier
+                                            .background(
+                                                MaterialTheme.colorScheme.primaryContainer,
+                                                RoundedCornerShape(4.dp)
+                                            )
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
                                 }
                             }
-                        }
-                    } else {
-                        OutlinedButton(
-                            onClick = { showDatePicker = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.CalendarMonth, null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("选择日期范围")
                         }
                     }
                 }
             }
         },
         confirmButton = {
+            TextButton(onClick = { onConfirm(localSelectedIds) }) {
+                Text("确定")
+            }
+        },
+        dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("完成")
+                Text("取消")
             }
         }
     )
-    
-    // Date Range Picker Dialog
-    if (showDatePicker) {
-        val dateRangePickerState = rememberDateRangePickerState(
-            initialSelectedStartDateMillis = localStartDate,
-            initialSelectedEndDateMillis = localEndDate
-        )
-        
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        localStartDate = dateRangePickerState.selectedStartDateMillis
-                        localEndDate = dateRangePickerState.selectedEndDateMillis
-                        onDateRangeSelected(
-                            dateRangePickerState.selectedStartDateMillis,
-                            dateRangePickerState.selectedEndDateMillis
-                        )
-                        showDatePicker = false
-                    }
-                ) {
-                    Text("确定")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) {
-                    Text("取消")
-                }
-            }
-        ) {
-            DateRangePicker(
-                state = dateRangePickerState,
-                title = {
-                    Text(
-                        text = "选择日期范围",
-                        modifier = Modifier.padding(16.dp)
-                    )
-                },
-                showModeToggle = false,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(500.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun WidgetSourceOption(
-    title: String,
-    description: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(
-            selected = selected,
-            onClick = onClick
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
-            )
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
 }
 
 @Composable
@@ -1149,7 +1078,48 @@ private fun ChangelogDialog(onDismiss: () -> Unit) {
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Version header
+                // v1.1 Version header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "v1.1.0.018",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "2026-01-17",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                Text(
+                    text = "🚀 体验优化版本",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                
+                Text(
+                    text = "针对用户反馈进行全面体验优化",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                // v1.1 features
+                ChangelogItem("🎯 首页布局", "每日任务升级为核心入口，一站式整理变为次要入口")
+                ChangelogItem("⚡ 快速滑动", "彻底解决快速滑动崩溃，恢复丝滑动画")
+                ChangelogItem("📊 进度显示", "修复分母显示，正确显示真实待整理总数")
+                ChangelogItem("📱 桌面小组件", "每日任务进度实时更新，布局优化")
+                ChangelogItem("⚙️ 默认设置", "快速整理模式、默认开启提醒、晚上10点")
+                
+                HorizontalDivider()
+                
+                // v1.0 Version header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1159,7 +1129,7 @@ private fun ChangelogDialog(onDismiss: () -> Unit) {
                         text = "v1.0.0.001",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
                         text = "2026-01-16",
@@ -1171,33 +1141,16 @@ private fun ChangelogDialog(onDismiss: () -> Unit) {
                 Text(
                     text = "🎉 第一个正式版本！",
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                
-                Text(
-                    text = "PhotoZen 图禅 —— 让整理照片变成一种享受。",
-                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
-                HorizontalDivider()
-                
-                // Core features list
+                // Core features list (abbreviated)
                 Text(
-                    text = "核心功能",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    text = "包含核心功能：滑动整理、照片对比、标签气泡、无损编辑、心流模式、成就系统、照片管理等",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                
-                ChangelogItem("🎴 滑动整理", "Tinder 风格滑动、Spring 动画、批量选择、1/2/3 列切换")
-                ChangelogItem("🔍 照片对比", "同时对比 2-4 张照片、同步缩放、快速决策")
-                ChangelogItem("🏷️ 标签气泡", "物理模拟拖拽、弹性碰撞、位置记忆、层级结构")
-                ChangelogItem("✂️ 无损编辑", "非破坏性裁切、虚拟副本、图片导出")
-                ChangelogItem("🚀 心流模式", "一站式整理、连击系统、胜利动画")
-                ChangelogItem("🏆 成就系统", "50+ 成就、5 个稀有度等级、进度追踪")
-                ChangelogItem("📁 照片管理", "智能筛选、批量操作、回收站、外部删除同步")
             }
         },
         confirmButton = {

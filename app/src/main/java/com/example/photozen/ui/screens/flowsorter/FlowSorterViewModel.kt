@@ -13,6 +13,7 @@ import com.example.photozen.domain.usecase.GetDailyTaskStatusUseCase
 import com.example.photozen.domain.usecase.GetUnsortedPhotosUseCase
 import com.example.photozen.domain.usecase.SortPhotoUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
+import com.example.photozen.util.WidgetUpdater
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -106,7 +107,8 @@ data class FlowSorterUiState(
     val isDailyTask: Boolean = false,
     val dailyTaskTarget: Int = -1,
     val dailyTaskCurrent: Int = 0,
-    val isDailyTaskComplete: Boolean = false
+    val isDailyTaskComplete: Boolean = false,
+    val cardZoomEnabled: Boolean = true
 ) {
     val currentPhoto: PhotoEntity?
         get() = photos.getOrNull(currentIndex)
@@ -151,7 +153,8 @@ class FlowSorterViewModel @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val savedStateHandle: SavedStateHandle,
-    private val getDailyTaskStatusUseCase: GetDailyTaskStatusUseCase
+    private val getDailyTaskStatusUseCase: GetDailyTaskStatusUseCase,
+    private val widgetUpdater: WidgetUpdater
 ) : ViewModel() {
     
     private val isDailyTask: Boolean = savedStateHandle["isDailyTask"] ?: false
@@ -168,6 +171,10 @@ class FlowSorterViewModel @Inject constructor(
     private val _selectedPhotoIds = MutableStateFlow<Set<String>>(emptySet())
     private val _sortOrder = MutableStateFlow(PhotoSortOrder.DATE_DESC)
     private val _gridColumns = MutableStateFlow(2)
+    
+    // CRITICAL FIX: Store initial total count to prevent flickering during rapid swipes
+    // This ensures totalCount remains stable even when counters and photos list update at different times
+    private val _initialTotalCount = MutableStateFlow(-1) // -1 means not yet initialized
     
     // Random seed for consistent random sorting until changed
     private var randomSeed = System.currentTimeMillis()
@@ -255,10 +262,57 @@ class FlowSorterViewModel @Inject constructor(
     )
     
     /**
+     * Get the REAL count of unsorted photos (not limited by LIMIT 500).
+     * Used to display accurate total count in the UI.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun getFilteredPhotosCountFlow(): Flow<Int> {
+        return combine(
+            preferencesRepository.getPhotoFilterMode(),
+            _cameraAlbumIds,
+            _cameraAlbumsLoaded,
+            preferencesRepository.getSessionCustomFilterFlow()
+        ) { filterMode, cameraIds, loaded, sessionFilter ->
+            FilterParams(filterMode, cameraIds, loaded, sessionFilter)
+        }.flatMapLatest { params ->
+            when (params.filterMode) {
+                PhotoFilterMode.ALL -> getUnsortedPhotosUseCase.getCount()
+                PhotoFilterMode.CAMERA_ONLY -> {
+                    if (!params.cameraLoaded) {
+                        flowOf(0)
+                    } else if (params.cameraIds.isNotEmpty()) {
+                        getUnsortedPhotosUseCase.getCountByBuckets(params.cameraIds)
+                    } else {
+                        flowOf(0)
+                    }
+                }
+                PhotoFilterMode.EXCLUDE_CAMERA -> {
+                    if (!params.cameraLoaded) {
+                        flowOf(0)
+                    } else if (params.cameraIds.isNotEmpty()) {
+                        getUnsortedPhotosUseCase.getCountExcludingBuckets(params.cameraIds)
+                    } else {
+                        getUnsortedPhotosUseCase.getCount()
+                    }
+                }
+                PhotoFilterMode.CUSTOM -> {
+                    val sessionFilter = params.sessionFilter
+                    if (sessionFilter != null && !sessionFilter.albumIds.isNullOrEmpty()) {
+                        getUnsortedPhotosUseCase.getCountByBuckets(sessionFilter.albumIds)
+                    } else {
+                        getUnsortedPhotosUseCase.getCount()
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
      * UI State exposed to the screen.
      */
     val uiState: StateFlow<FlowSorterUiState> = combine(
         getFilteredPhotosFlow(),
+        getFilteredPhotosCountFlow(), // Add real count flow
         _isLoading,
         _isSyncing,
         _currentIndex,
@@ -266,20 +320,22 @@ class FlowSorterViewModel @Inject constructor(
         combine(_error, _counters, _combo) { e, c, co -> Triple(e, c, co) },
         _viewMode,
         combine(_selectedPhotoIds, _sortOrder, _gridColumns) { ids, order, cols -> Triple(ids, order, cols) },
-        combine(preferencesRepository.getPhotoFilterMode(), _cameraAlbumsLoaded) { mode, loaded -> Pair(mode, loaded) },
+        combine(preferencesRepository.getPhotoFilterMode(), _cameraAlbumsLoaded, preferencesRepository.getCardZoomEnabled()) { mode, loaded, zoom -> Triple(mode, loaded, zoom) },
         if (isDailyTask) getDailyTaskStatusUseCase() else flowOf(null)
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         var photos = values[0] as List<PhotoEntity>
-        val isLoading = values[1] as Boolean
-        val isSyncing = values[2] as Boolean
-        val currentIndex = values[3] as Int
-        val lastAction = values[4] as SortAction?
-        val combined = values[5] as Triple<String?, SortCounters, ComboState>
-        val viewMode = values[6] as FlowSorterViewMode
-        val selectionAndSortAndCols = values[7] as Triple<Set<String>, PhotoSortOrder, Int>
-        val filterAndLoaded = values[8] as Pair<PhotoFilterMode, Boolean>
-        val dailyStatus = values[9] as com.example.photozen.domain.usecase.DailyTaskStatus?
+        val realUnsortedCount = values[1] as Int  // Real count from COUNT query (not limited)
+        val isLoading = values[2] as Boolean
+        val isSyncing = values[3] as Boolean
+        val currentIndex = values[4] as Int
+        val lastAction = values[5] as SortAction?
+        val combined = values[6] as Triple<String?, SortCounters, ComboState>
+        val viewMode = values[7] as FlowSorterViewMode
+        val selectionAndSortAndCols = values[8] as Triple<Set<String>, PhotoSortOrder, Int>
+        @Suppress("UNCHECKED_CAST")
+        val filterLoadedZoom = values[9] as Triple<PhotoFilterMode, Boolean, Boolean>
+        val dailyStatus = values[10] as com.example.photozen.domain.usecase.DailyTaskStatus?
         
         val error = combined.first
         val counters = combined.second
@@ -287,8 +343,9 @@ class FlowSorterViewModel @Inject constructor(
         val selectedIds = selectionAndSortAndCols.first
         val sortOrder = selectionAndSortAndCols.second
         val gridColumns = selectionAndSortAndCols.third
-        val filterMode = filterAndLoaded.first
-        val cameraLoaded = filterAndLoaded.second
+        val filterMode = filterLoadedZoom.first
+        val cameraLoaded = filterLoadedZoom.second
+        val cardZoomEnabled = filterLoadedZoom.third
         
         var isDailyComplete = false
         var dailyCurrent = 0
@@ -317,12 +374,26 @@ class FlowSorterViewModel @Inject constructor(
         val shouldShowLoading = isLoading || 
             ((filterMode == PhotoFilterMode.CAMERA_ONLY || filterMode == PhotoFilterMode.EXCLUDE_CAMERA) && !cameraLoaded)
         
+        // Use REAL unsorted count + sorted count for total
+        // This ensures we show the actual total, not limited by LIMIT 500
+        val realTotalCount = realUnsortedCount + counters.total
+        
+        // Use stable total count to prevent flickering during rapid swipes
+        if (_initialTotalCount.value < 0 && realTotalCount > 0) {
+            _initialTotalCount.value = realTotalCount
+        }
+        val stableTotalCount = if (_initialTotalCount.value >= 0) {
+            _initialTotalCount.value
+        } else {
+            realTotalCount
+        }
+        
         FlowSorterUiState(
             photos = sortedPhotos,
             currentIndex = 0, // Always 0 since we remove sorted photos from list
             isLoading = shouldShowLoading && sortedPhotos.isEmpty(),
             isSyncing = isSyncing,
-            totalCount = sortedPhotos.size + counters.total,
+            totalCount = stableTotalCount,
             sortedCount = counters.total,
             keepCount = counters.keep,
             trashCount = counters.trash,
@@ -339,7 +410,8 @@ class FlowSorterViewModel @Inject constructor(
             isDailyTask = isDailyTask,
             dailyTaskTarget = targetCount,
             dailyTaskCurrent = dailyCurrent,
-            isDailyTaskComplete = isDailyComplete
+            isDailyTaskComplete = isDailyComplete,
+            cardZoomEnabled = cardZoomEnabled
         )
     }.stateIn(
         scope = viewModelScope,
@@ -399,6 +471,8 @@ class FlowSorterViewModel @Inject constructor(
                 if (result.isInitialSync) {
                     // Reset counters on initial sync
                     _counters.value = SortCounters()
+                    // Reset initial total count to recalculate on next photos load
+                    _initialTotalCount.value = -1
                 }
             } catch (e: Exception) {
                 _error.value = "同步失败: ${e.message}"
@@ -410,72 +484,107 @@ class FlowSorterViewModel @Inject constructor(
     }
     
     /**
+     * Keep a photo by ID.
+     * CRITICAL: This method uses the provided photoId instead of currentPhoto,
+     * ensuring correct photo is processed during rapid swiping.
+     * @param photoId The ID of the photo to keep
+     * @return The current combo count after sorting
+     */
+    fun keepPhoto(photoId: String): Int {
+        if (photoId.isEmpty()) return 0
+        val comboCount = updateCombo()
+        viewModelScope.launch {
+            try {
+                sortPhotoUseCase.keepPhoto(photoId)
+                _lastAction.value = SortAction(photoId, PhotoStatus.KEEP)
+                _counters.value = _counters.value.copy(keep = _counters.value.keep + 1)
+                preferencesRepository.incrementSortedCount()
+                preferencesRepository.incrementKeepCount()
+                // Update widget immediately after sorting
+                widgetUpdater.updateDailyProgressWidgets()
+            } catch (e: Exception) {
+                _error.value = "操作失败: ${e.message}"
+            }
+        }
+        return comboCount
+    }
+    
+    /**
+     * Trash a photo by ID.
+     * @param photoId The ID of the photo to trash
+     * @return The current combo count after sorting
+     */
+    fun trashPhoto(photoId: String): Int {
+        if (photoId.isEmpty()) return 0
+        val comboCount = updateCombo()
+        viewModelScope.launch {
+            try {
+                sortPhotoUseCase.trashPhoto(photoId)
+                _lastAction.value = SortAction(photoId, PhotoStatus.TRASH)
+                _counters.value = _counters.value.copy(trash = _counters.value.trash + 1)
+                preferencesRepository.incrementSortedCount()
+                preferencesRepository.incrementTrashCount()
+                // Update widget immediately after sorting
+                widgetUpdater.updateDailyProgressWidgets()
+            } catch (e: Exception) {
+                _error.value = "操作失败: ${e.message}"
+            }
+        }
+        return comboCount
+    }
+    
+    /**
+     * Mark a photo as Maybe by ID.
+     * @param photoId The ID of the photo to mark as maybe
+     * @return The current combo count after sorting
+     */
+    fun maybePhoto(photoId: String): Int {
+        if (photoId.isEmpty()) return 0
+        val comboCount = updateCombo()
+        viewModelScope.launch {
+            try {
+                sortPhotoUseCase.maybePhoto(photoId)
+                _lastAction.value = SortAction(photoId, PhotoStatus.MAYBE)
+                _counters.value = _counters.value.copy(maybe = _counters.value.maybe + 1)
+                preferencesRepository.incrementSortedCount()
+                preferencesRepository.incrementMaybeCount()
+                // Update widget immediately after sorting
+                widgetUpdater.updateDailyProgressWidgets()
+            } catch (e: Exception) {
+                _error.value = "操作失败: ${e.message}"
+            }
+        }
+        return comboCount
+    }
+    
+    /**
      * Keep the current photo (swipe right).
+     * @deprecated Use keepPhoto(photoId) instead for reliable operation during rapid swiping.
      * @return The current combo count after sorting
      */
     fun keepCurrentPhoto(): Int {
         val photo = uiState.value.currentPhoto ?: return 0
-        // Update combo first for immediate feedback
-        val comboCount = updateCombo()
-        viewModelScope.launch {
-            try {
-                sortPhotoUseCase.keepPhoto(photo.id)
-                _lastAction.value = SortAction(photo.id, PhotoStatus.KEEP)
-                _counters.value = _counters.value.copy(keep = _counters.value.keep + 1)
-                // Increment cumulative sort count and keep count
-                preferencesRepository.incrementSortedCount()
-                preferencesRepository.incrementKeepCount()
-            } catch (e: Exception) {
-                _error.value = "操作失败: ${e.message}"
-            }
-        }
-        return comboCount
+        return keepPhoto(photo.id)
     }
     
     /**
      * Trash the current photo (swipe up).
+     * @deprecated Use trashPhoto(photoId) instead for reliable operation during rapid swiping.
      * @return The current combo count after sorting
      */
     fun trashCurrentPhoto(): Int {
         val photo = uiState.value.currentPhoto ?: return 0
-        // Update combo first for immediate feedback
-        val comboCount = updateCombo()
-        viewModelScope.launch {
-            try {
-                sortPhotoUseCase.trashPhoto(photo.id)
-                _lastAction.value = SortAction(photo.id, PhotoStatus.TRASH)
-                _counters.value = _counters.value.copy(trash = _counters.value.trash + 1)
-                // Increment cumulative sort count and trash count
-                preferencesRepository.incrementSortedCount()
-                preferencesRepository.incrementTrashCount()
-            } catch (e: Exception) {
-                _error.value = "操作失败: ${e.message}"
-            }
-        }
-        return comboCount
+        return trashPhoto(photo.id)
     }
     
     /**
      * Mark current photo as Maybe (swipe down).
+     * @deprecated Use maybePhoto(photoId) instead for reliable operation during rapid swiping.
      * @return The current combo count after sorting
      */
     fun maybeCurrentPhoto(): Int {
         val photo = uiState.value.currentPhoto ?: return 0
-        // Update combo first for immediate feedback
-        val comboCount = updateCombo()
-        viewModelScope.launch {
-            try {
-                sortPhotoUseCase.maybePhoto(photo.id)
-                _lastAction.value = SortAction(photo.id, PhotoStatus.MAYBE)
-                _counters.value = _counters.value.copy(maybe = _counters.value.maybe + 1)
-                // Increment cumulative sort count and maybe count
-                preferencesRepository.incrementSortedCount()
-                preferencesRepository.incrementMaybeCount()
-            } catch (e: Exception) {
-                _error.value = "操作失败: ${e.message}"
-            }
-        }
-        return comboCount
+        return maybePhoto(photo.id)
     }
     
     /**

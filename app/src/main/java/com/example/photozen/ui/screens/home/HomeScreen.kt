@@ -218,28 +218,9 @@ fun HomeScreen(
             
             // Action Cards
             if (!uiState.isLoading) {
-                // Mission Card - Start Flow (The main workflow experience) - ALWAYS at top
-                if (uiState.filteredUnsorted > 0) {
-                    MissionCard(
-                        unsortedCount = uiState.filteredUnsorted,
-                        sortedCount = uiState.filteredSorted,
-                        totalCount = uiState.filteredTotal,
-                        progress = uiState.filteredProgress,
-                        filterMode = uiState.photoFilterMode,
-                        onStartFlow = {
-                            // Check if custom filter selection is needed before starting Flow
-                            if (uiState.needsFilterSelection) {
-                                onNavigateToFilterSelection("workflow", -1)
-                            } else {
-                                onNavigateToWorkflow(false, -1)
-                            }
-                        }
-                    )
-                }
-                
-                // Daily Task Card
+                // Daily Task Card - Now the PRIMARY prominent card at top
                 if (uiState.dailyTaskStatus?.isEnabled == true) {
-                    DailyTaskCard(
+                    PrimaryDailyTaskCard(
                         status = uiState.dailyTaskStatus!!,
                         onStartClick = {
                             val mode = uiState.dailyTaskStatus!!.mode
@@ -256,6 +237,25 @@ fun HomeScreen(
                                 } else {
                                     onNavigateToFlowSorter(true, target)
                                 }
+                            }
+                        }
+                    )
+                }
+                
+                // Mission Card - Now the SECONDARY card
+                if (uiState.filteredUnsorted > 0) {
+                    SecondaryMissionCard(
+                        unsortedCount = uiState.filteredUnsorted,
+                        sortedCount = uiState.filteredSorted,
+                        totalCount = uiState.filteredTotal,
+                        progress = uiState.filteredProgress,
+                        filterMode = uiState.photoFilterMode,
+                        onStartFlow = {
+                            // Check if custom filter selection is needed before starting Flow
+                            if (uiState.needsFilterSelection) {
+                                onNavigateToFilterSelection("workflow", -1)
+                            } else {
+                                onNavigateToWorkflow(false, -1)
                             }
                         }
                     )
@@ -351,97 +351,163 @@ fun HomeScreen(
 }
 
 /**
- * Daily Task Card.
+ * Primary Daily Task Card - The main prominent card (big style).
+ * Now styled like the old MissionCard.
  */
 @Composable
-private fun DailyTaskCard(
+private fun PrimaryDailyTaskCard(
     status: DailyTaskStatus,
     onStartClick: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
-        )
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+        ),
+        shape = RoundedCornerShape(20.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(20.dp)
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
             ) {
-                Icon(
-                    imageVector = Icons.Default.Assignment,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Assignment,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "每日任务",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "每日任务",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = if (status.isCompleted) "今日任务已完成！" else "保持整理习惯",
+                        text = if (status.isCompleted) "🎉 今日任务已完成！" else "保持整理习惯，每天进步一点",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 
+                // Progress percentage or completed icon
                 if (status.isCompleted) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = "Completed",
-                        tint = KeepGreen,
-                        modifier = Modifier.size(28.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(KeepGreen.copy(alpha = 0.15f))
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Completed",
+                            tint = KeepGreen,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "${(status.progress * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "${status.current} / ${status.target}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-                Text(
-                    text = "${(status.progress * 100).toInt()}%",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
+            // Progress bar
             LinearProgressIndicator(
                 progress = { status.progress },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(8.dp)
                     .clip(RoundedCornerShape(4.dp)),
-                color = if (status.isCompleted) KeepGreen else MaterialTheme.colorScheme.secondary,
+                color = if (status.isCompleted) KeepGreen else MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Stats row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                // Current - Highlighted
+                Column {
+                    Text(
+                        text = status.current.toString(),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "已完成",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                // Target
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = status.target.toString(),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "今日目标",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             
             if (!status.isCompleted) {
                 Spacer(modifier = Modifier.height(16.dp))
                 
+                // Start button
                 Button(
                     onClick = onStartClick,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("开始今日任务")
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "开始今日任务",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -579,15 +645,11 @@ private fun StatChip(
 }
 
 /**
- * Mission Card - The main "Start Flow" card for beginning a workflow session.
- * 
- * Shows:
- * - Task progress within filtered range
- * - Unsorted / Sorted / Total counts
- * - Big "Start Flow" button
+ * Secondary Mission Card - Now styled as the secondary card (smaller style).
+ * For "一站式整理" workflow.
  */
 @Composable
-private fun MissionCard(
+private fun SecondaryMissionCard(
     unsortedCount: Int,
     sortedCount: Int,
     totalCount: Int,
@@ -605,62 +667,60 @@ private fun MissionCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-        ),
-        shape = RoundedCornerShape(20.dp)
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
+        )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp)
+                .padding(16.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                Icon(
+                    imageVector = Icons.Default.Rocket,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Rocket,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "一站式整理",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = filterModeText,
+                        text = "一站式整理",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "$filterModeText · $unsortedCount 张待整理",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                // Progress percentage
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = "${(progress * 100).toInt()}%",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Progress bar
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "$sortedCount / $totalCount",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                Text(
+                    text = "${(progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
             LinearProgressIndicator(
                 progress = { progress },
                 modifier = Modifier
@@ -671,85 +731,19 @@ private fun MissionCard(
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
             
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Stats row with unsorted highlighted
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                // Unsorted - Highlighted
-                Column {
-                    Text(
-                        text = unsortedCount.toString(),
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "待整理",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                // Sorted
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = sortedCount.toString(),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = KeepGreen
-                    )
-                    Text(
-                        text = "已整理",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                // Total
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = totalCount.toString(),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "总计",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-            }
-            
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Start Flow button
             Button(
                 onClick = onStartFlow,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                ),
-                shape = RoundedCornerShape(12.dp)
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = null,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "进入心流",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                Text("进入心流")
             }
         }
     }

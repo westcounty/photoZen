@@ -41,8 +41,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
+import coil3.compose.SubcomposeAsyncImage
+import coil3.compose.SubcomposeAsyncImageContent
 import coil3.request.ImageRequest
-import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
@@ -108,12 +110,13 @@ fun PhotoCard(
                     )
             ) {
                 // Photo with preserved aspect ratio
-                // Optimized for faster loading: no crossfade, with cache key
-                AsyncImage(
+                // Use SubcomposeAsyncImage to show a placeholder background while loading
+                // This prevents the "flash to black" issue when transitioning between cards
+                SubcomposeAsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
                         .data(Uri.parse(photo.systemUri))
                         .memoryCacheKey(photo.id) // Use photo.id for better cache hits
-                        // No crossfade for instant display
+                        .diskCacheKey(photo.id) // Also use for disk cache
                         .build(),
                     contentDescription = photo.displayName,
                     contentScale = ContentScale.Fit,
@@ -121,9 +124,34 @@ fun PhotoCard(
                         .fillMaxWidth()
                         .aspectRatio(aspectRatio.coerceIn(0.3f, 3f))
                         .clip(RoundedCornerShape(16.dp))
-                )
+                        // Add a subtle background so there's no "black flash" while loading
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    when (painter.state) {
+                        is AsyncImagePainter.State.Loading -> {
+                            // Show a subtle loading placeholder
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                            )
+                        }
+                        is AsyncImagePainter.State.Error -> {
+                            // Show error state
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.errorContainer)
+                            )
+                        }
+                        else -> {
+                            // Show the actual image
+                            SubcomposeAsyncImageContent()
+                        }
+                    }
+                }
                 
-                // Tap hint badge - Always visible (not dependent on image load state)
+                // Tap hint badge - Only shown when zoom is enabled
                 if (onPhotoClick != null) {
                     Box(
                         modifier = Modifier

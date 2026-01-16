@@ -88,11 +88,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.rotate
 import kotlinx.coroutines.delay
 import kotlin.random.Random
-import android.net.Uri
-import androidx.compose.ui.platform.LocalContext
-import coil3.ImageLoader
-import coil3.request.ImageRequest
-import coil3.imageLoader
 
 /**
  * Flow Sorter Screen - Tinder-style swipe interface for sorting photos.
@@ -269,22 +264,9 @@ fun FlowSorterScreen(
                         containerColor = MaterialTheme.colorScheme.surface
                     )
                 )
-            },
-            bottomBar = {
-                // Batch action bar when in selection mode
-                AnimatedVisibility(
-                    visible = uiState.isSelectionMode,
-                    enter = slideInVertically { it },
-                    exit = slideOutVertically { it }
-                ) {
-                    BatchActionBar(
-                        selectedCount = uiState.selectedCount,
-                        onKeep = { viewModel.keepSelectedPhotos() },
-                        onTrash = { viewModel.trashSelectedPhotos() },
-                        onMaybe = { viewModel.maybeSelectedPhotos() }
-                    )
-                }
             }
+            // NOTE: bottomBar is NOT added here because FlowSorterContent already has BatchActionBar
+            // Adding it here would cause duplicate action bars in list view
         ) { paddingValues ->
             Column(
                 modifier = Modifier
@@ -429,36 +411,29 @@ fun FlowSorterContent(
                         Box(modifier = Modifier.fillMaxSize()) {
                             CardStack(
                                 uiState = uiState,
-                                onSwipeLeft = {
-                                    // Left swipe = Keep
-                                    val photoId = uiState.currentPhoto?.id ?: ""
-                                    val combo = viewModel.keepCurrentPhoto()
+                                onSwipeLeft = { photoId ->
+                                    // Left swipe = Keep - use photoId from callback
+                                    val combo = viewModel.keepPhoto(photoId)
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
                                     onPhotoSorted?.invoke(photoId, PhotoStatus.KEEP, combo)
                                 },
-                                onSwipeRight = {
-                                    // Right swipe = Keep
-                                    val photoId = uiState.currentPhoto?.id ?: ""
-                                    val combo = viewModel.keepCurrentPhoto()
+                                onSwipeRight = { photoId ->
+                                    // Right swipe = Keep - use photoId from callback
+                                    val combo = viewModel.keepPhoto(photoId)
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
                                     onPhotoSorted?.invoke(photoId, PhotoStatus.KEEP, combo)
                                 },
-                                onSwipeUp = {
-                                    // Up swipe = Trash
-                                    val photoId = uiState.currentPhoto?.id ?: ""
-                                    val combo = viewModel.trashCurrentPhoto()
+                                onSwipeUp = { photoId ->
+                                    // Up swipe = Trash - use photoId from callback
+                                    val combo = viewModel.trashPhoto(photoId)
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
                                     onPhotoSorted?.invoke(photoId, PhotoStatus.TRASH, combo)
                                 },
-                                onSwipeDown = {
-                                    // Down swipe = Maybe (sinking into pending pool)
-                                    val photoId = uiState.currentPhoto?.id ?: ""
-                                    val combo = viewModel.maybeCurrentPhoto()
+                                onSwipeDown = { photoId ->
+                                    // Down swipe = Maybe - use photoId from callback
+                                    val combo = viewModel.maybePhoto(photoId)
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
                                     onPhotoSorted?.invoke(photoId, PhotoStatus.MAYBE, combo)
-                                },
-                                onPhotoClick = { photo ->
-                                    fullscreenPhoto = photo
                                 }
                             )
                             
@@ -627,56 +602,26 @@ fun FlowSorterContent(
 }
 
 /**
- * Card stack showing current and next photos.
- * Includes image preloading for smoother transitions.
+ * Card stack showing current and upcoming photos with instant gesture response.
+ * 
+ * CRITICAL: Callbacks now receive the photo ID of the swiped card.
+ * This ensures the correct photo is processed even during rapid swiping.
  */
 @Composable
 private fun CardStack(
     uiState: FlowSorterUiState,
-    onSwipeLeft: () -> Unit,
-    onSwipeRight: () -> Unit,
-    onSwipeUp: () -> Unit,
-    onSwipeDown: () -> Unit,
-    onPhotoClick: (PhotoEntity) -> Unit
+    onSwipeLeft: (String) -> Unit,
+    onSwipeRight: (String) -> Unit,
+    onSwipeUp: (String) -> Unit,
+    onSwipeDown: (String) -> Unit
 ) {
-    val context = LocalContext.current
-    val imageLoader = context.imageLoader
-    
-    // Preload next 3 images for smoother transitions
-    LaunchedEffect(uiState.currentPhoto?.id) {
-        // Preload images starting from index 1 (next photo) up to index 3
-        (1..3).forEach { offset ->
-            uiState.photos.getOrNull(offset)?.let { photo ->
-                val request = ImageRequest.Builder(context)
-                    .data(Uri.parse(photo.systemUri))
-                    .memoryCacheKey(photo.id)
-                    .build()
-                imageLoader.enqueue(request)
-            }
-        }
-    }
-    
-    Box(modifier = Modifier.fillMaxSize()) {
-        // Preview card (behind)
-        uiState.nextPhoto?.let { nextPhoto ->
-            PreviewPhotoCard(
-                photo = nextPhoto,
-                stackIndex = 1
-            )
-        }
-        
-        // Current card (front, swipeable)
-        uiState.currentPhoto?.let { currentPhoto ->
-            SwipeablePhotoCard(
-                photo = currentPhoto,
-                onSwipeLeft = onSwipeLeft,
-                onSwipeRight = onSwipeRight,
-                onSwipeUp = onSwipeUp,
-                onSwipeDown = onSwipeDown,
-                onPhotoClick = { onPhotoClick(currentPhoto) }
-            )
-        }
-    }
+    SwipeableCardStack(
+        photos = uiState.photos,
+        onSwipeLeft = onSwipeLeft,
+        onSwipeRight = onSwipeRight,
+        onSwipeUp = onSwipeUp,
+        onSwipeDown = onSwipeDown
+    )
 }
 
 /**

@@ -161,24 +161,28 @@ interface PhotoDao {
     
     /**
      * Get all unsorted photos for Flow Sorter.
+     * LIMITED to 500 to prevent CursorWindow overflow on devices with many photos.
      */
-    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY date_added DESC")
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY date_added DESC LIMIT 500")
     fun getUnsortedPhotos(): Flow<List<PhotoEntity>>
     
     /**
      * Get unsorted photos filtered by bucket IDs (for camera only / exclude camera).
+     * LIMITED to 500 to prevent CursorWindow overflow.
      */
-    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) ORDER BY date_added DESC")
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) ORDER BY date_added DESC LIMIT 500")
     fun getUnsortedPhotosByBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>>
     
     /**
      * Get unsorted photos excluding specific bucket IDs.
+     * LIMITED to 500 to prevent CursorWindow overflow.
      */
-    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL) ORDER BY date_added DESC")
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL) ORDER BY date_added DESC LIMIT 500")
     fun getUnsortedPhotosExcludingBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>>
     
     /**
      * Get unsorted photos filtered by bucket IDs and date range.
+     * LIMITED to 500 to prevent CursorWindow overflow.
      */
     @Query("""
         SELECT * FROM photos 
@@ -188,6 +192,7 @@ interface PhotoDao {
         AND (:startDate IS NULL OR date_added >= :startDate)
         AND (:endDate IS NULL OR date_added <= :endDate)
         ORDER BY date_added DESC
+        LIMIT 500
     """)
     fun getUnsortedPhotosFiltered(
         bucketIds: List<String>?,

@@ -25,6 +25,9 @@ interface DailyStatsDao {
     @Query("UPDATE daily_stats SET count = count + :increment WHERE date = :date")
     suspend fun incrementCount(date: String, increment: Int)
     
+    @Query("UPDATE daily_stats SET target = :target WHERE date = :date")
+    suspend fun updateTarget(date: String, target: Int)
+    
     @Query("SELECT * FROM daily_stats")
     fun getAllStats(): Flow<List<DailyStats>>
 }

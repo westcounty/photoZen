@@ -1,7 +1,7 @@
 # PhotoZen 图禅 📷
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-1.0.0.001-blue" alt="Version">
+  <img src="https://img.shields.io/badge/Version-1.1.0.018-blue" alt="Version">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?logo=android" alt="Platform">
   <img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF?logo=kotlin" alt="Kotlin">
   <img src="https://img.shields.io/badge/Min%20SDK-26-brightgreen" alt="Min SDK">
@@ -98,6 +98,16 @@ cd photoZen
 ## 📋 版本历史
 
 查看完整更新日志：[CHANGELOG.md](CHANGELOG.md)
+
+### v1.1.0.018 (2026-01-17)
+🚀 **体验优化版本！**
+
+- **每日任务升级**：首页突出显示，成为核心入口
+- **快速滑动优化**：彻底解决快速滑动崩溃问题
+- **进度显示修复**：分母显示真实总数，不再受限
+- **动画流畅度**：恢复丝滑的Spring动画效果
+- **桌面小组件**：每日任务进度实时更新
+- **默认设置优化**：每日任务默认快速整理模式，默认晚上10点提醒
 
 ### v1.0.0.001 (2026-01-16)
 🎉 **第一个正式版本！**

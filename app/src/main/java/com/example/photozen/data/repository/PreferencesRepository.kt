@@ -84,6 +84,9 @@ class PreferencesRepository @Inject constructor(
         val KEY_GRID_COLUMNS_TAGGED = intPreferencesKey("grid_columns_tagged")
         val KEY_GRID_COLUMNS_FLOW = intPreferencesKey("grid_columns_flow")
         
+        // Feature settings
+        val KEY_CARD_ZOOM_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("card_zoom_enabled")
+        
         // Achievement keys
         val KEY_TAGGED_COUNT = intPreferencesKey("total_tagged_count")
         val KEY_MAX_COMBO = intPreferencesKey("max_combo")
@@ -182,11 +185,11 @@ class PreferencesRepository @Inject constructor(
     }
     
     fun getDailyTaskMode(): Flow<DailyTaskMode> = dataStore.data.map { preferences ->
-        val modeStr = preferences[KEY_DAILY_TASK_MODE] ?: DailyTaskMode.FLOW.name
+        val modeStr = preferences[KEY_DAILY_TASK_MODE] ?: DailyTaskMode.QUICK.name
         try {
             DailyTaskMode.valueOf(modeStr)
         } catch (e: IllegalArgumentException) {
-            DailyTaskMode.FLOW
+            DailyTaskMode.QUICK
         }
     }
     
@@ -197,7 +200,7 @@ class PreferencesRepository @Inject constructor(
     }
     
     fun getDailyReminderEnabled(): Flow<Boolean> = dataStore.data.map { preferences ->
-        preferences[KEY_DAILY_REMINDER_ENABLED] ?: false
+        preferences[KEY_DAILY_REMINDER_ENABLED] ?: true  // Default enabled
     }
     
     suspend fun setDailyReminderEnabled(enabled: Boolean) {
@@ -207,7 +210,7 @@ class PreferencesRepository @Inject constructor(
     }
     
     fun getDailyReminderTime(): Flow<Pair<Int, Int>> = dataStore.data.map { preferences ->
-        val hour = preferences[KEY_DAILY_REMINDER_HOUR] ?: 20
+        val hour = preferences[KEY_DAILY_REMINDER_HOUR] ?: 22  // Default 10 PM
         val minute = preferences[KEY_DAILY_REMINDER_MINUTE] ?: 0
         Pair(hour, minute)
     }
@@ -267,6 +270,25 @@ class PreferencesRepository @Inject constructor(
         }
     }
 
+    // ==================== FEATURE SETTINGS ====================
+    
+    /**
+     * Get whether card zoom (click to enlarge) is enabled.
+     * Default is true.
+     */
+    fun getCardZoomEnabled(): Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[KEY_CARD_ZOOM_ENABLED] ?: true
+    }
+    
+    /**
+     * Set card zoom enabled state.
+     */
+    suspend fun setCardZoomEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[KEY_CARD_ZOOM_ENABLED] = enabled
+        }
+    }
+    
     // ==================== EXTERNAL APP SETTINGS ====================
     
     /**

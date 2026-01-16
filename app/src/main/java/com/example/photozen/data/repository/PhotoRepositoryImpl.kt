@@ -335,6 +335,17 @@ class PhotoRepositoryImpl @Inject constructor(
         }
     }
     
+    override suspend fun updateDailyStatsTarget(target: Int) {
+        val today = getTodayDateString()
+        val existing = dailyStatsDao.getStatsByDateOneShot(today)
+        if (existing != null) {
+            // Update the target in the existing record
+            dailyStatsDao.updateTarget(today, target)
+        }
+        // If no record exists for today, it will be created with the correct target
+        // when the user starts sorting photos (via incrementDailyStats)
+    }
+    
     private fun getTodayDateString(): String {
         return java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
             .format(java.util.Date())

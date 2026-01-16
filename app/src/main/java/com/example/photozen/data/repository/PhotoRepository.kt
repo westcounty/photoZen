@@ -287,4 +287,10 @@ interface PhotoRepository {
      * Increment daily stats count for today.
      */
     suspend fun incrementDailyStats(amount: Int = 1)
+    
+    /**
+     * Update daily stats target for today.
+     * Should be called when user changes their daily target setting.
+     */
+    suspend fun updateDailyStatsTarget(target: Int)
 }

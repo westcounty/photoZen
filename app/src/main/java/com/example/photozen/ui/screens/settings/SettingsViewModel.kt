@@ -4,11 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.repository.DailyTaskMode
 import com.example.photozen.data.repository.PhotoFilterMode
+import com.example.photozen.data.repository.PhotoRepository
 import com.example.photozen.data.repository.PreferencesRepository
+import com.example.photozen.data.source.Album
+import com.example.photozen.data.source.MediaStoreDataSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
@@ -35,6 +39,7 @@ data class SettingsUiState(
     val widgetCustomAlbumIds: Set<String> = emptySet(),
     val widgetStartDate: Long? = null,
     val widgetEndDate: Long? = null,
+    val cardZoomEnabled: Boolean = true,
     val error: String? = null
 )
 
@@ -53,10 +58,30 @@ private data class InternalState(
 class SettingsViewModel @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
     private val alarmScheduler: AlarmScheduler,
-    private val widgetUpdater: WidgetUpdater
+    private val widgetUpdater: WidgetUpdater,
+    private val mediaStoreDataSource: MediaStoreDataSource,
+    private val photoRepository: PhotoRepository
 ) : ViewModel() {
     
     private val _internalState = MutableStateFlow(InternalState())
+    
+    // Albums list for widget settings
+    private val _albums = MutableStateFlow<List<Album>>(emptyList())
+    val albums: StateFlow<List<Album>> = _albums.asStateFlow()
+    
+    init {
+        loadAlbums()
+    }
+    
+    private fun loadAlbums() {
+        viewModelScope.launch {
+            try {
+                _albums.value = mediaStoreDataSource.getAllAlbums()
+            } catch (e: Exception) {
+                _internalState.update { it.copy(error = "加载相册失败: ${e.message}") }
+            }
+        }
+    }
     
     // Combine widget settings separately
     private val widgetSettingsFlow = combine(
@@ -76,6 +101,7 @@ class SettingsViewModel @Inject constructor(
         preferencesRepository.getDailyReminderEnabled(),
         preferencesRepository.getDailyReminderTime(),
         widgetSettingsFlow,
+        preferencesRepository.getCardZoomEnabled(),
         _internalState
     ) { params ->
         val totalSorted = params[0] as Int
@@ -84,10 +110,12 @@ class SettingsViewModel @Inject constructor(
         val dailyTarget = params[3] as Int
         val dailyMode = params[4] as DailyTaskMode
         val reminderEnabled = params[5] as Boolean
+        @Suppress("UNCHECKED_CAST")
         val reminderTime = params[6] as Pair<Int, Int>
         @Suppress("UNCHECKED_CAST")
         val widgetSettings = params[7] as Triple<WidgetPhotoSource, Set<String>, Pair<Long?, Long?>>
-        val internal = params[8] as InternalState
+        val cardZoomEnabled = params[8] as Boolean
+        val internal = params[9] as InternalState
         
         SettingsUiState(
             totalSorted = totalSorted,
@@ -101,6 +129,7 @@ class SettingsViewModel @Inject constructor(
             widgetCustomAlbumIds = widgetSettings.second,
             widgetStartDate = widgetSettings.third.first,
             widgetEndDate = widgetSettings.third.second,
+            cardZoomEnabled = cardZoomEnabled,
             error = internal.error
         )
     }.stateIn(
@@ -129,6 +158,8 @@ class SettingsViewModel @Inject constructor(
     fun setDailyTaskTarget(target: Int) {
         viewModelScope.launch {
             preferencesRepository.setDailyTaskTarget(target)
+            // Also update the DailyStats table for today to keep target in sync
+            photoRepository.updateDailyStatsTarget(target)
             // Update widgets to reflect new target
             widgetUpdater.updateDailyProgressWidgets()
         }
@@ -162,29 +193,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    fun setWidgetPhotoSource(source: WidgetPhotoSource) {
-        viewModelScope.launch {
-            preferencesRepository.setWidgetPhotoSource(source)
-            // Update widgets to reflect new source
-            widgetUpdater.updatePhotoSorterWidgets()
-        }
-    }
-    
-    fun setWidgetCustomAlbumIds(albumIds: Set<String>) {
-        viewModelScope.launch {
-            preferencesRepository.setWidgetCustomAlbumIds(albumIds)
-            // Update widgets to reflect new album selection
-            widgetUpdater.updatePhotoSorterWidgets()
-        }
-    }
-    
-    fun setWidgetDateRange(startDate: Long?, endDate: Long?) {
-        viewModelScope.launch {
-            preferencesRepository.setWidgetDateRange(startDate, endDate)
-            // Update widgets to reflect new date range
-            widgetUpdater.updatePhotoSorterWidgets()
-        }
-    }
     
     fun clearError() {
         _internalState.update { it.copy(error = null) }

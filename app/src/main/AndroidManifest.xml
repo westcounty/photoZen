@@ -50,9 +50,6 @@
             android:name=".receiver.DailyReminderReceiver"
             android:exported="false" />
         <receiver 
-            android:name=".receiver.WidgetActionReceiver"
-            android:exported="false" />
-        <receiver 
             android:name=".receiver.BootReceiver"
             android:exported="true">
             <intent-filter>
@@ -73,17 +70,6 @@
                 android:resource="@xml/daily_progress_widget_info" />
         </receiver>
         
-        <receiver
-            android:name=".widget.PhotoSorterWidget"
-            android:exported="false"
-            android:label="桌面整理">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/photo_sorter_widget_info" />
-        </receiver>
     </application>
 
 </manifest>
