@@ -24,7 +24,19 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.TimeInput
+import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.material3.TimePicker
+import com.example.photozen.data.repository.DailyTaskMode
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -119,6 +131,18 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Daily Task Settings Section
+            SectionTitle(title = "每日任务")
+            
+            DailyTaskSettingsCard(
+                uiState = uiState,
+                onEnabledChange = { viewModel.setDailyTaskEnabled(it) },
+                onTargetChange = { viewModel.setDailyTaskTarget(it) },
+                onModeChange = { viewModel.setDailyTaskMode(it) },
+                onReminderEnabledChange = { viewModel.setDailyTaskEnabled(true); viewModel.setDailyReminderEnabled(it) },
+                onReminderTimeChange = { h, m -> viewModel.setDailyReminderTime(h, m) }
+            )
+            
             // Photo Filter Settings Section
             SectionTitle(title = "待整理照片")
             
@@ -150,6 +174,173 @@ fun SettingsScreen(
     // Changelog Dialog (Version History)
     if (showChangelogDialog) {
         ChangelogDialog(onDismiss = { showChangelogDialog = false })
+    }
+}
+
+/**
+ * Daily Task settings card.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DailyTaskSettingsCard(
+    uiState: SettingsUiState,
+    onEnabledChange: (Boolean) -> Unit,
+    onTargetChange: (Int) -> Unit,
+    onModeChange: (DailyTaskMode) -> Unit,
+    onReminderEnabledChange: (Boolean) -> Unit,
+    onReminderTimeChange: (Int, Int) -> Unit
+) {
+    var showTimePicker by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            // Header
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Assignment,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "每日整理任务",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = uiState.dailyTaskEnabled,
+                    onCheckedChange = onEnabledChange
+                )
+            }
+            
+            HorizontalDivider(modifier = Modifier.padding(bottom = 16.dp))
+            
+            if (uiState.dailyTaskEnabled) {
+                // Target Slider
+                Column(modifier = Modifier.padding(bottom = 16.dp)) {
+                    Text(
+                        text = "每日目标: ${uiState.dailyTaskTarget} 张",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Slider(
+                        value = uiState.dailyTaskTarget.toFloat(),
+                        onValueChange = { onTargetChange(it.toInt()) },
+                        valueRange = 10f..1000f,
+                        steps = 98, // (1000-10)/10 - 1
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                
+                // Mode Selection
+                Text(
+                    text = "任务模式",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    SegmentedButton(
+                        selected = uiState.dailyTaskMode == DailyTaskMode.FLOW,
+                        onClick = { onModeChange(DailyTaskMode.FLOW) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                    ) {
+                        Text("心流模式")
+                    }
+                    SegmentedButton(
+                        selected = uiState.dailyTaskMode == DailyTaskMode.QUICK,
+                        onClick = { onModeChange(DailyTaskMode.QUICK) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                    ) {
+                        Text("快速整理")
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Reminder Switch
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "每日提醒",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        if (uiState.dailyReminderEnabled) {
+                            Text(
+                                text = String.format("%02d:%02d", uiState.dailyReminderTime.first, uiState.dailyReminderTime.second),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable { showTimePicker = true }
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = uiState.dailyReminderEnabled,
+                        onCheckedChange = onReminderEnabledChange
+                    )
+                }
+            } else {
+                Text(
+                    text = "开启每日任务，养成整理好习惯",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+    
+    if (showTimePicker) {
+        val timeState = rememberTimePickerState(
+            initialHour = uiState.dailyReminderTime.first,
+            initialMinute = uiState.dailyReminderTime.second,
+            is24Hour = true
+        )
+        
+        AlertDialog(
+            onDismissRequest = { showTimePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    onReminderTimeChange(timeState.hour, timeState.minute)
+                    showTimePicker = false
+                }) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTimePicker = false }) {
+                    Text("取消")
+                }
+            },
+            text = {
+                TimePicker(state = timeState)
+            }
+        )
     }
 }
 

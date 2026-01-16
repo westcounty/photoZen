@@ -17,9 +17,14 @@ sealed interface Screen {
     
     /**
      * Flow Sorter screen - Tinder-style swipe to sort photos
+     * @param isDailyTask Whether this is a daily task session
+     * @param targetCount Target number of photos to sort (if isDailyTask)
      */
     @Serializable
-    data object FlowSorter : Screen
+    data class FlowSorter(
+        val isDailyTask: Boolean = false,
+        val targetCount: Int = -1
+    ) : Screen
     
     /**
      * Light Table screen - compare "Maybe" photos with sync zoom
@@ -56,9 +61,14 @@ sealed interface Screen {
     /**
      * Workflow screen - the immersive "Flow Tunnel" experience.
      * Guides user through: Swipe -> Compare -> Victory
+     * @param isDailyTask Whether this is a daily task session
+     * @param targetCount Target number of photos to sort (if isDailyTask)
      */
     @Serializable
-    data object Workflow : Screen
+    data class Workflow(
+        val isDailyTask: Boolean = false,
+        val targetCount: Int = -1
+    ) : Screen
     
     /**
      * Tag Bubble screen - interactive bubble graph for tag visualization.
@@ -88,8 +98,14 @@ sealed interface Screen {
     
     /**
      * Photo Filter Selection screen - choose albums and date range for custom filtering.
-     * @param mode The sorting mode: "flow" for FlowSorter, "quicktag" for QuickTag
+     * @param mode The sorting mode: "flow", "workflow", "flow_daily", "workflow_daily"
+     * @param isDailyTask Whether this is a daily task session
+     * @param targetCount Target count for daily task
      */
     @Serializable
-    data class PhotoFilterSelection(val mode: String = "flow") : Screen
+    data class PhotoFilterSelection(
+        val mode: String = "flow",
+        val isDailyTask: Boolean = false,
+        val targetCount: Int = -1
+    ) : Screen
 }

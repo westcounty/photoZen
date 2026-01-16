@@ -26,6 +26,14 @@ enum class PhotoFilterMode {
 }
 
 /**
+ * Daily Task Mode.
+ */
+enum class DailyTaskMode {
+    FLOW,  // Heart Flow Mode (Stack)
+    QUICK  // Quick Sorter Mode (Tinder-style)
+}
+
+/**
  * Repository for managing app preferences using DataStore.
  * Handles persistent storage for settings like cumulative sort count and achievements.
  */
@@ -39,6 +47,14 @@ class PreferencesRepository @Inject constructor(
         
         // Photo filter settings
         private val KEY_PHOTO_FILTER_MODE = stringPreferencesKey("photo_filter_mode")
+        
+        // Daily Task Settings
+        private val KEY_DAILY_TASK_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("daily_task_enabled")
+        private val KEY_DAILY_TASK_TARGET = intPreferencesKey("daily_task_target")
+        private val KEY_DAILY_TASK_MODE = stringPreferencesKey("daily_task_mode")
+        private val KEY_DAILY_REMINDER_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("daily_reminder_enabled")
+        private val KEY_DAILY_REMINDER_HOUR = intPreferencesKey("daily_reminder_hour")
+        private val KEY_DAILY_REMINDER_MINUTE = intPreferencesKey("daily_reminder_minute")
         
         // Default external app for opening photos
         private val KEY_DEFAULT_EXTERNAL_APP = stringPreferencesKey("default_external_app")
@@ -127,6 +143,66 @@ class PreferencesRepository @Inject constructor(
         _sessionCustomFilter.value = null
     }
     
+    // ==================== DAILY TASK SETTINGS ====================
+    
+    fun getDailyTaskEnabled(): Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[KEY_DAILY_TASK_ENABLED] ?: true
+    }
+    
+    suspend fun setDailyTaskEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[KEY_DAILY_TASK_ENABLED] = enabled
+        }
+    }
+    
+    fun getDailyTaskTarget(): Flow<Int> = dataStore.data.map { preferences ->
+        preferences[KEY_DAILY_TASK_TARGET] ?: 100
+    }
+    
+    suspend fun setDailyTaskTarget(target: Int) {
+        dataStore.edit { preferences ->
+            preferences[KEY_DAILY_TASK_TARGET] = target.coerceIn(1, 1000)
+        }
+    }
+    
+    fun getDailyTaskMode(): Flow<DailyTaskMode> = dataStore.data.map { preferences ->
+        val modeStr = preferences[KEY_DAILY_TASK_MODE] ?: DailyTaskMode.FLOW.name
+        try {
+            DailyTaskMode.valueOf(modeStr)
+        } catch (e: IllegalArgumentException) {
+            DailyTaskMode.FLOW
+        }
+    }
+    
+    suspend fun setDailyTaskMode(mode: DailyTaskMode) {
+        dataStore.edit { preferences ->
+            preferences[KEY_DAILY_TASK_MODE] = mode.name
+        }
+    }
+    
+    fun getDailyReminderEnabled(): Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[KEY_DAILY_REMINDER_ENABLED] ?: false
+    }
+    
+    suspend fun setDailyReminderEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[KEY_DAILY_REMINDER_ENABLED] = enabled
+        }
+    }
+    
+    fun getDailyReminderTime(): Flow<Pair<Int, Int>> = dataStore.data.map { preferences ->
+        val hour = preferences[KEY_DAILY_REMINDER_HOUR] ?: 20
+        val minute = preferences[KEY_DAILY_REMINDER_MINUTE] ?: 0
+        Pair(hour, minute)
+    }
+    
+    suspend fun setDailyReminderTime(hour: Int, minute: Int) {
+        dataStore.edit { preferences ->
+            preferences[KEY_DAILY_REMINDER_HOUR] = hour
+            preferences[KEY_DAILY_REMINDER_MINUTE] = minute
+        }
+    }
+
     // ==================== EXTERNAL APP SETTINGS ====================
     
     /**

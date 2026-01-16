@@ -1,5 +1,6 @@
 package com.example.photozen.ui.screens.workflow
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.entity.PhotoEntity
@@ -7,6 +8,7 @@ import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.MediaStoreDataSource
+import com.example.photozen.domain.usecase.GetDailyTaskStatusUseCase
 import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.GetUnsortedPhotosUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,7 +19,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -159,8 +160,13 @@ class WorkflowViewModel @Inject constructor(
     private val getPhotosUseCase: GetPhotosUseCase,
     private val getUnsortedPhotosUseCase: GetUnsortedPhotosUseCase,
     private val preferencesRepository: PreferencesRepository,
-    private val mediaStoreDataSource: MediaStoreDataSource
+    private val mediaStoreDataSource: MediaStoreDataSource,
+    private val savedStateHandle: SavedStateHandle,
+    private val getDailyTaskStatusUseCase: GetDailyTaskStatusUseCase
 ) : ViewModel() {
+    
+    private val isDailyTask: Boolean = savedStateHandle["isDailyTask"] ?: false
+    private val targetCount: Int = savedStateHandle["targetCount"] ?: -1
     
     private val _internalState = MutableStateFlow(InternalState())
     
@@ -247,16 +253,30 @@ class WorkflowViewModel @Inject constructor(
         _internalState,
         getFilteredUnsortedCountFlow(),
         getPhotosUseCase.getPhotosByStatus(PhotoStatus.MAYBE),
-        getPhotosUseCase.getPhotosByStatus(PhotoStatus.KEEP)
-    ) { internal, unsortedCount, maybePhotos, keepPhotos ->
+        getPhotosUseCase.getPhotosByStatus(PhotoStatus.KEEP),
+        if (isDailyTask) getDailyTaskStatusUseCase() else flowOf(null)
+    ) { internal, unsortedCount, maybePhotos, keepPhotos, dailyStatus ->
         // Filter to only session photos for COMPARE and TAGGING stages
         val sessionMaybePhotos = maybePhotos.filter { it.id in internal.stats.sessionMaybePhotoIds }
         val sessionKeepPhotos = keepPhotos.filter { it.id in internal.stats.sessionKeepPhotoIds }
         
+        var displayedUnsortedCount = unsortedCount
+        
+        // Handle Daily Task Logic for counts
+        if (isDailyTask && dailyStatus != null) {
+            val dailyCurrent = dailyStatus.current
+            val needed = (targetCount - dailyCurrent).coerceAtLeast(0)
+            
+            // Limit displayed unsorted count to what's needed
+            if (displayedUnsortedCount > needed) {
+                displayedUnsortedCount = needed
+            }
+        }
+        
         WorkflowUiState(
             currentStage = internal.currentStage,
             stats = internal.stats,
-            unsortedCount = unsortedCount,
+            unsortedCount = displayedUnsortedCount,
             maybeCount = maybePhotos.size,
             keepCount = keepPhotos.size,
             keepPhotos = keepPhotos,

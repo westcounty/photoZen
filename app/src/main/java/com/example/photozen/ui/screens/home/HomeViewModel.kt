@@ -8,6 +8,8 @@ import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.PhotoRepository
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.MediaStoreDataSource
+import com.example.photozen.domain.usecase.DailyTaskStatus
+import com.example.photozen.domain.usecase.GetDailyTaskStatusUseCase
 import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.GetUnsortedPhotosUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
@@ -41,7 +43,8 @@ data class HomeUiState(
     val syncResult: String? = null,
     val error: String? = null,
     val achievementData: AchievementData = AchievementData(),
-    val photoFilterMode: PhotoFilterMode = PhotoFilterMode.ALL
+    val photoFilterMode: PhotoFilterMode = PhotoFilterMode.ALL,
+    val dailyTaskStatus: DailyTaskStatus? = null
 ) {
     val sortedCount: Int
         get() = keepCount + trashCount + maybeCount
@@ -82,7 +85,8 @@ class HomeViewModel @Inject constructor(
     private val syncPhotosUseCase: SyncPhotosUseCase,
     private val preferencesRepository: PreferencesRepository,
     private val mediaStoreDataSource: MediaStoreDataSource,
-    private val photoRepository: PhotoRepository
+    private val photoRepository: PhotoRepository,
+    private val getDailyTaskStatusUseCase: GetDailyTaskStatusUseCase
 ) : ViewModel() {
     
     private val _hasPermission = MutableStateFlow(false)
@@ -243,10 +247,10 @@ class HomeViewModel @Inject constructor(
             _error, 
             preferencesRepository.getAllAchievementData(),
             preferencesRepository.getPhotoFilterMode(),
-            getFilteredTotalCount(),
-            getFilteredSortedCount()
-        ) { error, achievementData, filterMode, filteredTotal, filteredSorted ->
-            FilteredData(error, achievementData, filterMode, filteredTotal, filteredSorted)
+            getDailyTaskStatusUseCase(),
+            combine(getFilteredTotalCount(), getFilteredSortedCount()) { t, s -> Pair(t, s) }
+        ) { error, achievementData, filterMode, dailyTaskStatus, counts ->
+            FilteredData(error, achievementData, filterMode, counts.first, counts.second, dailyTaskStatus)
         }
     ) { values ->
         @Suppress("UNCHECKED_CAST")
@@ -265,7 +269,8 @@ class HomeViewModel @Inject constructor(
             syncResult = values[8] as String?,
             error = combined.error,
             achievementData = combined.achievementData,
-            photoFilterMode = combined.filterMode
+            photoFilterMode = combined.filterMode,
+            dailyTaskStatus = combined.dailyTaskStatus
         )
     }.stateIn(
         scope = viewModelScope,
@@ -281,7 +286,8 @@ class HomeViewModel @Inject constructor(
         val achievementData: AchievementData,
         val filterMode: PhotoFilterMode,
         val filteredTotal: Int,
-        val filteredSorted: Int
+        val filteredSorted: Int,
+        val dailyTaskStatus: DailyTaskStatus?
     )
     
     init {

@@ -47,7 +47,7 @@ fun PicZenNavHost(
         composable<Screen.Home> {
             HomeScreen(
                 onNavigateToFlowSorter = {
-                    navController.navigate(Screen.FlowSorter)
+                    navController.navigate(Screen.FlowSorter())
                 },
                 onNavigateToLightTable = {
                     navController.navigate(Screen.LightTable)
@@ -62,7 +62,7 @@ fun PicZenNavHost(
                     navController.navigate(Screen.Trash)
                 },
                 onNavigateToWorkflow = {
-                    navController.navigate(Screen.Workflow)
+                    navController.navigate(Screen.Workflow())
                 },
                 onNavigateToTagBubble = {
                     navController.navigate(Screen.TagBubble)
@@ -71,7 +71,8 @@ fun PicZenNavHost(
                     navController.navigate(Screen.Achievements)
                 },
                 onNavigateToFilterSelection = { mode ->
-                    navController.navigate(Screen.PhotoFilterSelection(mode))
+                    // For daily task modes, we might need to pass targetCount, but standard call uses defaults
+                    navController.navigate(Screen.PhotoFilterSelection(mode = mode))
                 }
             )
         }
@@ -197,10 +198,12 @@ fun PicZenNavHost(
                     // Pop filter selection and navigate to the target screen
                     navController.popBackStack()
                     when (route.mode) {
-                        "flow" -> navController.navigate(Screen.FlowSorter)
-                        "workflow" -> navController.navigate(Screen.Workflow)
+                        "flow" -> navController.navigate(Screen.FlowSorter())
+                        "workflow" -> navController.navigate(Screen.Workflow())
                         "quicktag" -> navController.navigate(Screen.QuickTag)
-                        else -> navController.navigate(Screen.FlowSorter)
+                        "flow_daily" -> navController.navigate(Screen.FlowSorter(isDailyTask = true, targetCount = route.targetCount))
+                        "workflow_daily" -> navController.navigate(Screen.Workflow(isDailyTask = true, targetCount = route.targetCount))
+                        else -> navController.navigate(Screen.FlowSorter())
                     }
                     // Note: The filter parameters are stored in PreferencesRepository
                     // for use by FlowSorter/Workflow/QuickTag

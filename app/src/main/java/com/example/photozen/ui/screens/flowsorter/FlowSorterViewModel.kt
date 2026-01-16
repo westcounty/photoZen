@@ -1,5 +1,6 @@
 package com.example.photozen.ui.screens.flowsorter
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.entity.PhotoEntity
@@ -8,6 +9,7 @@ import com.example.photozen.data.repository.CustomFilterSession
 import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.MediaStoreDataSource
+import com.example.photozen.domain.usecase.GetDailyTaskStatusUseCase
 import com.example.photozen.domain.usecase.GetUnsortedPhotosUseCase
 import com.example.photozen.domain.usecase.SortPhotoUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -99,7 +102,11 @@ data class FlowSorterUiState(
     val sortOrder: PhotoSortOrder = PhotoSortOrder.DATE_DESC,
     val gridColumns: Int = 2,
     val filterMode: PhotoFilterMode = PhotoFilterMode.ALL,
-    val cameraAlbumsLoaded: Boolean = false
+    val cameraAlbumsLoaded: Boolean = false,
+    val isDailyTask: Boolean = false,
+    val dailyTaskTarget: Int = -1,
+    val dailyTaskCurrent: Int = 0,
+    val isDailyTaskComplete: Boolean = false
 ) {
     val currentPhoto: PhotoEntity?
         get() = photos.getOrNull(currentIndex)
@@ -142,8 +149,13 @@ class FlowSorterViewModel @Inject constructor(
     private val sortPhotoUseCase: SortPhotoUseCase,
     private val syncPhotosUseCase: SyncPhotosUseCase,
     private val preferencesRepository: PreferencesRepository,
-    private val mediaStoreDataSource: MediaStoreDataSource
+    private val mediaStoreDataSource: MediaStoreDataSource,
+    private val savedStateHandle: SavedStateHandle,
+    private val getDailyTaskStatusUseCase: GetDailyTaskStatusUseCase
 ) : ViewModel() {
+    
+    private val isDailyTask: Boolean = savedStateHandle["isDailyTask"] ?: false
+    private val targetCount: Int = savedStateHandle["targetCount"] ?: -1
     
     private val _isLoading = MutableStateFlow(true)
     private val _isSyncing = MutableStateFlow(false)
@@ -199,19 +211,19 @@ class FlowSorterViewModel @Inject constructor(
                     // Must wait for camera albums to load
                     if (!params.cameraLoaded) {
                         // Return empty while loading
-                        kotlinx.coroutines.flow.flowOf(emptyList())
+                        flowOf(emptyList())
                     } else if (params.cameraIds.isNotEmpty()) {
                         getUnsortedPhotosUseCase.byBuckets(params.cameraIds)
                     } else {
                         // No camera albums found, show empty
-                        kotlinx.coroutines.flow.flowOf(emptyList())
+                        flowOf(emptyList())
                     }
                 }
                 PhotoFilterMode.EXCLUDE_CAMERA -> {
                     // Must wait for camera albums to load
                     if (!params.cameraLoaded) {
                         // Return empty while loading
-                        kotlinx.coroutines.flow.flowOf(emptyList())
+                        flowOf(emptyList())
                     } else if (params.cameraIds.isNotEmpty()) {
                         getUnsortedPhotosUseCase.excludingBuckets(params.cameraIds)
                     } else {
@@ -254,10 +266,11 @@ class FlowSorterViewModel @Inject constructor(
         combine(_error, _counters, _combo) { e, c, co -> Triple(e, c, co) },
         _viewMode,
         combine(_selectedPhotoIds, _sortOrder, _gridColumns) { ids, order, cols -> Triple(ids, order, cols) },
-        combine(preferencesRepository.getPhotoFilterMode(), _cameraAlbumsLoaded) { mode, loaded -> Pair(mode, loaded) }
+        combine(preferencesRepository.getPhotoFilterMode(), _cameraAlbumsLoaded) { mode, loaded -> Pair(mode, loaded) },
+        if (isDailyTask) getDailyTaskStatusUseCase() else flowOf(null)
     ) { values ->
         @Suppress("UNCHECKED_CAST")
-        val photos = values[0] as List<PhotoEntity>
+        var photos = values[0] as List<PhotoEntity>
         val isLoading = values[1] as Boolean
         val isSyncing = values[2] as Boolean
         val currentIndex = values[3] as Int
@@ -266,6 +279,7 @@ class FlowSorterViewModel @Inject constructor(
         val viewMode = values[6] as FlowSorterViewMode
         val selectionAndSortAndCols = values[7] as Triple<Set<String>, PhotoSortOrder, Int>
         val filterAndLoaded = values[8] as Pair<PhotoFilterMode, Boolean>
+        val dailyStatus = values[9] as com.example.photozen.domain.usecase.DailyTaskStatus?
         
         val error = combined.first
         val counters = combined.second
@@ -275,6 +289,26 @@ class FlowSorterViewModel @Inject constructor(
         val gridColumns = selectionAndSortAndCols.third
         val filterMode = filterAndLoaded.first
         val cameraLoaded = filterAndLoaded.second
+        
+        var isDailyComplete = false
+        var dailyCurrent = 0
+        
+        // Handle Daily Task Logic
+        if (isDailyTask && dailyStatus != null) {
+            dailyCurrent = dailyStatus.current
+            val needed = (targetCount - dailyCurrent).coerceAtLeast(0)
+            
+            if (needed == 0) {
+                isDailyComplete = true
+            }
+            
+            // Limit photos to needed count + buffer (to avoid empty list flickering if close)
+            // But requirement says "list only loads corresponding number of photos".
+            // If needed is 5, we show 5.
+            if (photos.size > needed) {
+                photos = photos.take(needed)
+            }
+        }
         
         // Apply sorting to photos
         val sortedPhotos = applySortOrder(photos, sortOrder)
@@ -301,7 +335,11 @@ class FlowSorterViewModel @Inject constructor(
             sortOrder = sortOrder,
             gridColumns = gridColumns,
             filterMode = filterMode,
-            cameraAlbumsLoaded = cameraLoaded
+            cameraAlbumsLoaded = cameraLoaded,
+            isDailyTask = isDailyTask,
+            dailyTaskTarget = targetCount,
+            dailyTaskCurrent = dailyCurrent,
+            isDailyTaskComplete = isDailyComplete
         )
     }.stateIn(
         scope = viewModelScope,

@@ -8,6 +8,8 @@ import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import com.example.photozen.data.local.dao.PhotoDao
+import com.example.photozen.data.local.dao.DailyStatsDao
+import com.example.photozen.data.local.entity.DailyStats
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.local.entity.PhotoWithTags
 import com.example.photozen.data.model.CropState
@@ -27,6 +29,7 @@ import javax.inject.Singleton
 @Singleton
 class PhotoRepositoryImpl @Inject constructor(
     private val photoDao: PhotoDao,
+    private val dailyStatsDao: DailyStatsDao,
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val dataStore: DataStore<Preferences>
 ) : PhotoRepository {
@@ -257,26 +260,64 @@ class PhotoRepositoryImpl @Inject constructor(
         return mediaStoreDataSource.getFilteredPhotoCount(filter)
     }
     
+    // ==================== DAILY STATS ====================
+    
+    override fun getDailyStats(date: String): Flow<DailyStats?> {
+        return dailyStatsDao.getStatsByDate(date)
+    }
+    
+    override suspend fun incrementDailyStats(amount: Int) {
+        val today = getTodayDateString()
+        
+        // Ensure record exists
+        val existing = dailyStatsDao.getStatsByDateOneShot(today)
+        if (existing == null) {
+            // Need to get target from preferences, but here we might not have easy access to PreferencesRepository methods
+            // We can just use default 100 for now, or read from DataStore manually
+            // Reading from DataStore:
+            val target = dataStore.data.first()[androidx.datastore.preferences.core.intPreferencesKey("daily_task_target")] ?: 100
+            dailyStatsDao.insertOrUpdate(DailyStats(date = today, count = 0, target = target))
+        }
+        
+        dailyStatsDao.incrementCount(today, amount)
+    }
+    
+    private fun getTodayDateString(): String {
+        return java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            .format(java.util.Date())
+    }
+
     // ==================== WRITE - Status ====================
     
     override suspend fun updatePhotoStatus(photoId: String, status: PhotoStatus) {
         photoDao.updateStatus(photoId, status)
+        // Increment daily stats if sorting (KEEP, TRASH, MAYBE)
+        if (status != PhotoStatus.UNSORTED) {
+            incrementDailyStats(1)
+        }
     }
     
     override suspend fun updatePhotoStatusBatch(photoIds: List<String>, status: PhotoStatus) {
         photoDao.updateStatusBatch(photoIds, status)
+        // Increment daily stats if sorting
+        if (status != PhotoStatus.UNSORTED) {
+            incrementDailyStats(photoIds.size)
+        }
     }
     
     override suspend fun keepPhoto(photoId: String) {
         photoDao.updateStatus(photoId, PhotoStatus.KEEP)
+        incrementDailyStats(1)
     }
     
     override suspend fun trashPhoto(photoId: String) {
         photoDao.updateStatus(photoId, PhotoStatus.TRASH)
+        incrementDailyStats(1)
     }
     
     override suspend fun maybePhoto(photoId: String) {
         photoDao.updateStatus(photoId, PhotoStatus.MAYBE)
+        incrementDailyStats(1)
     }
     
     override suspend fun resetPhotoStatus(photoId: String) {

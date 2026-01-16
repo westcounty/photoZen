@@ -269,4 +269,16 @@ interface PhotoRepository {
      * Get photos by camera model.
      */
     fun getPhotosByCameraModel(cameraModel: String): Flow<List<PhotoEntity>>
+    
+    // ==================== DAILY STATS ====================
+    
+    /**
+     * Get daily stats for a specific date.
+     */
+    fun getDailyStats(date: String): Flow<com.example.photozen.data.local.entity.DailyStats?>
+    
+    /**
+     * Increment daily stats count for today.
+     */
+    suspend fun incrementDailyStats(amount: Int = 1)
 }

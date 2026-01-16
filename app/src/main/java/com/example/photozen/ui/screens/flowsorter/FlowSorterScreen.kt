@@ -28,23 +28,20 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material.icons.filled.ViewModule
-import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -58,10 +55,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import com.example.photozen.ui.components.SelectableStaggeredPhotoGrid
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -73,19 +68,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.ui.components.ComboOverlay
 import com.example.photozen.ui.components.FullscreenPhotoViewer
-import com.example.photozen.ui.util.rememberHapticFeedbackManager
+import com.example.photozen.ui.components.SelectableStaggeredPhotoGrid
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
+import com.example.photozen.ui.util.rememberHapticFeedbackManager
 
 /**
  * Flow Sorter Screen - Tinder-style swipe interface for sorting photos.
@@ -278,369 +272,14 @@ fun FlowSorterScreen(
                     .fillMaxSize()
                     .padding(paddingValues)
             ) {
-                // Progress bar
-                if (uiState.totalCount > 0) {
-                    LinearProgressIndicator(
-                        progress = { uiState.progress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp),
-                        color = KeepGreen,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                }
-                
                 // Main content
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                ) {
-                    when {
-                        uiState.isLoading -> {
-                            LoadingContent()
-                        }
-                        uiState.isComplete -> {
-                            CompletionContent(
-                                keepCount = uiState.keepCount,
-                                trashCount = uiState.trashCount,
-                                maybeCount = uiState.maybeCount,
-                                onNavigateToLightTable = onNavigateToLightTable,
-                                onGoBack = onNavigateBack
-                            )
-                        }
-                        uiState.viewMode == FlowSorterViewMode.LIST -> {
-                            // List view with staggered grid
-                            SelectableStaggeredPhotoGrid(
-                                photos = uiState.photos,
-                                selectedIds = uiState.selectedPhotoIds,
-                                onSelectionChanged = { viewModel.updateSelection(it) },
-                                onPhotoClick = { photoId, index ->
-                                    val photo = uiState.photos.find { it.id == photoId }
-                                    if (photo != null) {
-                                        fullscreenPhoto = photo
-                                    }
-                                },
-                                columns = uiState.gridColumns
-                            )
-                        }
-                        else -> {
-                            // Card stack with combo overlay
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                CardStack(
-                                    uiState = uiState,
-                                    onSwipeLeft = {
-                                        // Left swipe = Keep
-                                        val combo = viewModel.keepCurrentPhoto()
-                                        hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                                    },
-                                    onSwipeRight = {
-                                        // Right swipe = Keep
-                                        val combo = viewModel.keepCurrentPhoto()
-                                        hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                                    },
-                                    onSwipeUp = {
-                                        // Up swipe = Trash
-                                        val combo = viewModel.trashCurrentPhoto()
-                                        hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                                    },
-                                    onSwipeDown = {
-                                        // Down swipe = Maybe (sinking into pending pool)
-                                        val combo = viewModel.maybeCurrentPhoto()
-                                        hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                                    },
-                                    onPhotoClick = { photo ->
-                                        fullscreenPhoto = photo
-                                    }
-                                )
-                                
-                                // Combo overlay - positioned at top center
-                                ComboOverlay(
-                                    comboState = uiState.combo,
-                                    modifier = Modifier
-                                        .align(Alignment.TopCenter)
-                                        .padding(top = 32.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-                
-            }
-        }
-        
-        // Fullscreen photo viewer overlay
-        AnimatedContent(
-            targetState = fullscreenPhoto,
-            transitionSpec = {
-                (fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
-                        scaleIn(initialScale = 0.92f, animationSpec = spring(stiffness = Spring.StiffnessMedium)))
-                    .togetherWith(
-                        fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
-                                scaleOut(targetScale = 0.92f, animationSpec = spring(stiffness = Spring.StiffnessMedium))
-                    )
-            },
-            label = "fullscreen"
-        ) { photo ->
-            if (photo != null) {
-                FullscreenPhotoViewer(
-                    photo = photo,
-                    onDismiss = { fullscreenPhoto = null }
+                FlowSorterContent(
+                    isWorkflowMode = false,
+                    onNavigateBack = onNavigateBack,
+                    onNavigateToLightTable = onNavigateToLightTable,
+                    viewModel = viewModel
                 )
             }
-        }
-    }
-}
-
-/**
- * Card stack showing current and next photos.
- */
-@Composable
-private fun CardStack(
-    uiState: FlowSorterUiState,
-    onSwipeLeft: () -> Unit,
-    onSwipeRight: () -> Unit,
-    onSwipeUp: () -> Unit,
-    onSwipeDown: () -> Unit,
-    onPhotoClick: (PhotoEntity) -> Unit
-) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        // Preview card (behind)
-        uiState.nextPhoto?.let { nextPhoto ->
-            PreviewPhotoCard(
-                photo = nextPhoto,
-                stackIndex = 1
-            )
-        }
-        
-        // Current card (front, swipeable)
-        uiState.currentPhoto?.let { currentPhoto ->
-            SwipeablePhotoCard(
-                photo = currentPhoto,
-                onSwipeLeft = onSwipeLeft,
-                onSwipeRight = onSwipeRight,
-                onSwipeUp = onSwipeUp,
-                onSwipeDown = onSwipeDown,
-                onPhotoClick = { onPhotoClick(currentPhoto) }
-            )
-        }
-    }
-}
-
-/**
- * Loading state content.
- */
-@Composable
-private fun LoadingContent() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator()
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "正在加载照片...",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-/**
- * Completion state content.
- */
-@Composable
-private fun CompletionContent(
-    keepCount: Int,
-    trashCount: Int,
-    maybeCount: Int,
-    onNavigateToLightTable: () -> Unit,
-    onGoBack: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        // Success icon
-        Box(
-            modifier = Modifier
-                .size(96.dp)
-                .clip(CircleShape)
-                .background(KeepGreen.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                tint = KeepGreen,
-                modifier = Modifier.size(48.dp)
-            )
-        }
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        Text(
-            text = "整理完成！",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Text(
-            text = "所有照片已分类完毕",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        
-        Spacer(modifier = Modifier.height(32.dp))
-        
-        // Statistics
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(20.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            StatItem(count = keepCount, label = "保留", color = KeepGreen)
-            StatItem(count = trashCount, label = "删除", color = TrashRed)
-            StatItem(count = maybeCount, label = "待定", color = MaybeAmber)
-        }
-        
-        Spacer(modifier = Modifier.height(32.dp))
-        
-        // Actions
-        if (maybeCount > 0) {
-            Button(
-                onClick = onNavigateToLightTable,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaybeAmber
-                )
-            ) {
-                Text(
-                    text = "查看待定照片 ($maybeCount)",
-                    color = Color.Black
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-        
-        Button(
-            onClick = onGoBack,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
-        ) {
-            Text("返回首页")
-        }
-    }
-}
-
-/**
- * Statistics item.
- */
-@Composable
-private fun StatItem(
-    count: Int,
-    label: String,
-    color: Color
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = count.toString(),
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = color
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-/**
- * Bottom action bar for batch operations.
- */
-@Composable
-private fun BatchActionBar(
-    selectedCount: Int,
-    onKeep: () -> Unit,
-    onTrash: () -> Unit,
-    onMaybe: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Keep button
-        FilledTonalButton(
-            onClick = onKeep,
-            colors = ButtonDefaults.filledTonalButtonColors(
-                containerColor = KeepGreen.copy(alpha = 0.15f),
-                contentColor = KeepGreen
-            ),
-            modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("保留")
-        }
-        
-        // Trash button
-        FilledTonalButton(
-            onClick = onTrash,
-            colors = ButtonDefaults.filledTonalButtonColors(
-                containerColor = TrashRed.copy(alpha = 0.15f),
-                contentColor = TrashRed
-            ),
-            modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("删除")
-        }
-        
-        // Maybe button
-        FilledTonalButton(
-            onClick = onMaybe,
-            colors = ButtonDefaults.filledTonalButtonColors(
-                containerColor = MaybeAmber.copy(alpha = 0.15f),
-                contentColor = MaybeAmber
-            ),
-            modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.QuestionMark,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("待定")
         }
     }
 }
@@ -652,13 +291,15 @@ private fun BatchActionBar(
  * @param onPhotoSorted Callback when a photo is sorted (with photoId, status and current combo)
  * @param onComplete Callback when all photos are sorted
  * @param onNavigateBack Callback for navigation back (standalone mode only)
+ * @param onNavigateToLightTable Callback for navigation to Light Table (standalone mode only)
  */
 @Composable
 fun FlowSorterContent(
     isWorkflowMode: Boolean = false,
-    onPhotoSorted: ((String, com.example.photozen.data.model.PhotoStatus, Int) -> Unit)? = null,
+    onPhotoSorted: ((String, PhotoStatus, Int) -> Unit)? = null,
     onComplete: (() -> Unit)? = null,
     onNavigateBack: () -> Unit,
+    onNavigateToLightTable: () -> Unit = {},
     viewModel: FlowSorterViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -688,9 +329,15 @@ fun FlowSorterContent(
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Progress bar
-            if (uiState.totalCount > 0) {
+            if (uiState.totalCount > 0 || uiState.isDailyTask) {
+                val progress = if (uiState.isDailyTask && uiState.dailyTaskTarget > 0) {
+                    uiState.dailyTaskCurrent.toFloat() / uiState.dailyTaskTarget
+                } else {
+                    uiState.progress
+                }
+                
                 LinearProgressIndicator(
-                    progress = { uiState.progress },
+                    progress = { progress },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(4.dp),
@@ -709,9 +356,9 @@ fun FlowSorterContent(
                     uiState.isLoading -> {
                         LoadingContent()
                     }
-                    uiState.isComplete -> {
-                        if (isWorkflowMode) {
-                            // In workflow mode, show minimal completion (will auto-advance)
+                    uiState.isComplete || uiState.isDailyTaskComplete -> {
+                        if (isWorkflowMode && !uiState.isDailyTaskComplete) {
+                            // In workflow mode (normal), show minimal completion (will auto-advance)
                             Box(
                                 modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center
@@ -736,7 +383,9 @@ fun FlowSorterContent(
                                 keepCount = uiState.keepCount,
                                 trashCount = uiState.trashCount,
                                 maybeCount = uiState.maybeCount,
-                                onNavigateToLightTable = { /* Not used in workflow */ },
+                                isDailyTask = uiState.isDailyTask,
+                                dailyTarget = uiState.dailyTaskTarget,
+                                onNavigateToLightTable = if (isWorkflowMode) { {} } else onNavigateToLightTable,
                                 onGoBack = onNavigateBack
                             )
                         }
@@ -766,28 +415,28 @@ fun FlowSorterContent(
                                     val photoId = uiState.currentPhoto?.id ?: ""
                                     val combo = viewModel.keepCurrentPhoto()
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                                    onPhotoSorted?.invoke(photoId, com.example.photozen.data.model.PhotoStatus.KEEP, combo)
+                                    onPhotoSorted?.invoke(photoId, PhotoStatus.KEEP, combo)
                                 },
                                 onSwipeRight = {
                                     // Right swipe = Keep
                                     val photoId = uiState.currentPhoto?.id ?: ""
                                     val combo = viewModel.keepCurrentPhoto()
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                                    onPhotoSorted?.invoke(photoId, com.example.photozen.data.model.PhotoStatus.KEEP, combo)
+                                    onPhotoSorted?.invoke(photoId, PhotoStatus.KEEP, combo)
                                 },
                                 onSwipeUp = {
                                     // Up swipe = Trash
                                     val photoId = uiState.currentPhoto?.id ?: ""
                                     val combo = viewModel.trashCurrentPhoto()
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                                    onPhotoSorted?.invoke(photoId, com.example.photozen.data.model.PhotoStatus.TRASH, combo)
+                                    onPhotoSorted?.invoke(photoId, PhotoStatus.TRASH, combo)
                                 },
                                 onSwipeDown = {
                                     // Down swipe = Maybe (sinking into pending pool)
                                     val photoId = uiState.currentPhoto?.id ?: ""
                                     val combo = viewModel.maybeCurrentPhoto()
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
-                                    onPhotoSorted?.invoke(photoId, com.example.photozen.data.model.PhotoStatus.MAYBE, combo)
+                                    onPhotoSorted?.invoke(photoId, PhotoStatus.MAYBE, combo)
                                 },
                                 onPhotoClick = { photo ->
                                     fullscreenPhoto = photo
@@ -822,7 +471,7 @@ fun FlowSorterContent(
         }
         
         // View mode toggle button - shown in top right corner for workflow mode
-        if (isWorkflowMode && !uiState.isComplete && !uiState.isLoading) {
+        if (isWorkflowMode && !uiState.isComplete && !uiState.isDailyTaskComplete && !uiState.isLoading) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -954,6 +603,261 @@ fun FlowSorterContent(
                     onDismiss = { fullscreenPhoto = null }
                 )
             }
+        }
+    }
+}
+
+/**
+ * Card stack showing current and next photos.
+ */
+@Composable
+private fun CardStack(
+    uiState: FlowSorterUiState,
+    onSwipeLeft: () -> Unit,
+    onSwipeRight: () -> Unit,
+    onSwipeUp: () -> Unit,
+    onSwipeDown: () -> Unit,
+    onPhotoClick: (PhotoEntity) -> Unit
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Preview card (behind)
+        uiState.nextPhoto?.let { nextPhoto ->
+            PreviewPhotoCard(
+                photo = nextPhoto,
+                stackIndex = 1
+            )
+        }
+        
+        // Current card (front, swipeable)
+        uiState.currentPhoto?.let { currentPhoto ->
+            SwipeablePhotoCard(
+                photo = currentPhoto,
+                onSwipeLeft = onSwipeLeft,
+                onSwipeRight = onSwipeRight,
+                onSwipeUp = onSwipeUp,
+                onSwipeDown = onSwipeDown,
+                onPhotoClick = { onPhotoClick(currentPhoto) }
+            )
+        }
+    }
+}
+
+/**
+ * Loading state content.
+ */
+@Composable
+private fun LoadingContent() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "正在加载照片...",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/**
+ * Completion state content.
+ */
+@Composable
+private fun CompletionContent(
+    keepCount: Int,
+    trashCount: Int,
+    maybeCount: Int,
+    isDailyTask: Boolean = false,
+    dailyTarget: Int = 0,
+    onNavigateToLightTable: () -> Unit,
+    onGoBack: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        // Success icon
+        Box(
+            modifier = Modifier
+                .size(96.dp)
+                .clip(CircleShape)
+                .background(KeepGreen.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = KeepGreen,
+                modifier = Modifier.size(48.dp)
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        Text(
+            text = if (isDailyTask) "今日任务完成！" else "整理完成！",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Text(
+            text = if (isDailyTask) "已达成 ${dailyTarget} 张整理目标" else "所有照片已分类完毕",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        
+        Spacer(modifier = Modifier.height(32.dp))
+        
+        // Statistics
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(20.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            StatItem(count = keepCount, label = "保留", color = KeepGreen)
+            StatItem(count = trashCount, label = "删除", color = TrashRed)
+            StatItem(count = maybeCount, label = "待定", color = MaybeAmber)
+        }
+        
+        Spacer(modifier = Modifier.height(32.dp))
+        
+        // Actions
+        if (maybeCount > 0 && !isDailyTask) {
+            Button(
+                onClick = onNavigateToLightTable,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaybeAmber
+                )
+            ) {
+                Text(
+                    text = "查看待定照片 ($maybeCount)",
+                    color = Color.Black
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+        
+        Button(
+            onClick = onGoBack,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary
+            )
+        ) {
+            Text("返回首页")
+        }
+    }
+}
+
+/**
+ * Statistics item.
+ */
+@Composable
+private fun StatItem(
+    count: Int,
+    label: String,
+    color: Color
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = color
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/**
+ * Bottom action bar for batch operations.
+ */
+@Composable
+private fun BatchActionBar(
+    selectedCount: Int,
+    onKeep: () -> Unit,
+    onTrash: () -> Unit,
+    onMaybe: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Keep button
+        FilledTonalButton(
+            onClick = onKeep,
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = KeepGreen.copy(alpha = 0.15f),
+                contentColor = KeepGreen
+            ),
+            modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("保留")
+        }
+        
+        // Trash button
+        FilledTonalButton(
+            onClick = onTrash,
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = TrashRed.copy(alpha = 0.15f),
+                contentColor = TrashRed
+            ),
+            modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("删除")
+        }
+        
+        // Maybe button
+        FilledTonalButton(
+            onClick = onMaybe,
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = MaybeAmber.copy(alpha = 0.15f),
+                contentColor = MaybeAmber
+            ),
+            modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.QuestionMark,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("待定")
         }
     }
 }

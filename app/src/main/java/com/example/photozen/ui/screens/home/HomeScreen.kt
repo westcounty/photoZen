@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
@@ -73,6 +74,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.PhotoFilterMode
+import com.example.photozen.data.repository.DailyTaskMode
+import com.example.photozen.domain.usecase.DailyTaskStatus
 import com.example.photozen.ui.components.AchievementSummaryCard
 import com.example.photozen.ui.components.generateAchievements
 import com.example.photozen.ui.theme.KeepGreen
@@ -225,6 +228,34 @@ fun HomeScreen(
                             }
                         }
                     )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                
+                // Daily Task Card
+                if (uiState.dailyTaskStatus?.isEnabled == true) {
+                    DailyTaskCard(
+                        status = uiState.dailyTaskStatus!!,
+                        onStartClick = {
+                            val mode = uiState.dailyTaskStatus!!.mode
+                            // TODO: Pass isDailyTask=true and target to navigation
+                            if (mode == DailyTaskMode.FLOW) {
+                                if (uiState.needsFilterSelection) {
+                                    onNavigateToFilterSelection("workflow_daily")
+                                } else {
+                                    onNavigateToWorkflow() // Needs arg
+                                }
+                            } else {
+                                if (uiState.needsFilterSelection) {
+                                    onNavigateToFilterSelection("flow_daily")
+                                } else {
+                                    onNavigateToFlowSorter() // Needs arg
+                                }
+                            }
+                        }
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
             
@@ -309,6 +340,104 @@ fun HomeScreen(
                         permissionLauncher.launch(permission)
                     }
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Daily Task Card.
+ */
+@Composable
+private fun DailyTaskCard(
+    status: DailyTaskStatus,
+    onStartClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Assignment,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "每日任务",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = if (status.isCompleted) "今日任务已完成！" else "保持整理习惯",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                if (status.isCompleted) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Completed",
+                        tint = KeepGreen,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "${status.current} / ${status.target}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                Text(
+                    text = "${(status.progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            LinearProgressIndicator(
+                progress = { status.progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                color = if (status.isCompleted) KeepGreen else MaterialTheme.colorScheme.secondary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+            
+            if (!status.isCompleted) {
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Button(
+                    onClick = onStartClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("开始今日任务")
+                }
             }
         }
     }

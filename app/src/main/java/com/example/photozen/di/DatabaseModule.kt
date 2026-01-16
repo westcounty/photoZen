@@ -108,4 +108,13 @@ object DatabaseModule {
     fun provideTagDao(database: AppDatabase): TagDao {
         return database.tagDao()
     }
+
+    /**
+     * Provides DailyStatsDao from the database.
+     */
+    @Provides
+    @Singleton
+    fun provideDailyStatsDao(database: AppDatabase): com.example.photozen.data.local.dao.DailyStatsDao {
+        return database.dailyStatsDao()
+    }
 }
