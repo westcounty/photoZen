@@ -45,6 +45,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
@@ -146,6 +147,11 @@ fun SettingsScreen(
                 onInfoClick = { showAboutDialog = true },
                 onVersionClick = { showChangelogDialog = true }
             )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // Feedback Link
+            FeedbackLink()
             
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -1003,23 +1009,6 @@ private fun AboutDialog(
                     title = "🏆 成就系统",
                     description = "50+ 成就等你解锁！从整理新手到传说大师，每一步都有惊喜。"
                 )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // Version click
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onVersionClick)
-                        .padding(8.dp),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = "Version 1.0.0.001",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
             }
         },
         confirmButton = {
@@ -1291,6 +1280,30 @@ private fun AcknowledgementCard(
 }
 
 /**
+ * Feedback link - Small text link to feedback page.
+ */
+@Composable
+private fun FeedbackLink() {
+    val uriHandler = LocalUriHandler.current
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = "意见反馈与功能许愿",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.clickable {
+                uriHandler.openUri("https://xhslink.com/m/2Mb9Y6fyvMS")
+            }
+        )
+    }
+}
+
+/**
  * About Card - Flat display with version info.
  */
 @Composable
@@ -1347,7 +1360,7 @@ private fun AboutCard(
             
             TextButton(onClick = onVersionClick) {
                 Text(
-                    text = "v1.0.0.001",
+                    text = "v1.1.0.018",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
