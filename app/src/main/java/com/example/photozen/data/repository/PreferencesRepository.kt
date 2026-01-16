@@ -84,6 +84,7 @@ class PreferencesRepository @Inject constructor(
         private val KEY_KEEP_COUNT = intPreferencesKey("keep_count")
         private val KEY_TRASH_COUNT = intPreferencesKey("trash_count")
         private val KEY_MAYBE_COUNT = intPreferencesKey("maybe_count")
+        private val KEY_DAILY_TASKS_COMPLETED = intPreferencesKey("daily_tasks_completed")
     }
     
     // ==================== PHOTO FILTER SETTINGS ====================
@@ -523,6 +524,25 @@ class PreferencesRepository @Inject constructor(
         }
     }
     
+    // ==================== DAILY TASKS COMPLETED ====================
+    
+    /**
+     * Get daily tasks completed count.
+     */
+    fun getDailyTasksCompleted(): Flow<Int> = dataStore.data.map { preferences ->
+        preferences[KEY_DAILY_TASKS_COMPLETED] ?: 0
+    }
+    
+    /**
+     * Increment daily tasks completed count.
+     */
+    suspend fun incrementDailyTasksCompleted() {
+        dataStore.edit { preferences ->
+            val currentCount = preferences[KEY_DAILY_TASKS_COMPLETED] ?: 0
+            preferences[KEY_DAILY_TASKS_COMPLETED] = currentCount + 1
+        }
+    }
+    
     // ==================== BUBBLE POSITIONS ====================
     
     /**
@@ -647,7 +667,8 @@ class PreferencesRepository @Inject constructor(
             consecutiveDays = preferences[KEY_CONSECUTIVE_DAYS] ?: 0,
             keepCount = preferences[KEY_KEEP_COUNT] ?: 0,
             trashCount = preferences[KEY_TRASH_COUNT] ?: 0,
-            maybeCount = preferences[KEY_MAYBE_COUNT] ?: 0
+            maybeCount = preferences[KEY_MAYBE_COUNT] ?: 0,
+            dailyTasksCompleted = preferences[KEY_DAILY_TASKS_COMPLETED] ?: 0
         )
     }
 }
@@ -669,7 +690,8 @@ data class AchievementData(
     val consecutiveDays: Int = 0,
     val keepCount: Int = 0,
     val trashCount: Int = 0,
-    val maybeCount: Int = 0
+    val maybeCount: Int = 0,
+    val dailyTasksCompleted: Int = 0
 )
 
 /**

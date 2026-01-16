@@ -25,8 +25,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
@@ -90,7 +94,8 @@ enum class AchievementCategory(val displayName: String, val icon: ImageVector) {
     EXPORTER("导出达人", Icons.Default.Save),
     EXPLORER("探索者", Icons.Default.Visibility),
     DEDICATED("坚持不懈", Icons.Default.Today),
-    MASTER("大师之路", Icons.Default.WorkspacePremium)
+    MASTER("大师之路", Icons.Default.WorkspacePremium),
+    DAILY_TASK("每日挑战", Icons.Default.Assignment)
 }
 
 /**
@@ -407,6 +412,32 @@ fun generateAchievements(data: AchievementData): List<Achievement> {
             icon = Icons.Default.Star, category = AchievementCategory.DEDICATED,
             targetValue = 7, currentValue = data.perfectDays,
             color = Color(0xFFFF9800), rarity = AchievementRarity.EPIC
+        ),
+        
+        // ==================== 每日挑战 (Daily Task) ====================
+        Achievement(
+            id = "daily_task_1", name = "每日首胜", description = "完成 1 次每日任务",
+            icon = Icons.Default.Assignment, category = AchievementCategory.DAILY_TASK,
+            targetValue = 1, currentValue = data.dailyTasksCompleted,
+            color = Color(0xFF009688), rarity = AchievementRarity.COMMON
+        ),
+        Achievement(
+            id = "daily_task_7", name = "习惯养成", description = "完成 7 次每日任务",
+            icon = Icons.Default.Assignment, category = AchievementCategory.DAILY_TASK,
+            targetValue = 7, currentValue = data.dailyTasksCompleted,
+            color = Color(0xFF009688), rarity = AchievementRarity.UNCOMMON
+        ),
+        Achievement(
+            id = "daily_task_30", name = "自律达人", description = "完成 30 次每日任务",
+            icon = Icons.Default.Assignment, category = AchievementCategory.DAILY_TASK,
+            targetValue = 30, currentValue = data.dailyTasksCompleted,
+            color = Color(0xFF009688), rarity = AchievementRarity.RARE
+        ),
+        Achievement(
+            id = "daily_task_100", name = "整理生活", description = "完成 100 次每日任务",
+            icon = Icons.Default.Assignment, category = AchievementCategory.DAILY_TASK,
+            targetValue = 100, currentValue = data.dailyTasksCompleted,
+            color = Color(0xFF009688), rarity = AchievementRarity.EPIC
         )
     )
 }

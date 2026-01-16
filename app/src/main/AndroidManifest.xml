@@ -45,6 +45,7 @@
         </activity>
         
         <receiver android:name=".receiver.DailyReminderReceiver" />
+        <receiver android:name=".receiver.WidgetActionReceiver" />
         
         <!-- Widgets -->
         <receiver

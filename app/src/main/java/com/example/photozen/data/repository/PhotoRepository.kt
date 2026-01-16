@@ -278,6 +278,12 @@ interface PhotoRepository {
     fun getDailyStats(date: String): Flow<com.example.photozen.data.local.entity.DailyStats?>
     
     /**
+     * Get a random unsorted photo for the widget.
+     * Returns null if no unsorted photos exist.
+     */
+    suspend fun getRandomUnsortedPhoto(): PhotoEntity?
+    
+    /**
      * Increment daily stats count for today.
      */
     suspend fun incrementDailyStats(amount: Int = 1)

@@ -268,18 +268,31 @@ class PhotoRepositoryImpl @Inject constructor(
     
     override suspend fun incrementDailyStats(amount: Int) {
         val today = getTodayDateString()
+        var currentStats = dailyStatsDao.getStatsByDateOneShot(today)
         
-        // Ensure record exists
-        val existing = dailyStatsDao.getStatsByDateOneShot(today)
-        if (existing == null) {
-            // Need to get target from preferences, but here we might not have easy access to PreferencesRepository methods
-            // We can just use default 100 for now, or read from DataStore manually
-            // Reading from DataStore:
+        if (currentStats == null) {
             val target = dataStore.data.first()[androidx.datastore.preferences.core.intPreferencesKey("daily_task_target")] ?: 100
-            dailyStatsDao.insertOrUpdate(DailyStats(date = today, count = 0, target = target))
+            currentStats = DailyStats(date = today, count = 0, target = target)
+            dailyStatsDao.insertOrUpdate(currentStats)
         }
         
+        val newCount = currentStats.count + amount
+        
         dailyStatsDao.incrementCount(today, amount)
+        
+        // Check if daily task target is reached (exactly or crossed)
+        if (currentStats.count < currentStats.target && newCount >= currentStats.target) {
+            dataStore.edit { prefs ->
+                val currentCompleted = prefs[androidx.datastore.preferences.core.intPreferencesKey("daily_tasks_completed")] ?: 0
+                prefs[androidx.datastore.preferences.core.intPreferencesKey("daily_tasks_completed")] = currentCompleted + 1
+            }
+        }
+    }
+    
+    override suspend fun getRandomUnsortedPhoto(): PhotoEntity? {
+        // Since we don't have a direct DAO method for random, we can fetch page 1 and pick random
+        // or add a DAO method. Let's add a DAO method for efficiency.
+        return photoDao.getRandomUnsortedPhoto()
     }
     
     private fun getTodayDateString(): String {

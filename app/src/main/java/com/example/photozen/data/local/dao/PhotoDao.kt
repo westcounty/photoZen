@@ -99,6 +99,13 @@ interface PhotoDao {
     @Query("DELETE FROM photos")
     suspend fun deleteAll()
     
+    /**
+     * Get a random unsorted photo.
+     * Uses ORDER BY RANDOM() LIMIT 1.
+     */
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY RANDOM() LIMIT 1")
+    suspend fun getRandomUnsortedPhoto(): PhotoEntity?
+    
     // ==================== QUERY - Single ====================
     
     /**
