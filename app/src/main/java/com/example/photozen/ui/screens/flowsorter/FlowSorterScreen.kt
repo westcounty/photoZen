@@ -138,7 +138,13 @@ fun FlowSorterScreen(
                                     text = if (uiState.viewMode == FlowSorterViewMode.CARD) "Flow Sorter" else "列表整理",
                                     style = MaterialTheme.typography.titleLarge
                                 )
-                                if (uiState.totalCount > 0) {
+                                if (uiState.isDailyTask) {
+                                    Text(
+                                        text = "${uiState.dailyTaskCurrent} / ${uiState.dailyTaskTarget} 今日目标",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                } else if (uiState.totalCount > 0) {
                                     Text(
                                         text = "${uiState.sortedCount} / ${uiState.totalCount} 已整理",
                                         style = MaterialTheme.typography.bodySmall,

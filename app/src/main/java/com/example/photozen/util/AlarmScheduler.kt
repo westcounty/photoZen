@@ -17,7 +17,10 @@ class AlarmScheduler @Inject constructor(
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
     
     fun scheduleDailyReminder(hour: Int, minute: Int) {
-        val intent = Intent(context, DailyReminderReceiver::class.java)
+        val intent = Intent(context, DailyReminderReceiver::class.java).apply {
+            putExtra("hour", hour)
+            putExtra("minute", minute)
+        }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             DAILY_REMINDER_REQUEST_CODE,

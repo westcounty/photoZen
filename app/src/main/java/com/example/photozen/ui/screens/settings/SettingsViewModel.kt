@@ -17,6 +17,8 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import com.example.photozen.util.AlarmScheduler
 
+import com.example.photozen.data.repository.WidgetPhotoSource
+
 /**
  * UI State for Settings screen.
  */
@@ -28,6 +30,8 @@ data class SettingsUiState(
     val dailyTaskMode: DailyTaskMode = DailyTaskMode.FLOW,
     val dailyReminderEnabled: Boolean = false,
     val dailyReminderTime: Pair<Int, Int> = Pair(20, 0),
+    val widgetPhotoSource: WidgetPhotoSource = WidgetPhotoSource.ALL,
+    val widgetCustomAlbumIds: Set<String> = emptySet(),
     val error: String? = null
 )
 
@@ -58,6 +62,8 @@ class SettingsViewModel @Inject constructor(
         preferencesRepository.getDailyTaskMode(),
         preferencesRepository.getDailyReminderEnabled(),
         preferencesRepository.getDailyReminderTime(),
+        preferencesRepository.getWidgetPhotoSource(),
+        preferencesRepository.getWidgetCustomAlbumIds(),
         _internalState
     ) { params ->
         val totalSorted = params[0] as Int
@@ -67,7 +73,9 @@ class SettingsViewModel @Inject constructor(
         val dailyMode = params[4] as DailyTaskMode
         val reminderEnabled = params[5] as Boolean
         val reminderTime = params[6] as Pair<Int, Int>
-        val internal = params[7] as InternalState
+        val widgetSource = params[7] as WidgetPhotoSource
+        val widgetAlbumIds = params[8] as Set<String>
+        val internal = params[9] as InternalState
         
         SettingsUiState(
             totalSorted = totalSorted,
@@ -77,6 +85,8 @@ class SettingsViewModel @Inject constructor(
             dailyTaskMode = dailyMode,
             dailyReminderEnabled = reminderEnabled,
             dailyReminderTime = reminderTime,
+            widgetPhotoSource = widgetSource,
+            widgetCustomAlbumIds = widgetAlbumIds,
             error = internal.error
         )
     }.stateIn(
@@ -131,6 +141,18 @@ class SettingsViewModel @Inject constructor(
             if (enabled) {
                 alarmScheduler.scheduleDailyReminder(hour, minute)
             }
+        }
+    }
+    
+    fun setWidgetPhotoSource(source: WidgetPhotoSource) {
+        viewModelScope.launch {
+            preferencesRepository.setWidgetPhotoSource(source)
+        }
+    }
+    
+    fun setWidgetCustomAlbumIds(albumIds: Set<String>) {
+        viewModelScope.launch {
+            preferencesRepository.setWidgetCustomAlbumIds(albumIds)
         }
     }
     

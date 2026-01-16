@@ -26,24 +26,13 @@ class DailyReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         showNotification(context)
         
-        // Reschedule for next day (since setExact is one-shot usually, or we want to ensure it repeats reliably)
-        // Wait, AlarmManager.setRepeating is inexact.
-        // If we use setExact, we must reschedule.
-        // But we need the hour/minute.
-        // We can get it from Preferences if we inject Repository, but usually simple repeating is fine if exactness isn't critical.
-        // But AlarmScheduler sets it for "next occurrence".
-        // To repeat, we should schedule again here.
-        // However, accessing preferences here requires async work (suspend function).
-        // BroadcastReceiver.goAsync() can be used.
-        // For simplicity, let's assume we rely on app opening to reschedule? No, that's unreliable.
-        // Best approach: Use setRepeating if acceptable, or use WorkManager for rescheduling.
-        // But for "Daily Task", maybe inexact setInexactRepeating is fine?
-        // User asked for "triggered at user set time".
-        // Let's rely on AlarmScheduler logic. If I change it to setRepeating, it's easier.
-        // Or I can put hour/minute in the Intent extras!
+        // Reschedule for next day
+        val hour = intent.getIntExtra("hour", -1)
+        val minute = intent.getIntExtra("minute", -1)
         
-        // For now, let's just show notification.
-        // Ideally, we should reschedule.
+        if (hour != -1 && minute != -1) {
+            alarmScheduler.scheduleDailyReminder(hour, minute)
+        }
     }
     
     private fun showNotification(context: Context) {

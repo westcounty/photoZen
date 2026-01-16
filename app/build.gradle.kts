@@ -22,12 +22,24 @@ android {
     namespace = "com.example.photozen"
     compileSdk = 36
 
+    val versionPropsFile = rootProject.file("build_version.properties")
+    val versionProps = Properties()
+    if (versionPropsFile.exists()) {
+        FileInputStream(versionPropsFile).use { stream ->
+            versionProps.load(stream)
+        }
+    }
+    val major = versionProps["major"]?.toString()?.toInt() ?: 1
+    val minor = versionProps["minor"]?.toString()?.toInt() ?: 0
+    val patch = versionProps["patch"]?.toString()?.toInt() ?: 0
+    val build = versionProps["build"]?.toString()?.toInt() ?: 1
+    
     defaultConfig {
         applicationId = "com.example.photozen"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1000001
-        versionName = "1.0.0.001"
+        versionCode = major * 1000000 + minor * 10000 + patch * 100 + build
+        versionName = "$major.$minor.$patch.${String.format("%03d", build)}"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

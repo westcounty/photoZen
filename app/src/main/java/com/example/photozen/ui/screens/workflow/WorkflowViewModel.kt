@@ -87,7 +87,11 @@ data class WorkflowUiState(
     /** Maybe photos from this session only */
     val sessionMaybePhotos: List<PhotoEntity> = emptyList(),
     /** Keep photos from this session only */
-    val sessionKeepPhotos: List<PhotoEntity> = emptyList()
+    val sessionKeepPhotos: List<PhotoEntity> = emptyList(),
+    // Daily Task Info
+    val isDailyTask: Boolean = false,
+    val dailyTaskTarget: Int = -1,
+    val dailyTaskCurrent: Int = 0
 ) {
     /** Whether there are more photos to sort */
     val hasUnsortedPhotos: Boolean get() = unsortedCount > 0
@@ -114,7 +118,13 @@ data class WorkflowUiState(
     
     /** Get stage subtitle with counts (uses session counts for COMPARE/TAGGING) */
     val stageSubtitle: String get() = when (currentStage) {
-        WorkflowStage.SWIPE -> if (unsortedCount > 0) "剩余 $unsortedCount 张" else "全部整理完成"
+        WorkflowStage.SWIPE -> {
+            if (isDailyTask) {
+                "今日进度: $dailyTaskCurrent / $dailyTaskTarget"
+            } else {
+                if (unsortedCount > 0) "剩余 $unsortedCount 张" else "全部整理完成"
+            }
+        }
         WorkflowStage.COMPARE -> if (sessionMaybeCount > 0) "本次待定 $sessionMaybeCount 张" else "无待定照片"
         WorkflowStage.TAGGING -> if (sessionKeepCount > 0) "本次保留 $sessionKeepCount 张" else "无保留照片"
         WorkflowStage.VICTORY -> "整理完成"
@@ -284,7 +294,10 @@ class WorkflowViewModel @Inject constructor(
             showExitConfirmation = internal.showExitConfirmation,
             showNextStageConfirmation = internal.showNextStageConfirmation,
             sessionMaybePhotos = sessionMaybePhotos,
-            sessionKeepPhotos = sessionKeepPhotos
+            sessionKeepPhotos = sessionKeepPhotos,
+            isDailyTask = isDailyTask,
+            dailyTaskTarget = targetCount,
+            dailyTaskCurrent = dailyStatus?.current ?: 0
         )
     }.stateIn(
         scope = viewModelScope,

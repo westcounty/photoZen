@@ -46,8 +46,8 @@ fun PicZenNavHost(
     ) {
         composable<Screen.Home> {
             HomeScreen(
-                onNavigateToFlowSorter = {
-                    navController.navigate(Screen.FlowSorter())
+                onNavigateToFlowSorter = { isDaily, target ->
+                    navController.navigate(Screen.FlowSorter(isDailyTask = isDaily, targetCount = target))
                 },
                 onNavigateToLightTable = {
                     navController.navigate(Screen.LightTable)
@@ -61,8 +61,8 @@ fun PicZenNavHost(
                 onNavigateToTrash = {
                     navController.navigate(Screen.Trash)
                 },
-                onNavigateToWorkflow = {
-                    navController.navigate(Screen.Workflow())
+                onNavigateToWorkflow = { isDaily, target ->
+                    navController.navigate(Screen.Workflow(isDailyTask = isDaily, targetCount = target))
                 },
                 onNavigateToTagBubble = {
                     navController.navigate(Screen.TagBubble)
@@ -70,9 +70,9 @@ fun PicZenNavHost(
                 onNavigateToAchievements = {
                     navController.navigate(Screen.Achievements)
                 },
-                onNavigateToFilterSelection = { mode ->
-                    // For daily task modes, we might need to pass targetCount, but standard call uses defaults
-                    navController.navigate(Screen.PhotoFilterSelection(mode = mode))
+                onNavigateToFilterSelection = { mode, target ->
+                    // For daily task modes, we pass targetCount
+                    navController.navigate(Screen.PhotoFilterSelection(mode = mode, targetCount = target))
                 }
             )
         }

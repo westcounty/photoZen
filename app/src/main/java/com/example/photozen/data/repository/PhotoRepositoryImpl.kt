@@ -290,9 +290,29 @@ class PhotoRepositoryImpl @Inject constructor(
     }
     
     override suspend fun getRandomUnsortedPhoto(): PhotoEntity? {
-        // Since we don't have a direct DAO method for random, we can fetch page 1 and pick random
-        // or add a DAO method. Let's add a DAO method for efficiency.
-        return photoDao.getRandomUnsortedPhoto()
+        val preferences = dataStore.data.first()
+        val sourceStr = preferences[PreferencesRepository.KEY_WIDGET_PHOTO_SOURCE] ?: WidgetPhotoSource.ALL.name
+        val source = try {
+            WidgetPhotoSource.valueOf(sourceStr)
+        } catch (e: Exception) {
+            WidgetPhotoSource.ALL
+        }
+        
+        return when (source) {
+            WidgetPhotoSource.ALL -> photoDao.getRandomUnsortedPhoto()
+            WidgetPhotoSource.CAMERA -> {
+                val cameraAlbums = mediaStoreDataSource.getAllAlbums().filter { it.isCamera }.map { it.id }
+                if (cameraAlbums.isNotEmpty()) {
+                    photoDao.getRandomUnsortedPhotoByBuckets(cameraAlbums)
+                } else {
+                    null
+                }
+            }
+            WidgetPhotoSource.CUSTOM -> {
+                // Custom album selection not fully implemented in UI yet, fallback to ALL
+                photoDao.getRandomUnsortedPhoto()
+            }
+        }
     }
     
     private fun getTodayDateString(): String {

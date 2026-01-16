@@ -57,6 +57,10 @@ class PhotoSorterWidget : AppWidgetProvider() {
             }
             
             if (photo != null) {
+                views.setViewVisibility(R.id.widget_empty_text, android.view.View.GONE)
+                views.setViewVisibility(R.id.widget_photo, android.view.View.VISIBLE)
+                views.setViewVisibility(R.id.widget_actions, android.view.View.VISIBLE)
+                
                 // Load image bitmap
                 val bitmap = withContext(Dispatchers.IO) {
                     try {
@@ -124,7 +128,10 @@ class PhotoSorterWidget : AppWidgetProvider() {
                 
             } else {
                 // No photos left
-                views.setImageViewResource(R.id.widget_photo, R.drawable.ic_launcher_foreground) // Placeholder
+                views.setViewVisibility(R.id.widget_empty_text, android.view.View.VISIBLE)
+                views.setViewVisibility(R.id.widget_photo, android.view.View.GONE)
+                views.setViewVisibility(R.id.widget_actions, android.view.View.GONE)
+                
                 // TODO: Show "All Done" text if layout supports it, currently just image view
             }
             

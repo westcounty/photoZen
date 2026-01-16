@@ -3,85 +3,47 @@ package com.example.photozen.ui.screens.settings
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Assignment
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.TimeInput
-import androidx.compose.material3.rememberTimePickerState
-import androidx.compose.material3.TimePicker
-import com.example.photozen.data.repository.DailyTaskMode
-import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.photozen.data.repository.DailyTaskMode
 import com.example.photozen.data.repository.PhotoFilterMode
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.random.Random
 
+import com.example.photozen.data.repository.WidgetPhotoSource
+
 /**
  * Settings Screen - App preferences and achievements.
+ * Refactored to use a menu-based structure.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,8 +54,14 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    
+    // Dialog states
+    var showDailyTaskDialog by remember { mutableStateOf(false) }
+    var showFilterDialog by remember { mutableStateOf(false) }
+    var showWidgetDialog by remember { mutableStateOf(false) } // Placeholder for now
     var showAboutDialog by remember { mutableStateOf(false) }
     var showChangelogDialog by remember { mutableStateOf(false) }
+    var showAcknowledgementDialog by remember { mutableStateOf(false) }
     
     // Show error messages
     LaunchedEffect(uiState.error) {
@@ -128,62 +96,168 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Daily Task Settings Section
-            SectionTitle(title = "每日任务")
+            // Function Settings
+            SettingsSectionHeader("功能设置")
             
-            DailyTaskSettingsCard(
-                uiState = uiState,
-                onEnabledChange = { viewModel.setDailyTaskEnabled(it) },
-                onTargetChange = { viewModel.setDailyTaskTarget(it) },
-                onModeChange = { viewModel.setDailyTaskMode(it) },
-                onReminderEnabledChange = { viewModel.setDailyTaskEnabled(true); viewModel.setDailyReminderEnabled(it) },
-                onReminderTimeChange = { h, m -> viewModel.setDailyReminderTime(h, m) }
+            SettingsMenuItem(
+                icon = Icons.Default.Assignment,
+                title = "每日整理任务",
+                subtitle = if (uiState.dailyTaskEnabled) "已开启 · 目标 ${uiState.dailyTaskTarget}" else "已关闭",
+                onClick = { showDailyTaskDialog = true }
             )
             
-            // Photo Filter Settings Section
-            SectionTitle(title = "待整理照片")
-            
-            PhotoFilterSettingsCard(
-                currentMode = uiState.photoFilterMode,
-                onModeSelected = { viewModel.setPhotoFilterMode(it) }
+            SettingsMenuItem(
+                icon = Icons.Default.PhotoLibrary,
+                title = "待整理照片范围",
+                subtitle = when (uiState.photoFilterMode) {
+                    PhotoFilterMode.ALL -> "整理全部照片"
+                    PhotoFilterMode.CAMERA_ONLY -> "仅整理相机照片"
+                    PhotoFilterMode.EXCLUDE_CAMERA -> "排除相机照片"
+                    PhotoFilterMode.CUSTOM -> "每次整理前选择"
+                },
+                onClick = { showFilterDialog = true }
             )
             
-            // Acknowledgement Section
-            SectionTitle(title = "鸣谢")
+            SettingsMenuItem(
+                icon = Icons.Default.Widgets,
+                title = "桌面小组件",
+                subtitle = when (uiState.widgetPhotoSource) {
+                    WidgetPhotoSource.ALL -> "显示全部照片"
+                    WidgetPhotoSource.CAMERA -> "仅显示相机照片"
+                    WidgetPhotoSource.CUSTOM -> "显示自定义相册"
+                },
+                onClick = { showWidgetDialog = true }
+            )
             
-            AcknowledgementCard()
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             
-            // About Section
-            SectionTitle(title = "关于")
+            // About & Others
+            SettingsSectionHeader("其他")
             
-            AboutCard(
-                onInfoClick = { showAboutDialog = true },
-                onVersionClick = { showChangelogDialog = true }
+            SettingsMenuItem(
+                icon = Icons.Default.Favorite,
+                title = "鸣谢",
+                subtitle = "感谢早期体验者",
+                onClick = { showAcknowledgementDialog = true }
+            )
+            
+            SettingsMenuItem(
+                icon = Icons.Default.Info,
+                title = "关于 PhotoZen",
+                subtitle = "版本 1.0.0.001",
+                onClick = { showAboutDialog = true }
             )
         }
     }
     
-    // About Dialog (App Introduction)
-    if (showAboutDialog) {
-        AboutDialog(onDismiss = { showAboutDialog = false })
+    // Dialogs
+    if (showDailyTaskDialog) {
+        DailyTaskSettingsDialog(
+            uiState = uiState,
+            onDismiss = { showDailyTaskDialog = false },
+            onEnabledChange = { viewModel.setDailyTaskEnabled(it) },
+            onTargetChange = { viewModel.setDailyTaskTarget(it) },
+            onModeChange = { viewModel.setDailyTaskMode(it) },
+            onReminderEnabledChange = { enabled -> 
+                if (enabled) viewModel.setDailyTaskEnabled(true)
+                viewModel.setDailyReminderEnabled(enabled) 
+            },
+            onReminderTimeChange = { h, m -> viewModel.setDailyReminderTime(h, m) }
+        )
     }
     
-    // Changelog Dialog (Version History)
+    if (showFilterDialog) {
+        PhotoFilterSettingsDialog(
+            currentMode = uiState.photoFilterMode,
+            onDismiss = { showFilterDialog = false },
+            onModeSelected = { 
+                viewModel.setPhotoFilterMode(it)
+                showFilterDialog = false
+            }
+        )
+    }
+    
+    if (showWidgetDialog) {
+        WidgetSettingsDialog(
+            currentSource = uiState.widgetPhotoSource,
+            onDismiss = { showWidgetDialog = false },
+            onSourceSelected = { viewModel.setWidgetPhotoSource(it) }
+        )
+    }
+    
+    if (showAboutDialog) {
+        AboutDialog(
+            onDismiss = { showAboutDialog = false },
+            onVersionClick = { showChangelogDialog = true }
+        )
+    }
+    
     if (showChangelogDialog) {
         ChangelogDialog(onDismiss = { showChangelogDialog = false })
     }
+    
+    if (showAcknowledgementDialog) {
+        AcknowledgementDialog(onDismiss = { showAcknowledgementDialog = false })
+    }
 }
 
-/**
- * Daily Task settings card.
- */
+@Composable
+fun SettingsSectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
+    )
+}
+
+@Composable
+fun SettingsMenuItem(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DailyTaskSettingsCard(
+fun DailyTaskSettingsDialog(
     uiState: SettingsUiState,
+    onDismiss: () -> Unit,
     onEnabledChange: (Boolean) -> Unit,
     onTargetChange: (Int) -> Unit,
     onModeChange: (DailyTaskMode) -> Unit,
@@ -192,128 +266,122 @@ private fun DailyTaskSettingsCard(
 ) {
     var showTimePicker by remember { mutableStateOf(false) }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            // Header
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 12.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Assignment,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = "每日整理任务",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.weight(1f)
-                )
-                Switch(
-                    checked = uiState.dailyTaskEnabled,
-                    onCheckedChange = onEnabledChange
-                )
-            }
-            
-            HorizontalDivider(modifier = Modifier.padding(bottom = 16.dp))
-            
-            if (uiState.dailyTaskEnabled) {
-                // Target Slider
-                Column(modifier = Modifier.padding(bottom = 16.dp)) {
-                    Text(
-                        text = "每日目标: ${uiState.dailyTaskTarget} 张",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Slider(
-                        value = uiState.dailyTaskTarget.toFloat(),
-                        onValueChange = { onTargetChange(it.toInt()) },
-                        valueRange = 10f..1000f,
-                        steps = 98, // (1000-10)/10 - 1
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                
-                // Mode Selection
-                Text(
-                    text = "任务模式",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                SingleChoiceSegmentedButtonRow(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    SegmentedButton(
-                        selected = uiState.dailyTaskMode == DailyTaskMode.FLOW,
-                        onClick = { onModeChange(DailyTaskMode.FLOW) },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                    ) {
-                        Text("心流模式")
-                    }
-                    SegmentedButton(
-                        selected = uiState.dailyTaskMode == DailyTaskMode.QUICK,
-                        onClick = { onModeChange(DailyTaskMode.QUICK) },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                    ) {
-                        Text("快速整理")
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Reminder Switch
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("每日任务设置") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                // Enable Switch
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Notifications,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
+                    Text("开启每日任务")
+                    Switch(
+                        checked = uiState.dailyTaskEnabled,
+                        onCheckedChange = onEnabledChange
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "每日提醒",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        if (uiState.dailyReminderEnabled) {
-                            Text(
-                                text = String.format("%02d:%02d", uiState.dailyReminderTime.first, uiState.dailyReminderTime.second),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.clickable { showTimePicker = true }
-                            )
+                }
+                
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                
+                if (uiState.dailyTaskEnabled) {
+                    // Daily Target (Stepper)
+                    Text(
+                        text = "每日目标数量",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    
+                    Stepper(
+                        value = uiState.dailyTaskTarget,
+                        onValueChange = onTargetChange,
+                        range = 10..1000,
+                        step = 10
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Task Mode
+                    Text(
+                        text = "任务模式",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    
+                    SingleChoiceSegmentedButtonRow(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        SegmentedButton(
+                            selected = uiState.dailyTaskMode == DailyTaskMode.FLOW,
+                            onClick = { onModeChange(DailyTaskMode.FLOW) },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                        ) {
+                            Text("心流模式")
+                        }
+                        SegmentedButton(
+                            selected = uiState.dailyTaskMode == DailyTaskMode.QUICK,
+                            onClick = { onModeChange(DailyTaskMode.QUICK) },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                        ) {
+                            Text("快速整理")
                         }
                     }
-                    Switch(
-                        checked = uiState.dailyReminderEnabled,
-                        onCheckedChange = onReminderEnabledChange
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Reminder
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "每日提醒",
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            if (uiState.dailyReminderEnabled) {
+                                Text(
+                                    text = String.format("%02d:%02d", uiState.dailyReminderTime.first, uiState.dailyReminderTime.second),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = uiState.dailyReminderEnabled,
+                            onCheckedChange = onReminderEnabledChange
+                        )
+                    }
+                    
+                    if (uiState.dailyReminderEnabled) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = { showTimePicker = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Alarm, null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "设置提醒时间: ${String.format("%02d:%02d", uiState.dailyReminderTime.first, uiState.dailyReminderTime.second)}")
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "开启每日任务，养成整理好习惯",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            } else {
-                Text(
-                    text = "开启每日任务，养成整理好习惯",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("完成")
             }
         }
-    }
+    )
     
     if (showTimePicker) {
         val timeState = rememberTimePickerState(
@@ -344,92 +412,167 @@ private fun DailyTaskSettingsCard(
     }
 }
 
-/**
- * Section title.
- */
 @Composable
-private fun SectionTitle(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+fun Stepper(
+    value: Int,
+    onValueChange: (Int) -> Unit,
+    range: IntRange,
+    step: Int = 10
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        FilledTonalIconButton(
+            onClick = { onValueChange((value - step).coerceAtLeast(range.first)) },
+            enabled = value > range.first
+        ) {
+            Icon(Icons.Default.Remove, null)
+        }
+        
+        Text(
+            text = value.toString(),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .width(100.dp)
+                .padding(horizontal = 8.dp),
+            textAlign = TextAlign.Center
+        )
+        
+        FilledTonalIconButton(
+            onClick = { onValueChange((value + step).coerceAtMost(range.last)) },
+            enabled = value < range.last
+        ) {
+            Icon(Icons.Default.Add, null)
+        }
+    }
+}
+
+@Composable
+fun PhotoFilterSettingsDialog(
+    currentMode: PhotoFilterMode,
+    onDismiss: () -> Unit,
+    onModeSelected: (PhotoFilterMode) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("待整理照片范围") },
+        text = {
+            Column {
+                FilterOption(
+                    title = "整理全部照片",
+                    description = "整理设备上的所有照片",
+                    selected = currentMode == PhotoFilterMode.ALL,
+                    onClick = { onModeSelected(PhotoFilterMode.ALL) }
+                )
+                
+                FilterOption(
+                    title = "仅整理相机照片",
+                    description = "只整理由手机相机拍摄的照片",
+                    selected = currentMode == PhotoFilterMode.CAMERA_ONLY,
+                    onClick = { onModeSelected(PhotoFilterMode.CAMERA_ONLY) }
+                )
+                
+                FilterOption(
+                    title = "排除相机照片",
+                    description = "整理除相机照片外的所有照片",
+                    selected = currentMode == PhotoFilterMode.EXCLUDE_CAMERA,
+                    onClick = { onModeSelected(PhotoFilterMode.EXCLUDE_CAMERA) }
+                )
+                
+                FilterOption(
+                    title = "每次整理前选择",
+                    description = "开始整理时选择日期范围和相册",
+                    selected = currentMode == PhotoFilterMode.CUSTOM,
+                    onClick = { onModeSelected(PhotoFilterMode.CUSTOM) }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
     )
 }
 
-/**
- * Photo filter settings card.
- */
 @Composable
-private fun PhotoFilterSettingsCard(
-    currentMode: PhotoFilterMode,
-    onModeSelected: (PhotoFilterMode) -> Unit
+fun WidgetSettingsDialog(
+    currentSource: WidgetPhotoSource,
+    onDismiss: () -> Unit,
+    onSourceSelected: (WidgetPhotoSource) -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 12.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PhotoLibrary,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("小组件照片来源") },
+        text = {
+            Column {
+                WidgetSourceOption(
+                    title = "显示全部照片",
+                    description = "显示设备上的所有照片",
+                    selected = currentSource == WidgetPhotoSource.ALL,
+                    onClick = { onSourceSelected(WidgetPhotoSource.ALL) }
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = "选择要整理的照片范围",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
+                
+                WidgetSourceOption(
+                    title = "仅显示相机照片",
+                    description = "只显示由手机相机拍摄的照片",
+                    selected = currentSource == WidgetPhotoSource.CAMERA,
+                    onClick = { onSourceSelected(WidgetPhotoSource.CAMERA) }
+                )
+                
+                WidgetSourceOption(
+                    title = "自定义范围",
+                    description = "后续版本将支持选择特定相册",
+                    selected = currentSource == WidgetPhotoSource.CUSTOM,
+                    onClick = { /* TODO: Implement Custom Album Selection */ }
                 )
             }
-            
-            HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
-            
-            FilterOption(
-                title = "整理全部照片",
-                description = "整理设备上的所有照片",
-                selected = currentMode == PhotoFilterMode.ALL,
-                onClick = { onModeSelected(PhotoFilterMode.ALL) }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("完成")
+            }
+        }
+    )
+}
+
+@Composable
+private fun WidgetSourceOption(
+    title: String,
+    description: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = onClick
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
             )
-            
-            FilterOption(
-                title = "仅整理相机照片",
-                description = "只整理由手机相机拍摄的照片",
-                selected = currentMode == PhotoFilterMode.CAMERA_ONLY,
-                onClick = { onModeSelected(PhotoFilterMode.CAMERA_ONLY) }
-            )
-            
-            FilterOption(
-                title = "排除相机照片",
-                description = "整理除相机照片外的所有照片",
-                selected = currentMode == PhotoFilterMode.EXCLUDE_CAMERA,
-                onClick = { onModeSelected(PhotoFilterMode.EXCLUDE_CAMERA) }
-            )
-            
-            FilterOption(
-                title = "每次整理前选择",
-                description = "开始整理时选择日期范围和相册",
-                selected = currentMode == PhotoFilterMode.CUSTOM,
-                onClick = { onModeSelected(PhotoFilterMode.CUSTOM) }
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
 }
 
-/**
- * Filter option row with radio button.
- */
 @Composable
 private fun FilterOption(
     title: String,
@@ -452,21 +595,13 @@ private fun FilterOption(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
             )
             Text(
                 text = description,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (selected) {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
             )
         }
     }
@@ -476,7 +611,10 @@ private fun FilterOption(
  * App introduction dialog showing features and highlights.
  */
 @Composable
-private fun AboutDialog(onDismiss: () -> Unit) {
+private fun AboutDialog(
+    onDismiss: () -> Unit,
+    onVersionClick: () -> Unit
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -541,6 +679,23 @@ private fun AboutDialog(onDismiss: () -> Unit) {
                     title = "🏆 成就系统",
                     description = "50+ 成就等你解锁！从整理新手到传说大师，每一步都有惊喜。"
                 )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Version click
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onVersionClick)
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "Version 1.0.0.001",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         },
         confirmButton = {
@@ -549,6 +704,30 @@ private fun AboutDialog(onDismiss: () -> Unit) {
             }
         }
     )
+}
+
+/**
+ * Feature section in the about dialog.
+ */
+@Composable
+private fun FeatureSection(
+    title: String,
+    description: String
+) {
+    Column {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
 /**
@@ -655,31 +834,6 @@ private fun ChangelogItem(title: String, description: String) {
 }
 
 /**
- * Feature section in the about dialog.
- */
-@Composable
-private fun FeatureSection(
-    title: String,
-    description: String
-) {
-    Column {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = description,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-
-/**
  * Data class for floating heart animation.
  */
 private data class FloatingHeart(
@@ -693,10 +847,10 @@ private data class FloatingHeart(
 )
 
 /**
- * Acknowledgement card for early testers with floating hearts animation.
+ * Acknowledgement dialog with floating hearts animation.
  */
 @Composable
-private fun AcknowledgementCard() {
+private fun AcknowledgementDialog(onDismiss: () -> Unit) {
     // List of floating hearts
     val floatingHearts = remember { mutableStateListOf<FloatingHeart>() }
     
@@ -714,90 +868,99 @@ private fun AcknowledgementCard() {
     // Current heart icon color (changes on each click)
     var heartIconColor by remember { mutableStateOf(Color(0xFFE91E63)) }
     
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Box(
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
             modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            shape = RoundedCornerShape(28.dp)
         ) {
-            // Floating hearts layer
-            floatingHearts.forEach { heart ->
-                FloatingHeartAnimation(
-                    heart = heart,
-                    onAnimationEnd = { floatingHearts.remove(heart) }
-                )
-            }
-            
-            // Main content
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
             ) {
-                // Clickable heart icon (no ripple effect)
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clickable(
-                            indication = null,
-                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                        ) {
-                            // Change the heart icon color
-                            heartIconColor = heartColors.random()
-                            
-                            // Create a new floating heart with longer duration and faster movement
-                            val newHeart = FloatingHeart(
-                                id = System.currentTimeMillis() + Random.nextLong(1000),
-                                angle = Random.nextFloat() * 2 * Math.PI.toFloat(),
-                                distance = 150f + Random.nextFloat() * 100f,  // Increased distance for faster visual
-                                duration = 3000 + Random.nextInt(1500),       // Much longer duration (3-4.5 seconds)
-                                startDelay = 0,
-                                color = heartColors.random(),
-                                maxScale = 1.2f + Random.nextFloat() * 0.6f
-                            )
-                            floatingHearts.add(newHeart)
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Favorite,
-                        contentDescription = "点击发送爱心",
-                        tint = heartIconColor,
-                        modifier = Modifier.size(28.dp)
+                // Floating hearts layer
+                floatingHearts.forEach { heart ->
+                    FloatingHeartAnimation(
+                        heart = heart,
+                        onAnimationEnd = { floatingHearts.remove(heart) }
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                Text(
-                    text = "感谢以下早期体验者",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    text = "土土酱 · 涵涵酱",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    text = "感谢你们的宝贵建议和反馈\n让 PhotoZen 变得更好",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
+                // Main content
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Clickable heart icon
+                    Box(
+                        modifier = Modifier
+                            .size(60.dp)
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                            ) {
+                                // Change the heart icon color
+                                heartIconColor = heartColors.random()
+                                
+                                // Create a new floating heart with longer duration and faster movement
+                                val newHeart = FloatingHeart(
+                                    id = System.currentTimeMillis() + Random.nextLong(1000),
+                                    angle = Random.nextFloat() * 2 * Math.PI.toFloat(),
+                                    distance = 150f + Random.nextFloat() * 100f,
+                                    duration = 3000 + Random.nextInt(1500),
+                                    startDelay = 0,
+                                    color = heartColors.random(),
+                                    maxScale = 1.2f + Random.nextFloat() * 0.6f
+                                )
+                                floatingHearts.add(newHeart)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Favorite,
+                            contentDescription = "点击发送爱心",
+                            tint = heartIconColor,
+                            modifier = Modifier.size(48.dp)
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Text(
+                        text = "感谢以下早期体验者",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Text(
+                        text = "土土酱 · 涵涵酱",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Text(
+                        text = "感谢你们的宝贵建议和反馈\n让 PhotoZen 变得更好",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    TextButton(onClick = onDismiss) {
+                        Text("关闭")
+                    }
+                }
             }
         }
     }
@@ -856,75 +1019,4 @@ private fun FloatingHeartAnimation(
             .alpha(alpha)
             .size(20.dp)
     )
-}
-
-/**
- * About card with clickable info icon and version number.
- */
-@Composable
-private fun AboutCard(
-    onInfoClick: () -> Unit,
-    onVersionClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Clickable info icon for app introduction
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clickable(onClick = onInfoClick),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = "了解更多",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Text(
-                text = "PhotoZen",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            
-            // Clickable version number for changelog
-            Text(
-                text = "版本 1.0.0.001",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .clickable(onClick = onVersionClick)
-                    .padding(vertical = 4.dp)
-            )
-
-            Text(
-                text = "点击图标了解功能 · 点击版本号查看更新",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Text(
-                text = "高效的照片整理工具\n让照片管理更轻松",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
 }

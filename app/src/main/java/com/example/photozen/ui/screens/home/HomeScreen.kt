@@ -89,15 +89,15 @@ import com.example.photozen.ui.theme.TrashRed
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onNavigateToFlowSorter: () -> Unit,
+    onNavigateToFlowSorter: (Boolean, Int) -> Unit,
     onNavigateToLightTable: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToPhotoList: (PhotoStatus) -> Unit,
     onNavigateToTrash: () -> Unit,
-    onNavigateToWorkflow: () -> Unit,
+    onNavigateToWorkflow: (Boolean, Int) -> Unit,
     onNavigateToTagBubble: () -> Unit,
     onNavigateToAchievements: () -> Unit,
-    onNavigateToFilterSelection: (String) -> Unit = {},
+    onNavigateToFilterSelection: (String, Int) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -106,9 +106,12 @@ fun HomeScreen(
     
     // Permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val readImagesGranted = permissions[Manifest.permission.READ_MEDIA_IMAGES] == true || 
+                                permissions[Manifest.permission.READ_EXTERNAL_STORAGE] == true
+        
+        if (readImagesGranted) {
             viewModel.onPermissionGranted()
         } else {
             viewModel.onPermissionDenied()
@@ -117,12 +120,16 @@ fun HomeScreen(
     
     // Request permission on launch
     LaunchedEffect(Unit) {
-        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Manifest.permission.READ_MEDIA_IMAGES
+        val permissions = mutableListOf<String>()
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         } else {
-            Manifest.permission.READ_EXTERNAL_STORAGE
+            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
-        permissionLauncher.launch(permission)
+        
+        permissionLauncher.launch(permissions.toTypedArray())
     }
     
     // Show messages
@@ -222,14 +229,14 @@ fun HomeScreen(
                         onStartFlow = {
                             // Check if custom filter selection is needed before starting Flow
                             if (uiState.needsFilterSelection) {
-                                onNavigateToFilterSelection("workflow")
+                                onNavigateToFilterSelection("workflow", -1)
                             } else {
-                                onNavigateToWorkflow()
+                                onNavigateToWorkflow(false, -1)
                             }
                         }
                     )
                     
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
                 
                 // Daily Task Card
@@ -238,24 +245,24 @@ fun HomeScreen(
                         status = uiState.dailyTaskStatus!!,
                         onStartClick = {
                             val mode = uiState.dailyTaskStatus!!.mode
-                            // TODO: Pass isDailyTask=true and target to navigation
+                            val target = uiState.dailyTaskStatus!!.target
                             if (mode == DailyTaskMode.FLOW) {
                                 if (uiState.needsFilterSelection) {
-                                    onNavigateToFilterSelection("workflow_daily")
+                                    onNavigateToFilterSelection("workflow_daily", target)
                                 } else {
-                                    onNavigateToWorkflow() // Needs arg
+                                    onNavigateToWorkflow(true, target)
                                 }
                             } else {
                                 if (uiState.needsFilterSelection) {
-                                    onNavigateToFilterSelection("flow_daily")
+                                    onNavigateToFilterSelection("flow_daily", target)
                                 } else {
-                                    onNavigateToFlowSorter() // Needs arg
+                                    onNavigateToFlowSorter(true, target)
                                 }
                             }
                         }
                     )
                     
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
             }
             
@@ -284,9 +291,9 @@ fun HomeScreen(
                     enabled = uiState.unsortedCount > 0,
                     onClick = {
                         if (uiState.needsFilterSelection) {
-                            onNavigateToFilterSelection("flow")
+                            onNavigateToFilterSelection("flow", -1)
                         } else {
-                            onNavigateToFlowSorter()
+                            onNavigateToFlowSorter(false, -1)
                         }
                     }
                 )
@@ -332,12 +339,14 @@ fun HomeScreen(
             if (!uiState.hasPermission && !uiState.isLoading) {
                 PermissionDeniedCard(
                     onRequestPermission = {
-                        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            Manifest.permission.READ_MEDIA_IMAGES
+                        val permissions = mutableListOf<String>()
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+                            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
                         } else {
-                            Manifest.permission.READ_EXTERNAL_STORAGE
+                            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
                         }
-                        permissionLauncher.launch(permission)
+                        permissionLauncher.launch(permissions.toTypedArray())
                     }
                 )
             }

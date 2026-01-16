@@ -26,6 +26,15 @@ enum class PhotoFilterMode {
 }
 
 /**
+ * Widget photo source.
+ */
+enum class WidgetPhotoSource {
+    ALL,
+    CAMERA,
+    CUSTOM
+}
+
+/**
  * Daily Task Mode.
  */
 enum class DailyTaskMode {
@@ -43,48 +52,52 @@ class PreferencesRepository @Inject constructor(
 ) {
     companion object {
         // Sort count
-        private val KEY_TOTAL_SORTED_COUNT = intPreferencesKey("total_sorted_count")
+        val KEY_TOTAL_SORTED_COUNT = intPreferencesKey("total_sorted_count")
         
         // Photo filter settings
-        private val KEY_PHOTO_FILTER_MODE = stringPreferencesKey("photo_filter_mode")
+        val KEY_PHOTO_FILTER_MODE = stringPreferencesKey("photo_filter_mode")
         
         // Daily Task Settings
-        private val KEY_DAILY_TASK_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("daily_task_enabled")
-        private val KEY_DAILY_TASK_TARGET = intPreferencesKey("daily_task_target")
-        private val KEY_DAILY_TASK_MODE = stringPreferencesKey("daily_task_mode")
-        private val KEY_DAILY_REMINDER_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("daily_reminder_enabled")
-        private val KEY_DAILY_REMINDER_HOUR = intPreferencesKey("daily_reminder_hour")
-        private val KEY_DAILY_REMINDER_MINUTE = intPreferencesKey("daily_reminder_minute")
+        val KEY_DAILY_TASK_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("daily_task_enabled")
+        val KEY_DAILY_TASK_TARGET = intPreferencesKey("daily_task_target")
+        val KEY_DAILY_TASK_MODE = stringPreferencesKey("daily_task_mode")
+        val KEY_DAILY_REMINDER_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("daily_reminder_enabled")
+        val KEY_DAILY_REMINDER_HOUR = intPreferencesKey("daily_reminder_hour")
+        val KEY_DAILY_REMINDER_MINUTE = intPreferencesKey("daily_reminder_minute")
+        
+        // Widget Settings
+        val KEY_WIDGET_PHOTO_SOURCE = stringPreferencesKey("widget_photo_source")
+        val KEY_WIDGET_CUSTOM_ALBUM_IDS = androidx.datastore.preferences.core.stringSetPreferencesKey("widget_custom_album_ids")
         
         // Default external app for opening photos
-        private val KEY_DEFAULT_EXTERNAL_APP = stringPreferencesKey("default_external_app")
+        val KEY_DEFAULT_EXTERNAL_APP = stringPreferencesKey("default_external_app")
         
         // Bubble positions (JSON encoded map: tagId -> "x,y")
-        private val KEY_BUBBLE_POSITIONS = stringPreferencesKey("bubble_positions")
+        val KEY_BUBBLE_POSITIONS = stringPreferencesKey("bubble_positions")
         
         // Grid column preferences for different screens
-        private val KEY_GRID_COLUMNS_KEEP = intPreferencesKey("grid_columns_keep")
-        private val KEY_GRID_COLUMNS_MAYBE = intPreferencesKey("grid_columns_maybe")
-        private val KEY_GRID_COLUMNS_TRASH = intPreferencesKey("grid_columns_trash")
-        private val KEY_GRID_COLUMNS_TAGGED = intPreferencesKey("grid_columns_tagged")
-        private val KEY_GRID_COLUMNS_FLOW = intPreferencesKey("grid_columns_flow")
+        val KEY_GRID_COLUMNS_KEEP = intPreferencesKey("grid_columns_keep")
+        val KEY_GRID_COLUMNS_MAYBE = intPreferencesKey("grid_columns_maybe")
+        val KEY_GRID_COLUMNS_TRASH = intPreferencesKey("grid_columns_trash")
+        val KEY_GRID_COLUMNS_TAGGED = intPreferencesKey("grid_columns_tagged")
+        val KEY_GRID_COLUMNS_FLOW = intPreferencesKey("grid_columns_flow")
         
         // Achievement keys
-        private val KEY_TAGGED_COUNT = intPreferencesKey("total_tagged_count")
-        private val KEY_MAX_COMBO = intPreferencesKey("max_combo")
-        private val KEY_TRASH_EMPTIED_COUNT = intPreferencesKey("trash_emptied_count")
-        private val KEY_VIRTUAL_COPIES_CREATED = intPreferencesKey("virtual_copies_created")
-        private val KEY_PHOTOS_EXPORTED = intPreferencesKey("photos_exported")
-        private val KEY_TAGS_CREATED = intPreferencesKey("tags_created")
-        private val KEY_COMPARISON_SESSIONS = intPreferencesKey("comparison_sessions")
-        private val KEY_FLOW_SESSIONS_COMPLETED = intPreferencesKey("flow_sessions_completed")
-        private val KEY_PERFECT_DAYS = intPreferencesKey("perfect_days") // Days with 100+ sorted
-        private val KEY_LAST_ACTIVE_DATE = longPreferencesKey("last_active_date")
-        private val KEY_CONSECUTIVE_DAYS = intPreferencesKey("consecutive_days")
-        private val KEY_KEEP_COUNT = intPreferencesKey("keep_count")
-        private val KEY_TRASH_COUNT = intPreferencesKey("trash_count")
-        private val KEY_MAYBE_COUNT = intPreferencesKey("maybe_count")
-        private val KEY_DAILY_TASKS_COMPLETED = intPreferencesKey("daily_tasks_completed")
+        val KEY_TAGGED_COUNT = intPreferencesKey("total_tagged_count")
+        val KEY_MAX_COMBO = intPreferencesKey("max_combo")
+        val KEY_TRASH_EMPTIED_COUNT = intPreferencesKey("trash_emptied_count")
+        val KEY_VIRTUAL_COPIES_CREATED = intPreferencesKey("virtual_copies_created")
+        val KEY_PHOTOS_EXPORTED = intPreferencesKey("photos_exported")
+        val KEY_TAGS_CREATED = intPreferencesKey("tags_created")
+        val KEY_COMPARISON_SESSIONS = intPreferencesKey("comparison_sessions")
+        val KEY_FLOW_SESSIONS_COMPLETED = intPreferencesKey("flow_sessions_completed")
+        val KEY_PERFECT_DAYS = intPreferencesKey("perfect_days") // Days with 100+ sorted
+        val KEY_LAST_ACTIVE_DATE = longPreferencesKey("last_active_date")
+        val KEY_CONSECUTIVE_DAYS = intPreferencesKey("consecutive_days")
+        val KEY_KEEP_COUNT = intPreferencesKey("keep_count")
+        val KEY_TRASH_COUNT = intPreferencesKey("trash_count")
+        val KEY_MAYBE_COUNT = intPreferencesKey("maybe_count")
+        val KEY_DAILY_TASKS_COMPLETED = intPreferencesKey("daily_tasks_completed")
     }
     
     // ==================== PHOTO FILTER SETTINGS ====================
@@ -201,6 +214,33 @@ class PreferencesRepository @Inject constructor(
         dataStore.edit { preferences ->
             preferences[KEY_DAILY_REMINDER_HOUR] = hour
             preferences[KEY_DAILY_REMINDER_MINUTE] = minute
+        }
+    }
+
+    // ==================== WIDGET SETTINGS ====================
+    
+    fun getWidgetPhotoSource(): Flow<WidgetPhotoSource> = dataStore.data.map { preferences ->
+        val modeStr = preferences[KEY_WIDGET_PHOTO_SOURCE] ?: WidgetPhotoSource.ALL.name
+        try {
+            WidgetPhotoSource.valueOf(modeStr)
+        } catch (e: IllegalArgumentException) {
+            WidgetPhotoSource.ALL
+        }
+    }
+    
+    suspend fun setWidgetPhotoSource(source: WidgetPhotoSource) {
+        dataStore.edit { preferences ->
+            preferences[KEY_WIDGET_PHOTO_SOURCE] = source.name
+        }
+    }
+    
+    fun getWidgetCustomAlbumIds(): Flow<Set<String>> = dataStore.data.map { preferences ->
+        preferences[KEY_WIDGET_CUSTOM_ALBUM_IDS] ?: emptySet()
+    }
+    
+    suspend fun setWidgetCustomAlbumIds(albumIds: Set<String>) {
+        dataStore.edit { preferences ->
+            preferences[KEY_WIDGET_CUSTOM_ALBUM_IDS] = albumIds
         }
     }
 

@@ -106,6 +106,12 @@ interface PhotoDao {
     @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY RANDOM() LIMIT 1")
     suspend fun getRandomUnsortedPhoto(): PhotoEntity?
     
+    /**
+     * Get a random unsorted photo filtered by bucket IDs.
+     */
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) ORDER BY RANDOM() LIMIT 1")
+    suspend fun getRandomUnsortedPhotoByBuckets(bucketIds: List<String>): PhotoEntity?
+    
     // ==================== QUERY - Single ====================
     
     /**

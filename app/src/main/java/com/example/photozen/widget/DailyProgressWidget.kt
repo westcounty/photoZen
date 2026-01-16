@@ -47,9 +47,31 @@ class DailyProgressWidget : AppWidgetProvider() {
             val status = getDailyTaskStatusUseCase().first()
             
             val views = RemoteViews(context.packageName, R.layout.widget_daily_progress)
-            views.setTextViewText(R.id.widget_title, "每日任务")
-            views.setTextViewText(R.id.widget_progress_text, "${status.current} / ${status.target}")
-            views.setProgressBar(R.id.widget_progress_bar, status.target, status.current, false)
+            
+            val emoji = when {
+                status.isCompleted -> "🥳"
+                status.current > 0 -> "🙂"
+                else -> "😢"
+            }
+            
+            val statusText = when {
+                status.isCompleted -> "任务完成！"
+                status.current > 0 -> "继续加油"
+                else -> "开始整理吧"
+            }
+            
+            views.setTextViewText(R.id.widget_emoji, emoji)
+            views.setTextViewText(R.id.widget_status_text, statusText)
+            
+            if (status.isCompleted) {
+                views.setViewVisibility(R.id.widget_progress_bar, android.view.View.GONE)
+                views.setViewVisibility(R.id.widget_progress_text, android.view.View.GONE)
+            } else {
+                views.setViewVisibility(R.id.widget_progress_bar, android.view.View.VISIBLE)
+                views.setViewVisibility(R.id.widget_progress_text, android.view.View.VISIBLE)
+                views.setProgressBar(R.id.widget_progress_bar, status.target, status.current, false)
+                views.setTextViewText(R.id.widget_progress_text, "${status.current} / ${status.target}")
+            }
             
             // Click to open app
             val intent = Intent(context, MainActivity::class.java)
@@ -59,8 +81,7 @@ class DailyProgressWidget : AppWidgetProvider() {
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            views.setOnClickPendingIntent(R.id.widget_progress_text, pendingIntent)
-            views.setOnClickPendingIntent(R.id.widget_progress_bar, pendingIntent)
+            views.setOnClickPendingIntent(R.id.widget_container, pendingIntent)
             
             appWidgetManager.updateAppWidget(appWidgetId, views)
         }
