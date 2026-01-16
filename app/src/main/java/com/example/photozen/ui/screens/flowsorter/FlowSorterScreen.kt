@@ -80,6 +80,14 @@ import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
 import com.example.photozen.ui.util.rememberHapticFeedbackManager
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.rotate
+import kotlinx.coroutines.delay
+import kotlin.random.Random
 
 /**
  * Flow Sorter Screen - Tinder-style swipe interface for sorting photos.
@@ -682,90 +690,99 @@ private fun CompletionContent(
     onNavigateToLightTable: () -> Unit,
     onGoBack: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        // Success icon
-        Box(
-            modifier = Modifier
-                .size(96.dp)
-                .clip(CircleShape)
-                .background(KeepGreen.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                tint = KeepGreen,
-                modifier = Modifier.size(48.dp)
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Confetti animation for daily task completion
+        if (isDailyTask) {
+            ConfettiAnimation(
+                modifier = Modifier.fillMaxSize()
             )
         }
         
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        Text(
-            text = if (isDailyTask) "今日任务完成！" else "整理完成！",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Text(
-            text = if (isDailyTask) "已达成 ${dailyTarget} 张整理目标" else "所有照片已分类完毕",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        
-        Spacer(modifier = Modifier.height(32.dp))
-        
-        // Statistics
-        Row(
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(20.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
+                .fillMaxSize()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            StatItem(count = keepCount, label = "保留", color = KeepGreen)
-            StatItem(count = trashCount, label = "删除", color = TrashRed)
-            StatItem(count = maybeCount, label = "待定", color = MaybeAmber)
-        }
-        
-        Spacer(modifier = Modifier.height(32.dp))
-        
-        // Actions
-        if (maybeCount > 0 && !isDailyTask) {
-            Button(
-                onClick = onNavigateToLightTable,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaybeAmber
-                )
+            // Success icon
+            Box(
+                modifier = Modifier
+                    .size(96.dp)
+                    .clip(CircleShape)
+                    .background(KeepGreen.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "查看待定照片 ($maybeCount)",
-                    color = Color.Black
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = KeepGreen,
+                    modifier = Modifier.size(48.dp)
                 )
             }
             
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-        
-        Button(
-            onClick = onGoBack,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            Text(
+                text = if (isDailyTask) "🎉 今日任务完成！" else "整理完成！",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
-        ) {
-            Text("返回首页")
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = if (isDailyTask) "已达成 ${dailyTarget} 张整理目标" else "所有照片已分类完毕",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            // Statistics
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(20.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                StatItem(count = keepCount, label = "保留", color = KeepGreen)
+                StatItem(count = trashCount, label = "删除", color = TrashRed)
+                StatItem(count = maybeCount, label = "待定", color = MaybeAmber)
+            }
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            // Actions
+            if (maybeCount > 0 && !isDailyTask) {
+                Button(
+                    onClick = onNavigateToLightTable,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaybeAmber
+                    )
+                ) {
+                    Text(
+                        text = "查看待定照片 ($maybeCount)",
+                        color = Color.Black
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+            
+            Button(
+                onClick = onGoBack,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Text("返回首页")
+            }
         }
     }
 }
@@ -791,6 +808,120 @@ private fun StatItem(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+/**
+ * Data class for confetti particle.
+ */
+private data class ConfettiParticle(
+    val id: Int,
+    val startX: Float,        // Start position (0-1 of width)
+    val color: Color,
+    val size: Float,          // Size of the confetti piece
+    val rotation: Float,      // Initial rotation
+    val rotationSpeed: Float, // Rotation speed
+    val fallSpeed: Float,     // Fall speed multiplier
+    val swayAmplitude: Float, // Horizontal sway amplitude
+    val swayFrequency: Float  // Horizontal sway frequency
+)
+
+/**
+ * Confetti animation for celebration.
+ * Displays colorful paper pieces falling from the top of the screen.
+ */
+@Composable
+private fun ConfettiAnimation(
+    modifier: Modifier = Modifier,
+    particleCount: Int = 100
+) {
+    // Confetti colors
+    val colors = listOf(
+        Color(0xFFFF6B6B),  // Red
+        Color(0xFFFFD93D),  // Yellow
+        Color(0xFF6BCB77),  // Green
+        Color(0xFF4D96FF),  // Blue
+        Color(0xFFC9B1FF),  // Purple
+        Color(0xFFFF9F45),  // Orange
+        Color(0xFFFF6B9C),  // Pink
+        Color(0xFF00D9FF),  // Cyan
+    )
+    
+    // Generate particles once
+    val particles = remember {
+        List(particleCount) { index ->
+            ConfettiParticle(
+                id = index,
+                startX = Random.nextFloat(),
+                color = colors.random(),
+                size = 8f + Random.nextFloat() * 12f,
+                rotation = Random.nextFloat() * 360f,
+                rotationSpeed = 100f + Random.nextFloat() * 300f,
+                fallSpeed = 0.6f + Random.nextFloat() * 0.8f,
+                swayAmplitude = 20f + Random.nextFloat() * 40f,
+                swayFrequency = 1f + Random.nextFloat() * 2f
+            )
+        }
+    }
+    
+    // Animation progress
+    val progress = remember { Animatable(0f) }
+    
+    LaunchedEffect(Unit) {
+        // Small delay before starting
+        delay(200)
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(
+                durationMillis = 4000,
+                easing = LinearEasing
+            )
+        )
+    }
+    
+    Canvas(modifier = modifier) {
+        val width = size.width
+        val height = size.height
+        val currentProgress = progress.value
+        
+        particles.forEach { particle ->
+            // Calculate particle position
+            val startY = -50f // Start above the screen
+            val endY = height + 100f // End below the screen
+            
+            // Each particle has a delay based on its index
+            val particleDelay = (particle.id % 30) * 0.02f
+            val adjustedProgress = ((currentProgress - particleDelay) / (1f - particleDelay)).coerceIn(0f, 1f)
+            
+            if (adjustedProgress > 0f) {
+                val y = startY + (endY - startY) * adjustedProgress * particle.fallSpeed
+                
+                // Horizontal sway
+                val swayOffset = kotlin.math.sin(
+                    adjustedProgress * particle.swayFrequency * 2 * Math.PI.toFloat()
+                ) * particle.swayAmplitude
+                
+                val x = particle.startX * width + swayOffset
+                
+                // Rotation
+                val rotation = particle.rotation + adjustedProgress * particle.rotationSpeed
+                
+                // Fade out at the bottom
+                val alpha = when {
+                    adjustedProgress > 0.8f -> 1f - (adjustedProgress - 0.8f) / 0.2f
+                    else -> 1f
+                }.coerceIn(0f, 1f)
+                
+                // Draw confetti piece
+                rotate(rotation, pivot = Offset(x, y)) {
+                    drawRect(
+                        color = particle.color.copy(alpha = alpha),
+                        topLeft = Offset(x - particle.size / 2, y - particle.size / 4),
+                        size = androidx.compose.ui.geometry.Size(particle.size, particle.size / 2)
+                    )
+                }
+            }
+        }
     }
 }
 

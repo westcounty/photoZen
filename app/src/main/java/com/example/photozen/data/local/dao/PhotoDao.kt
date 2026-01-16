@@ -112,6 +112,18 @@ interface PhotoDao {
     @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) ORDER BY RANDOM() LIMIT 1")
     suspend fun getRandomUnsortedPhotoByBuckets(bucketIds: List<String>): PhotoEntity?
     
+    /**
+     * Get a random unsorted photo filtered by date range.
+     */
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND date_added >= :startDate AND date_added <= :endDate ORDER BY RANDOM() LIMIT 1")
+    suspend fun getRandomUnsortedPhotoByDateRange(startDate: Long, endDate: Long): PhotoEntity?
+    
+    /**
+     * Get a random unsorted photo filtered by bucket IDs and date range.
+     */
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) AND date_added >= :startDate AND date_added <= :endDate ORDER BY RANDOM() LIMIT 1")
+    suspend fun getRandomUnsortedPhotoByBucketsAndDateRange(bucketIds: List<String>, startDate: Long, endDate: Long): PhotoEntity?
+    
     // ==================== QUERY - Single ====================
     
     /**

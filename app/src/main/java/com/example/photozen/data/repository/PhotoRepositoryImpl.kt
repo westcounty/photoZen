@@ -297,7 +297,7 @@ class PhotoRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             WidgetPhotoSource.ALL
         }
-        
+
         return when (source) {
             WidgetPhotoSource.ALL -> photoDao.getRandomUnsortedPhoto()
             WidgetPhotoSource.CAMERA -> {
@@ -309,8 +309,28 @@ class PhotoRepositoryImpl @Inject constructor(
                 }
             }
             WidgetPhotoSource.CUSTOM -> {
-                // Custom album selection not fully implemented in UI yet, fallback to ALL
-                photoDao.getRandomUnsortedPhoto()
+                // Custom filter with date range
+                val startDate = preferences[PreferencesRepository.KEY_WIDGET_START_DATE]
+                val endDate = preferences[PreferencesRepository.KEY_WIDGET_END_DATE]
+                val albumIds = preferences[PreferencesRepository.KEY_WIDGET_CUSTOM_ALBUM_IDS] ?: emptySet()
+                
+                // Convert date millis to seconds (Room stores dateAdded in seconds)
+                val startSeconds = startDate?.let { it / 1000 }
+                val endSeconds = endDate?.let { it / 1000 + 86400 } // Add one day to include end date
+                
+                if (albumIds.isNotEmpty() && startSeconds != null && endSeconds != null) {
+                    // Filter by both albums and date range
+                    photoDao.getRandomUnsortedPhotoByBucketsAndDateRange(albumIds.toList(), startSeconds, endSeconds)
+                } else if (albumIds.isNotEmpty()) {
+                    // Filter by albums only
+                    photoDao.getRandomUnsortedPhotoByBuckets(albumIds.toList())
+                } else if (startSeconds != null && endSeconds != null) {
+                    // Filter by date range only
+                    photoDao.getRandomUnsortedPhotoByDateRange(startSeconds, endSeconds)
+                } else {
+                    // No filters, return all
+                    photoDao.getRandomUnsortedPhoto()
+                }
             }
         }
     }

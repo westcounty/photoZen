@@ -68,6 +68,8 @@ class PreferencesRepository @Inject constructor(
         // Widget Settings
         val KEY_WIDGET_PHOTO_SOURCE = stringPreferencesKey("widget_photo_source")
         val KEY_WIDGET_CUSTOM_ALBUM_IDS = androidx.datastore.preferences.core.stringSetPreferencesKey("widget_custom_album_ids")
+        val KEY_WIDGET_START_DATE = longPreferencesKey("widget_start_date")
+        val KEY_WIDGET_END_DATE = longPreferencesKey("widget_end_date")
         
         // Default external app for opening photos
         val KEY_DEFAULT_EXTERNAL_APP = stringPreferencesKey("default_external_app")
@@ -241,6 +243,27 @@ class PreferencesRepository @Inject constructor(
     suspend fun setWidgetCustomAlbumIds(albumIds: Set<String>) {
         dataStore.edit { preferences ->
             preferences[KEY_WIDGET_CUSTOM_ALBUM_IDS] = albumIds
+        }
+    }
+    
+    fun getWidgetDateRange(): Flow<Pair<Long?, Long?>> = dataStore.data.map { preferences ->
+        val startDate = preferences[KEY_WIDGET_START_DATE]
+        val endDate = preferences[KEY_WIDGET_END_DATE]
+        Pair(startDate, endDate)
+    }
+    
+    suspend fun setWidgetDateRange(startDate: Long?, endDate: Long?) {
+        dataStore.edit { preferences ->
+            if (startDate != null) {
+                preferences[KEY_WIDGET_START_DATE] = startDate
+            } else {
+                preferences.remove(KEY_WIDGET_START_DATE)
+            }
+            if (endDate != null) {
+                preferences[KEY_WIDGET_END_DATE] = endDate
+            } else {
+                preferences.remove(KEY_WIDGET_END_DATE)
+            }
         }
     }
 

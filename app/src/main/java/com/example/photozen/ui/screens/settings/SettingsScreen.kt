@@ -40,6 +40,21 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 import com.example.photozen.data.repository.WidgetPhotoSource
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.rememberDateRangePickerState
+import androidx.compose.material.icons.filled.CalendarMonth
 
 /**
  * Settings Screen - App preferences and achievements.
@@ -130,24 +145,22 @@ fun SettingsScreen(
                 onClick = { showWidgetDialog = true }
             )
             
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            Spacer(modifier = Modifier.height(24.dp))
             
-            // About & Others
-            SettingsSectionHeader("其他")
-            
-            SettingsMenuItem(
-                icon = Icons.Default.Favorite,
-                title = "鸣谢",
-                subtitle = "感谢早期体验者",
-                onClick = { showAcknowledgementDialog = true }
+            // Acknowledgement Card - Flat display
+            AcknowledgementCard(
+                onHeartClick = { showAcknowledgementDialog = true }
             )
             
-            SettingsMenuItem(
-                icon = Icons.Default.Info,
-                title = "关于 PhotoZen",
-                subtitle = "版本 1.0.0.001",
-                onClick = { showAboutDialog = true }
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // About Card - Flat display
+            AboutCard(
+                onInfoClick = { showAboutDialog = true },
+                onVersionClick = { showChangelogDialog = true }
             )
+            
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
     
@@ -181,8 +194,13 @@ fun SettingsScreen(
     if (showWidgetDialog) {
         WidgetSettingsDialog(
             currentSource = uiState.widgetPhotoSource,
+            currentAlbumIds = uiState.widgetCustomAlbumIds,
+            currentStartDate = uiState.widgetStartDate,
+            currentEndDate = uiState.widgetEndDate,
             onDismiss = { showWidgetDialog = false },
-            onSourceSelected = { viewModel.setWidgetPhotoSource(it) }
+            onSourceSelected = { viewModel.setWidgetPhotoSource(it) },
+            onAlbumsSelected = { viewModel.setWidgetCustomAlbumIds(it) },
+            onDateRangeSelected = { start, end -> viewModel.setWidgetDateRange(start, end) }
         )
     }
     
@@ -287,18 +305,16 @@ fun DailyTaskSettingsDialog(
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
                 
                 if (uiState.dailyTaskEnabled) {
-                    // Daily Target (Stepper)
+                    // Daily Target (Preset Options + Custom)
                     Text(
                         text = "每日目标数量",
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     
-                    Stepper(
-                        value = uiState.dailyTaskTarget,
-                        onValueChange = onTargetChange,
-                        range = 10..1000,
-                        step = 10
+                    TargetSelector(
+                        currentValue = uiState.dailyTaskTarget,
+                        onValueChange = onTargetChange
                     )
                     
                     Spacer(modifier = Modifier.height(16.dp))
@@ -384,70 +400,320 @@ fun DailyTaskSettingsDialog(
     )
     
     if (showTimePicker) {
-        val timeState = rememberTimePickerState(
+        WheelTimePickerDialog(
             initialHour = uiState.dailyReminderTime.first,
             initialMinute = uiState.dailyReminderTime.second,
-            is24Hour = true
-        )
-        
-        AlertDialog(
-            onDismissRequest = { showTimePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    onReminderTimeChange(timeState.hour, timeState.minute)
-                    showTimePicker = false
-                }) {
-                    Text("确定")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showTimePicker = false }) {
-                    Text("取消")
-                }
-            },
-            text = {
-                TimePicker(state = timeState)
+            onDismiss = { showTimePicker = false },
+            onConfirm = { hour, minute ->
+                onReminderTimeChange(hour, minute)
+                showTimePicker = false
             }
         )
     }
 }
 
+/**
+ * Wheel-style time picker dialog with hour and minute columns.
+ */
 @Composable
-fun Stepper(
-    value: Int,
-    onValueChange: (Int) -> Unit,
-    range: IntRange,
-    step: Int = 10
+private fun WheelTimePickerDialog(
+    initialHour: Int,
+    initialMinute: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, Int) -> Unit
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        FilledTonalIconButton(
-            onClick = { onValueChange((value - step).coerceAtLeast(range.first)) },
-            enabled = value > range.first
-        ) {
-            Icon(Icons.Default.Remove, null)
+    var selectedHour by remember { mutableStateOf(initialHour) }
+    var selectedMinute by remember { mutableStateOf(initialMinute) }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { 
+            Text(
+                text = "设置提醒时间",
+                style = MaterialTheme.typography.titleLarge
+            ) 
+        },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Current selected time display
+                Text(
+                    text = String.format("%02d:%02d", selectedHour, selectedMinute),
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Hour wheel
+                    WheelPicker(
+                        items = (0..23).toList(),
+                        selectedItem = selectedHour,
+                        onItemSelected = { selectedHour = it },
+                        modifier = Modifier.weight(1f),
+                        label = "时"
+                    )
+                    
+                    Text(
+                        text = ":",
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+                    
+                    // Minute wheel
+                    WheelPicker(
+                        items = (0..59).toList(),
+                        selectedItem = selectedMinute,
+                        onItemSelected = { selectedMinute = it },
+                        modifier = Modifier.weight(1f),
+                        label = "分"
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selectedHour, selectedMinute) }) {
+                Text("确定")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
         }
-        
-        Text(
-            text = value.toString(),
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier
-                .width(100.dp)
-                .padding(horizontal = 8.dp),
-            textAlign = TextAlign.Center
-        )
-        
-        FilledTonalIconButton(
-            onClick = { onValueChange((value + step).coerceAtMost(range.last)) },
-            enabled = value < range.last
-        ) {
-            Icon(Icons.Default.Add, null)
+    )
+}
+
+/**
+ * Single wheel picker column with snapping behavior.
+ */
+@Composable
+private fun WheelPicker(
+    items: List<Int>,
+    selectedItem: Int,
+    onItemSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String = ""
+) {
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = (selectedItem - 2).coerceAtLeast(0)
+    )
+    val hapticFeedback = LocalHapticFeedback.current
+    
+    // Track the center item
+    val centerIndex by remember {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            val viewportCenter = layoutInfo.viewportStartOffset + layoutInfo.viewportSize.height / 2
+            layoutInfo.visibleItemsInfo.minByOrNull { item ->
+                kotlin.math.abs(item.offset + item.size / 2 - viewportCenter)
+            }?.index ?: selectedItem
         }
     }
+    
+    // Update selection when center item changes
+    LaunchedEffect(centerIndex) {
+        if (centerIndex in items.indices && items[centerIndex] != selectedItem) {
+            hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onItemSelected(items[centerIndex])
+        }
+    }
+    
+    // Scroll to initial position
+    LaunchedEffect(Unit) {
+        listState.scrollToItem((selectedItem - 2).coerceAtLeast(0))
+    }
+    
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        // Selection highlight background
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .background(
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                    RoundedCornerShape(8.dp)
+                )
+        )
+        
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(200.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            flingBehavior = rememberSnapFlingBehavior(lazyListState = listState),
+            contentPadding = PaddingValues(vertical = 76.dp) // Centers items
+        ) {
+            items(items.size) { index ->
+                val item = items[index]
+                val isSelected = index == centerIndex
+                
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clickable { 
+                            onItemSelected(item)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = String.format("%02d", item),
+                        style = if (isSelected) {
+                            MaterialTheme.typography.headlineMedium
+                        } else {
+                            MaterialTheme.typography.titleLarge
+                        },
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        }
+                    )
+                }
+            }
+        }
+        
+        // Label at the top right
+        if (label.isNotEmpty()) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 8.dp, top = 4.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Target selector with preset options and custom input.
+ * Presets: 10, 20, 50, 100, 200, 500, 1000
+ * Custom: 1-2000
+ */
+@Composable
+fun TargetSelector(
+    currentValue: Int,
+    onValueChange: (Int) -> Unit
+) {
+    val presetValues = listOf(10, 20, 50, 100, 200, 500, 1000)
+    var showCustomInput by remember { mutableStateOf(currentValue !in presetValues) }
+    var customText by remember { mutableStateOf(if (currentValue !in presetValues) currentValue.toString() else "") }
+    var customError by remember { mutableStateOf<String?>(null) }
+    
+    Column {
+        // Preset chips in a flow layout
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            presetValues.forEach { value ->
+                FilterChip(
+                    selected = currentValue == value && !showCustomInput,
+                    onClick = {
+                        showCustomInput = false
+                        customError = null
+                        onValueChange(value)
+                    },
+                    label = { Text(value.toString()) }
+                )
+            }
+            
+            // Custom option
+            FilterChip(
+                selected = showCustomInput,
+                onClick = {
+                    showCustomInput = true
+                    if (customText.isNotEmpty()) {
+                        customText.toIntOrNull()?.let { onValueChange(it) }
+                    }
+                },
+                label = { Text("自定义") },
+                leadingIcon = if (showCustomInput) {
+                    { Icon(Icons.Default.Edit, null, modifier = Modifier.size(18.dp)) }
+                } else null
+            )
+        }
+        
+        // Custom input field
+        if (showCustomInput) {
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            OutlinedTextField(
+                value = customText,
+                onValueChange = { newText ->
+                    customText = newText
+                    val parsed = newText.toIntOrNull()
+                    when {
+                        newText.isEmpty() -> {
+                            customError = null
+                        }
+                        parsed == null -> {
+                            customError = "请输入有效数字"
+                        }
+                        parsed < 1 || parsed > 2000 -> {
+                            customError = "范围: 1-2000"
+                        }
+                        else -> {
+                            customError = null
+                            onValueChange(parsed)
+                        }
+                    }
+                },
+                label = { Text("输入目标数量 (1-2000)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                isError = customError != null,
+                supportingText = customError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        
+        // Show current value if custom and not in text field
+        if (!showCustomInput && currentValue !in presetValues) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "当前目标: $currentValue",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FlowRow(
+    modifier: Modifier = Modifier,
+    horizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
+    verticalArrangement: Arrangement.Vertical = Arrangement.Top,
+    content: @Composable () -> Unit
+) {
+    androidx.compose.foundation.layout.FlowRow(
+        modifier = modifier,
+        horizontalArrangement = horizontalArrangement,
+        verticalArrangement = verticalArrangement,
+        content = { content() }
+    )
 }
 
 @Composable
@@ -498,37 +764,120 @@ fun PhotoFilterSettingsDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WidgetSettingsDialog(
     currentSource: WidgetPhotoSource,
+    currentAlbumIds: Set<String>,
+    currentStartDate: Long?,
+    currentEndDate: Long?,
     onDismiss: () -> Unit,
-    onSourceSelected: (WidgetPhotoSource) -> Unit
+    onSourceSelected: (WidgetPhotoSource) -> Unit,
+    onAlbumsSelected: (Set<String>) -> Unit,
+    onDateRangeSelected: (Long?, Long?) -> Unit
 ) {
+    var showCustomOptions by remember { mutableStateOf(currentSource == WidgetPhotoSource.CUSTOM) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var localStartDate by remember { mutableStateOf(currentStartDate) }
+    var localEndDate by remember { mutableStateOf(currentEndDate) }
+    
+    val dateFormat = remember { java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault()) }
+    
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("小组件照片来源") },
         text = {
-            Column {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 WidgetSourceOption(
                     title = "显示全部照片",
                     description = "显示设备上的所有照片",
                     selected = currentSource == WidgetPhotoSource.ALL,
-                    onClick = { onSourceSelected(WidgetPhotoSource.ALL) }
+                    onClick = { 
+                        onSourceSelected(WidgetPhotoSource.ALL)
+                        showCustomOptions = false
+                    }
                 )
                 
                 WidgetSourceOption(
                     title = "仅显示相机照片",
                     description = "只显示由手机相机拍摄的照片",
                     selected = currentSource == WidgetPhotoSource.CAMERA,
-                    onClick = { onSourceSelected(WidgetPhotoSource.CAMERA) }
+                    onClick = { 
+                        onSourceSelected(WidgetPhotoSource.CAMERA)
+                        showCustomOptions = false
+                    }
                 )
                 
                 WidgetSourceOption(
                     title = "自定义范围",
-                    description = "后续版本将支持选择特定相册",
+                    description = "按日期范围筛选",
                     selected = currentSource == WidgetPhotoSource.CUSTOM,
-                    onClick = { /* TODO: Implement Custom Album Selection */ }
+                    onClick = { 
+                        onSourceSelected(WidgetPhotoSource.CUSTOM)
+                        showCustomOptions = true
+                    }
                 )
+                
+                // Custom options - date range
+                if (showCustomOptions) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                    
+                    Text(
+                        text = "日期范围",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    
+                    if (localStartDate != null || localEndDate != null) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    Text(
+                                        text = buildString {
+                                            append(localStartDate?.let { dateFormat.format(java.util.Date(it)) } ?: "不限")
+                                            append(" ~ ")
+                                            append(localEndDate?.let { dateFormat.format(java.util.Date(it)) } ?: "不限")
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                                Row {
+                                    TextButton(onClick = { showDatePicker = true }) {
+                                        Text("修改")
+                                    }
+                                    TextButton(onClick = { 
+                                        localStartDate = null
+                                        localEndDate = null
+                                        onDateRangeSelected(null, null)
+                                    }) {
+                                        Text("清除")
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = { showDatePicker = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.CalendarMonth, null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("选择日期范围")
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -537,6 +886,52 @@ fun WidgetSettingsDialog(
             }
         }
     )
+    
+    // Date Range Picker Dialog
+    if (showDatePicker) {
+        val dateRangePickerState = rememberDateRangePickerState(
+            initialSelectedStartDateMillis = localStartDate,
+            initialSelectedEndDateMillis = localEndDate
+        )
+        
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        localStartDate = dateRangePickerState.selectedStartDateMillis
+                        localEndDate = dateRangePickerState.selectedEndDateMillis
+                        onDateRangeSelected(
+                            dateRangePickerState.selectedStartDateMillis,
+                            dateRangePickerState.selectedEndDateMillis
+                        )
+                        showDatePicker = false
+                    }
+                ) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("取消")
+                }
+            }
+        ) {
+            DateRangePicker(
+                state = dateRangePickerState,
+                title = {
+                    Text(
+                        text = "选择日期范围",
+                        modifier = Modifier.padding(16.dp)
+                    )
+                },
+                showModeToggle = false,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(500.dp)
+            )
+        }
+    }
 }
 
 @Composable
@@ -830,6 +1225,181 @@ private fun ChangelogItem(title: String, description: String) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+/**
+ * Acknowledgement Card - Flat display with heart animation.
+ */
+@Composable
+private fun AcknowledgementCard(
+    onHeartClick: () -> Unit
+) {
+    // Heart colors palette
+    val heartColors = listOf(
+        Color(0xFFFF6B6B),  // Coral red
+        Color(0xFFFF8E8E),  // Light red
+        Color(0xFFFFB3B3),  // Pink
+        Color(0xFFFF69B4),  // Hot pink
+        Color(0xFFFF1493),  // Deep pink
+        Color(0xFFE91E63),  // Material pink
+        Color(0xFFF48FB1),  // Light pink
+    )
+    
+    // List of floating hearts
+    val floatingHearts = remember { mutableStateListOf<FloatingHeart>() }
+    var heartIconColor by remember { mutableStateOf(Color(0xFFE91E63)) }
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center
+        ) {
+            // Floating hearts layer
+            floatingHearts.forEach { heart ->
+                FloatingHeartAnimation(
+                    heart = heart,
+                    onAnimationEnd = { floatingHearts.remove(heart) }
+                )
+            }
+            
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Clickable heart icon
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(heartIconColor.copy(alpha = 0.1f))
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                        ) {
+                            heartIconColor = heartColors.random()
+                            val newHeart = FloatingHeart(
+                                id = System.currentTimeMillis() + Random.nextLong(1000),
+                                angle = Random.nextFloat() * 2 * Math.PI.toFloat(),
+                                distance = 100f + Random.nextFloat() * 80f,
+                                duration = 2500 + Random.nextInt(1000),
+                                startDelay = 0,
+                                color = heartColors.random(),
+                                maxScale = 1.0f + Random.nextFloat() * 0.5f
+                            )
+                            floatingHearts.add(newHeart)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Favorite,
+                        contentDescription = "点击发送爱心",
+                        tint = heartIconColor,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.width(16.dp))
+                
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "鸣谢",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "感谢 土土酱 · 涵涵酱 的宝贵建议",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                IconButton(onClick = onHeartClick) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = "查看详情",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * About Card - Flat display with version info.
+ */
+@Composable
+private fun AboutCard(
+    onInfoClick: () -> Unit,
+    onVersionClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                    .clickable(onClick = onInfoClick),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "PhotoZen 图禅",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "让整理照片变成一种享受",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            TextButton(onClick = onVersionClick) {
+                Text(
+                    text = "v1.0.0.001",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
     }
 }
 

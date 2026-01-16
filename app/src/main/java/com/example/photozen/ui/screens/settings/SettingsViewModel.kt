@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import com.example.photozen.util.AlarmScheduler
+import com.example.photozen.util.WidgetUpdater
 
 import com.example.photozen.data.repository.WidgetPhotoSource
 
@@ -32,6 +33,8 @@ data class SettingsUiState(
     val dailyReminderTime: Pair<Int, Int> = Pair(20, 0),
     val widgetPhotoSource: WidgetPhotoSource = WidgetPhotoSource.ALL,
     val widgetCustomAlbumIds: Set<String> = emptySet(),
+    val widgetStartDate: Long? = null,
+    val widgetEndDate: Long? = null,
     val error: String? = null
 )
 
@@ -49,10 +52,20 @@ private data class InternalState(
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
-    private val alarmScheduler: AlarmScheduler
+    private val alarmScheduler: AlarmScheduler,
+    private val widgetUpdater: WidgetUpdater
 ) : ViewModel() {
     
     private val _internalState = MutableStateFlow(InternalState())
+    
+    // Combine widget settings separately
+    private val widgetSettingsFlow = combine(
+        preferencesRepository.getWidgetPhotoSource(),
+        preferencesRepository.getWidgetCustomAlbumIds(),
+        preferencesRepository.getWidgetDateRange()
+    ) { source, albumIds, dateRange ->
+        Triple(source, albumIds, dateRange)
+    }
     
     val uiState: StateFlow<SettingsUiState> = combine(
         preferencesRepository.getTotalSortedCount(),
@@ -62,8 +75,7 @@ class SettingsViewModel @Inject constructor(
         preferencesRepository.getDailyTaskMode(),
         preferencesRepository.getDailyReminderEnabled(),
         preferencesRepository.getDailyReminderTime(),
-        preferencesRepository.getWidgetPhotoSource(),
-        preferencesRepository.getWidgetCustomAlbumIds(),
+        widgetSettingsFlow,
         _internalState
     ) { params ->
         val totalSorted = params[0] as Int
@@ -73,9 +85,9 @@ class SettingsViewModel @Inject constructor(
         val dailyMode = params[4] as DailyTaskMode
         val reminderEnabled = params[5] as Boolean
         val reminderTime = params[6] as Pair<Int, Int>
-        val widgetSource = params[7] as WidgetPhotoSource
-        val widgetAlbumIds = params[8] as Set<String>
-        val internal = params[9] as InternalState
+        @Suppress("UNCHECKED_CAST")
+        val widgetSettings = params[7] as Triple<WidgetPhotoSource, Set<String>, Pair<Long?, Long?>>
+        val internal = params[8] as InternalState
         
         SettingsUiState(
             totalSorted = totalSorted,
@@ -85,8 +97,10 @@ class SettingsViewModel @Inject constructor(
             dailyTaskMode = dailyMode,
             dailyReminderEnabled = reminderEnabled,
             dailyReminderTime = reminderTime,
-            widgetPhotoSource = widgetSource,
-            widgetCustomAlbumIds = widgetAlbumIds,
+            widgetPhotoSource = widgetSettings.first,
+            widgetCustomAlbumIds = widgetSettings.second,
+            widgetStartDate = widgetSettings.third.first,
+            widgetEndDate = widgetSettings.third.second,
             error = internal.error
         )
     }.stateIn(
@@ -107,12 +121,16 @@ class SettingsViewModel @Inject constructor(
     fun setDailyTaskEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setDailyTaskEnabled(enabled)
+            // Update widgets to reflect change
+            widgetUpdater.updateDailyProgressWidgets()
         }
     }
     
     fun setDailyTaskTarget(target: Int) {
         viewModelScope.launch {
             preferencesRepository.setDailyTaskTarget(target)
+            // Update widgets to reflect new target
+            widgetUpdater.updateDailyProgressWidgets()
         }
     }
     
@@ -147,12 +165,24 @@ class SettingsViewModel @Inject constructor(
     fun setWidgetPhotoSource(source: WidgetPhotoSource) {
         viewModelScope.launch {
             preferencesRepository.setWidgetPhotoSource(source)
+            // Update widgets to reflect new source
+            widgetUpdater.updatePhotoSorterWidgets()
         }
     }
     
     fun setWidgetCustomAlbumIds(albumIds: Set<String>) {
         viewModelScope.launch {
             preferencesRepository.setWidgetCustomAlbumIds(albumIds)
+            // Update widgets to reflect new album selection
+            widgetUpdater.updatePhotoSorterWidgets()
+        }
+    }
+    
+    fun setWidgetDateRange(startDate: Long?, endDate: Long?) {
+        viewModelScope.launch {
+            preferencesRepository.setWidgetDateRange(startDate, endDate)
+            // Update widgets to reflect new date range
+            widgetUpdater.updatePhotoSorterWidgets()
         }
     }
     

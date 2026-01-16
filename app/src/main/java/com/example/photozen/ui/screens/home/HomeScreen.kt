@@ -235,8 +235,6 @@ fun HomeScreen(
                             }
                         }
                     )
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
                 }
                 
                 // Daily Task Card
@@ -261,8 +259,6 @@ fun HomeScreen(
                             }
                         }
                     )
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
                 }
             }
             
