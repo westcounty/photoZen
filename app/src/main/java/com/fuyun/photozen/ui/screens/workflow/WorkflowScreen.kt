@@ -240,7 +240,7 @@ private fun WorkflowTopBar(
             IconButton(onClick = onClose) {
                 Icon(
                     Icons.Default.Close,
-                    contentDescription = "退�?,
+                    contentDescription = "退出",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }

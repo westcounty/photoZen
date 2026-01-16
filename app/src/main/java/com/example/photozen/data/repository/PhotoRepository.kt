@@ -72,14 +72,29 @@ interface PhotoRepository {
     fun getUnsortedPhotos(): Flow<List<PhotoEntity>>
     
     /**
+     * Get unsorted photos for Flow Sorter with sort order.
+     */
+    fun getUnsortedPhotos(ascending: Boolean): Flow<List<PhotoEntity>>
+    
+    /**
      * Get unsorted photos filtered by bucket IDs.
      */
     fun getUnsortedPhotosByBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>>
     
     /**
+     * Get unsorted photos filtered by bucket IDs with sort order.
+     */
+    fun getUnsortedPhotosByBuckets(bucketIds: List<String>, ascending: Boolean): Flow<List<PhotoEntity>>
+    
+    /**
      * Get unsorted photos excluding specific bucket IDs.
      */
     fun getUnsortedPhotosExcludingBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>>
+    
+    /**
+     * Get unsorted photos excluding specific bucket IDs with sort order.
+     */
+    fun getUnsortedPhotosExcludingBuckets(bucketIds: List<String>, ascending: Boolean): Flow<List<PhotoEntity>>
     
     /**
      * Get count of unsorted photos filtered by bucket IDs.

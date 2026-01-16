@@ -22,6 +22,14 @@ class GetUnsortedPhotosUseCase @Inject constructor(
     }
     
     /**
+     * Get all unsorted photos as Flow with sort order.
+     * @param ascending If true, sort by date ascending (oldest first), otherwise descending (newest first).
+     */
+    operator fun invoke(ascending: Boolean): Flow<List<PhotoEntity>> {
+        return photoRepository.getUnsortedPhotos(ascending)
+    }
+    
+    /**
      * Get unsorted photos filtered by bucket IDs (for camera only mode).
      */
     fun byBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>> {
@@ -29,10 +37,24 @@ class GetUnsortedPhotosUseCase @Inject constructor(
     }
     
     /**
+     * Get unsorted photos filtered by bucket IDs with sort order.
+     */
+    fun byBuckets(bucketIds: List<String>, ascending: Boolean): Flow<List<PhotoEntity>> {
+        return photoRepository.getUnsortedPhotosByBuckets(bucketIds, ascending)
+    }
+    
+    /**
      * Get unsorted photos excluding specific bucket IDs (for exclude camera mode).
      */
     fun excludingBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>> {
         return photoRepository.getUnsortedPhotosExcludingBuckets(bucketIds)
+    }
+    
+    /**
+     * Get unsorted photos excluding specific bucket IDs with sort order.
+     */
+    fun excludingBuckets(bucketIds: List<String>, ascending: Boolean): Flow<List<PhotoEntity>> {
+        return photoRepository.getUnsortedPhotosExcludingBuckets(bucketIds, ascending)
     }
     
     /**

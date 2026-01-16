@@ -21,6 +21,7 @@ import com.example.photozen.ui.screens.lighttable.LightTableScreen
 import com.example.photozen.ui.screens.photolist.PhotoListScreen
 import com.example.photozen.ui.screens.quicktag.QuickTagScreen
 import com.example.photozen.ui.screens.settings.SettingsScreen
+import com.example.photozen.ui.screens.smartgallery.SmartGalleryScreen
 import com.example.photozen.ui.screens.tags.TagBubbleScreen
 import com.example.photozen.ui.screens.tags.TaggedPhotosScreen
 import com.example.photozen.ui.screens.trash.TrashScreen
@@ -73,6 +74,17 @@ fun PicZenNavHost(
                 onNavigateToFilterSelection = { mode, target ->
                     // For daily task modes, we pass targetCount
                     navController.navigate(Screen.PhotoFilterSelection(mode = mode, targetCount = target))
+                },
+                onNavigateToSmartGallery = {
+                    navController.navigate(Screen.SmartGallery)
+                }
+            )
+        }
+        
+        composable<Screen.SmartGallery> {
+            SmartGalleryScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
                 }
             )
         }

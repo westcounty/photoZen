@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.SwipeRight
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Rocket
 import androidx.compose.material.icons.filled.Sell
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -98,6 +99,7 @@ fun HomeScreen(
     onNavigateToTagBubble: () -> Unit,
     onNavigateToAchievements: () -> Unit,
     onNavigateToFilterSelection: (String, Int) -> Unit = { _, _ -> },
+    onNavigateToSmartGallery: () -> Unit = { },
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -266,6 +268,17 @@ fun HomeScreen(
                                 onNavigateToWorkflow(false, -1)
                             }
                         }
+                    )
+                }
+                
+                // Smart Gallery Card - Only shown when experimental features enabled
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = uiState.experimentalEnabled,
+                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
+                    exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut()
+                ) {
+                    SmartGalleryCard(
+                        onClick = onNavigateToSmartGallery
                     )
                 }
             }
@@ -985,6 +998,63 @@ private fun PermissionDeniedCard(
             Button(onClick = onRequestPermission) {
                 Text("授予权限")
             }
+        }
+    }
+}
+
+/**
+ * Smart Gallery Card - Entry point to AI-powered features.
+ */
+@Composable
+private fun SmartGalleryCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "智能画廊",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "AI 搜索 · 相似照片 · 人物分组 · 地图",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

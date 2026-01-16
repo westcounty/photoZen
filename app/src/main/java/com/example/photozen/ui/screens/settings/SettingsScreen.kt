@@ -141,6 +141,14 @@ fun SettingsScreen(
                 onCheckedChange = { viewModel.setOnestopEnabled(it) }
             )
             
+            SettingsSwitchItem(
+                icon = Icons.Default.Science,
+                title = "实验性功能",
+                subtitle = "AI相关功能，施工中，不确定在您的手机上是什么样",
+                checked = uiState.experimentalEnabled,
+                onCheckedChange = { viewModel.setExperimentalEnabled(it) }
+            )
+            
             Spacer(modifier = Modifier.height(24.dp))
             
             // Acknowledgement Card - Flat display

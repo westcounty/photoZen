@@ -45,7 +45,8 @@ data class HomeUiState(
     val achievementData: AchievementData = AchievementData(),
     val photoFilterMode: PhotoFilterMode = PhotoFilterMode.ALL,
     val dailyTaskStatus: DailyTaskStatus? = null,
-    val onestopEnabled: Boolean = false
+    val onestopEnabled: Boolean = false,
+    val experimentalEnabled: Boolean = false
 ) {
     val sortedCount: Int
         get() = keepCount + trashCount + maybeCount
@@ -252,10 +253,11 @@ class HomeViewModel @Inject constructor(
             combine(
                 getFilteredTotalCount(), 
                 getFilteredSortedCount(),
-                preferencesRepository.getOnestopEnabled()
-            ) { t, s, onestop -> Triple(t, Pair(s, onestop), Unit) }
+                preferencesRepository.getOnestopEnabled(),
+                preferencesRepository.getExperimentalEnabled()
+            ) { t, s, onestop, experimental -> FilteredCounts(t, s, onestop, experimental) }
         ) { error, achievementData, filterMode, dailyTaskStatus, counts ->
-            FilteredData(error, achievementData, filterMode, counts.first, counts.second.first, dailyTaskStatus, counts.second.second)
+            FilteredData(error, achievementData, filterMode, counts.filteredTotal, counts.filteredSorted, dailyTaskStatus, counts.onestopEnabled, counts.experimentalEnabled)
         }
     ) { values ->
         @Suppress("UNCHECKED_CAST")
@@ -276,7 +278,8 @@ class HomeViewModel @Inject constructor(
             achievementData = combined.achievementData,
             photoFilterMode = combined.filterMode,
             dailyTaskStatus = combined.dailyTaskStatus,
-            onestopEnabled = combined.onestopEnabled
+            onestopEnabled = combined.onestopEnabled,
+            experimentalEnabled = combined.experimentalEnabled
         )
     }.stateIn(
         scope = viewModelScope,
@@ -287,6 +290,13 @@ class HomeViewModel @Inject constructor(
     /**
      * Helper data class for combining filtered data.
      */
+    private data class FilteredCounts(
+        val filteredTotal: Int,
+        val filteredSorted: Int,
+        val onestopEnabled: Boolean,
+        val experimentalEnabled: Boolean
+    )
+    
     private data class FilteredData(
         val error: String?,
         val achievementData: AchievementData,
@@ -294,7 +304,8 @@ class HomeViewModel @Inject constructor(
         val filteredTotal: Int,
         val filteredSorted: Int,
         val dailyTaskStatus: DailyTaskStatus?,
-        val onestopEnabled: Boolean
+        val onestopEnabled: Boolean,
+        val experimentalEnabled: Boolean
     )
     
     init {

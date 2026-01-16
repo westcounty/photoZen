@@ -41,6 +41,7 @@ data class SettingsUiState(
     val widgetEndDate: Long? = null,
     val cardZoomEnabled: Boolean = true,
     val onestopEnabled: Boolean = false,
+    val experimentalEnabled: Boolean = false,
     val error: String? = null
 )
 
@@ -96,8 +97,9 @@ class SettingsViewModel @Inject constructor(
     // Combine extra settings
     private val extraSettingsFlow = combine(
         preferencesRepository.getCardZoomEnabled(),
-        preferencesRepository.getOnestopEnabled()
-    ) { cardZoom, onestop -> Pair(cardZoom, onestop) }
+        preferencesRepository.getOnestopEnabled(),
+        preferencesRepository.getExperimentalEnabled()
+    ) { cardZoom, onestop, experimental -> Triple(cardZoom, onestop, experimental) }
     
     val uiState: StateFlow<SettingsUiState> = combine(
         preferencesRepository.getTotalSortedCount(),
@@ -122,7 +124,7 @@ class SettingsViewModel @Inject constructor(
         @Suppress("UNCHECKED_CAST")
         val widgetSettings = params[7] as Triple<WidgetPhotoSource, Set<String>, Pair<Long?, Long?>>
         @Suppress("UNCHECKED_CAST")
-        val extraSettings = params[8] as Pair<Boolean, Boolean>
+        val extraSettings = params[8] as Triple<Boolean, Boolean, Boolean>
         val internal = params[9] as InternalState
         
         SettingsUiState(
@@ -139,6 +141,7 @@ class SettingsViewModel @Inject constructor(
             widgetEndDate = widgetSettings.third.second,
             cardZoomEnabled = extraSettings.first,
             onestopEnabled = extraSettings.second,
+            experimentalEnabled = extraSettings.third,
             error = internal.error
         )
     }.stateIn(
@@ -206,6 +209,12 @@ class SettingsViewModel @Inject constructor(
     fun setOnestopEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setOnestopEnabled(enabled)
+        }
+    }
+    
+    fun setExperimentalEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setExperimentalEnabled(enabled)
         }
     }
     

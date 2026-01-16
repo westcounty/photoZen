@@ -157,12 +157,24 @@ class PhotoRepositoryImpl @Inject constructor(
         return photoDao.getUnsortedPhotos()
     }
     
+    override fun getUnsortedPhotos(ascending: Boolean): Flow<List<PhotoEntity>> {
+        return if (ascending) photoDao.getUnsortedPhotosAsc() else photoDao.getUnsortedPhotos()
+    }
+    
     override fun getUnsortedPhotosByBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>> {
         return photoDao.getUnsortedPhotosByBuckets(bucketIds)
     }
     
+    override fun getUnsortedPhotosByBuckets(bucketIds: List<String>, ascending: Boolean): Flow<List<PhotoEntity>> {
+        return if (ascending) photoDao.getUnsortedPhotosByBucketsAsc(bucketIds) else photoDao.getUnsortedPhotosByBuckets(bucketIds)
+    }
+    
     override fun getUnsortedPhotosExcludingBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>> {
         return photoDao.getUnsortedPhotosExcludingBuckets(bucketIds)
+    }
+    
+    override fun getUnsortedPhotosExcludingBuckets(bucketIds: List<String>, ascending: Boolean): Flow<List<PhotoEntity>> {
+        return if (ascending) photoDao.getUnsortedPhotosExcludingBucketsAsc(bucketIds) else photoDao.getUnsortedPhotosExcludingBuckets(bucketIds)
     }
     
     override fun getUnsortedCountByBuckets(bucketIds: List<String>): Flow<Int> {

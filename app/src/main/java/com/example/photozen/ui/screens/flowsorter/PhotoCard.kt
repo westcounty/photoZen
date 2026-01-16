@@ -28,7 +28,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +53,7 @@ import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
+import com.example.photozen.util.OfflineGeocoder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -215,6 +220,15 @@ private fun PhotoInfoOverlay(
     photo: PhotoEntity,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val offlineGeocoder = remember { OfflineGeocoder(context) }
+    var locationText by remember { mutableStateOf<String?>(null) }
+    
+    // Load location text asynchronously
+    LaunchedEffect(photo.latitude, photo.longitude) {
+        locationText = offlineGeocoder.getLocationText(photo.latitude, photo.longitude)
+    }
+    
     Column(modifier = modifier) {
         // File name
         Text(
@@ -228,19 +242,37 @@ private fun PhotoInfoOverlay(
         
         Spacer(modifier = Modifier.height(4.dp))
         
-        // Date and dimensions
+        // Date/Time and Location row
         Row(
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Date
+            // Date and Time (combined)
             if (photo.dateTaken > 0) {
                 Text(
-                    text = formatDate(photo.dateTaken),
+                    text = formatDateTime(photo.dateTaken),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             
+            // Location
+            locationText?.let { location ->
+                Text(
+                    text = location,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(2.dp))
+        
+        // Dimensions and Camera row
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             // Dimensions
             if (photo.width > 0 && photo.height > 0) {
                 Text(
@@ -361,11 +393,11 @@ private fun SwipeIndicatorIcon(
 }
 
 /**
- * Format timestamp to readable date string.
+ * Format timestamp to readable date and time string.
  */
-private fun formatDate(timestamp: Long): String {
+private fun formatDateTime(timestamp: Long): String {
     return try {
-        val sdf = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+        val sdf = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
         sdf.format(Date(timestamp))
     } catch (e: Exception) {
         ""

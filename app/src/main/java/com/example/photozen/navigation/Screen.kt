@@ -108,4 +108,11 @@ sealed interface Screen {
         val isDailyTask: Boolean = false,
         val targetCount: Int = -1
     ) : Screen
+    
+    /**
+     * Smart Gallery screen - AI-powered photo features (experimental).
+     * Includes: AI search, similar photos, person grouping, map view.
+     */
+    @Serializable
+    data object SmartGallery : Screen
 }

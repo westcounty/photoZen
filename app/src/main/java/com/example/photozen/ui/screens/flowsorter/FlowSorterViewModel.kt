@@ -201,6 +201,7 @@ class FlowSorterViewModel @Inject constructor(
      * Get filtered photos flow based on current filter mode.
      * IMPORTANT: Wait for camera albums to load before applying camera-based filters.
      * Also monitors session custom filter changes for CUSTOM mode.
+     * Sorting is now done at database level to ensure correct pagination.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun getFilteredPhotosFlow(): Flow<List<PhotoEntity>> {
@@ -208,19 +209,34 @@ class FlowSorterViewModel @Inject constructor(
             preferencesRepository.getPhotoFilterMode(),
             _cameraAlbumIds,
             _cameraAlbumsLoaded,
-            preferencesRepository.getSessionCustomFilterFlow()
-        ) { filterMode, cameraIds, loaded, sessionFilter ->
-            FilterParams(filterMode, cameraIds, loaded, sessionFilter)
+            preferencesRepository.getSessionCustomFilterFlow(),
+            _sortOrder
+        ) { filterMode, cameraIds, loaded, sessionFilter, sortOrder ->
+            FilterParams(filterMode, cameraIds, loaded, sessionFilter, sortOrder)
         }.flatMapLatest { params ->
+            // For RANDOM sort, we still need to apply sorting at UI level
+            // For DATE_ASC/DATE_DESC, sorting is done at database level
+            val ascending = params.sortOrder == PhotoSortOrder.DATE_ASC
+            
             when (params.filterMode) {
-                PhotoFilterMode.ALL -> getUnsortedPhotosUseCase()
+                PhotoFilterMode.ALL -> {
+                    if (params.sortOrder == PhotoSortOrder.RANDOM) {
+                        getUnsortedPhotosUseCase()
+                    } else {
+                        getUnsortedPhotosUseCase(ascending)
+                    }
+                }
                 PhotoFilterMode.CAMERA_ONLY -> {
                     // Must wait for camera albums to load
                     if (!params.cameraLoaded) {
                         // Return empty while loading
                         flowOf(emptyList())
                     } else if (params.cameraIds.isNotEmpty()) {
-                        getUnsortedPhotosUseCase.byBuckets(params.cameraIds)
+                        if (params.sortOrder == PhotoSortOrder.RANDOM) {
+                            getUnsortedPhotosUseCase.byBuckets(params.cameraIds)
+                        } else {
+                            getUnsortedPhotosUseCase.byBuckets(params.cameraIds, ascending)
+                        }
                     } else {
                         // No camera albums found, show empty
                         flowOf(emptyList())
@@ -232,19 +248,35 @@ class FlowSorterViewModel @Inject constructor(
                         // Return empty while loading
                         flowOf(emptyList())
                     } else if (params.cameraIds.isNotEmpty()) {
-                        getUnsortedPhotosUseCase.excludingBuckets(params.cameraIds)
+                        if (params.sortOrder == PhotoSortOrder.RANDOM) {
+                            getUnsortedPhotosUseCase.excludingBuckets(params.cameraIds)
+                        } else {
+                            getUnsortedPhotosUseCase.excludingBuckets(params.cameraIds, ascending)
+                        }
                     } else {
                         // No camera albums found, show all photos
-                        getUnsortedPhotosUseCase()
+                        if (params.sortOrder == PhotoSortOrder.RANDOM) {
+                            getUnsortedPhotosUseCase()
+                        } else {
+                            getUnsortedPhotosUseCase(ascending)
+                        }
                     }
                 }
                 PhotoFilterMode.CUSTOM -> {
                     val sessionFilter = params.sessionFilter
                     if (sessionFilter != null && !sessionFilter.albumIds.isNullOrEmpty()) {
-                        getUnsortedPhotosUseCase.byBuckets(sessionFilter.albumIds)
+                        if (params.sortOrder == PhotoSortOrder.RANDOM) {
+                            getUnsortedPhotosUseCase.byBuckets(sessionFilter.albumIds)
+                        } else {
+                            getUnsortedPhotosUseCase.byBuckets(sessionFilter.albumIds, ascending)
+                        }
                     } else {
                         // No custom filter set, show all photos
-                        getUnsortedPhotosUseCase()
+                        if (params.sortOrder == PhotoSortOrder.RANDOM) {
+                            getUnsortedPhotosUseCase()
+                        } else {
+                            getUnsortedPhotosUseCase(ascending)
+                        }
                     }
                 }
             }
@@ -258,7 +290,8 @@ class FlowSorterViewModel @Inject constructor(
         val filterMode: PhotoFilterMode,
         val cameraIds: List<String>,
         val cameraLoaded: Boolean,
-        val sessionFilter: CustomFilterSession?
+        val sessionFilter: CustomFilterSession?,
+        val sortOrder: PhotoSortOrder
     )
     
     /**
@@ -271,9 +304,10 @@ class FlowSorterViewModel @Inject constructor(
             preferencesRepository.getPhotoFilterMode(),
             _cameraAlbumIds,
             _cameraAlbumsLoaded,
-            preferencesRepository.getSessionCustomFilterFlow()
-        ) { filterMode, cameraIds, loaded, sessionFilter ->
-            FilterParams(filterMode, cameraIds, loaded, sessionFilter)
+            preferencesRepository.getSessionCustomFilterFlow(),
+            _sortOrder
+        ) { filterMode, cameraIds, loaded, sessionFilter, sortOrder ->
+            FilterParams(filterMode, cameraIds, loaded, sessionFilter, sortOrder)
         }.flatMapLatest { params ->
             when (params.filterMode) {
                 PhotoFilterMode.ALL -> getUnsortedPhotosUseCase.getCount()
@@ -421,13 +455,15 @@ class FlowSorterViewModel @Inject constructor(
     
     /**
      * Apply sort order to photos list.
-     * Uses dateAdded (creation time) for sorting, NOT dateModified or dateTaken.
+     * NOTE: DATE_ASC and DATE_DESC are now handled at database level for correct pagination.
+     * This method only applies RANDOM shuffle at UI level.
      */
     private fun applySortOrder(photos: List<PhotoEntity>, sortOrder: PhotoSortOrder): List<PhotoEntity> {
         return when (sortOrder) {
-            // Sort by dateAdded (creation time in seconds)
-            PhotoSortOrder.DATE_DESC -> photos.sortedByDescending { it.dateAdded }
-            PhotoSortOrder.DATE_ASC -> photos.sortedBy { it.dateAdded }
+            // DATE_DESC and DATE_ASC are now sorted at database level
+            PhotoSortOrder.DATE_DESC -> photos
+            PhotoSortOrder.DATE_ASC -> photos
+            // RANDOM still needs UI-level shuffling
             PhotoSortOrder.RANDOM -> photos.shuffled(kotlin.random.Random(randomSeed))
         }
     }
