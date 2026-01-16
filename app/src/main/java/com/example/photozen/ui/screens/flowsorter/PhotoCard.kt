@@ -108,10 +108,12 @@ fun PhotoCard(
                     )
             ) {
                 // Photo with preserved aspect ratio
+                // Optimized for faster loading: no crossfade, with cache key
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
                         .data(Uri.parse(photo.systemUri))
-                        .crossfade(true)
+                        .memoryCacheKey(photo.id) // Use photo.id for better cache hits
+                        // No crossfade for instant display
                         .build(),
                     contentDescription = photo.displayName,
                     contentScale = ContentScale.Fit,
@@ -121,7 +123,7 @@ fun PhotoCard(
                         .clip(RoundedCornerShape(16.dp))
                 )
                 
-                // Tap hint badge
+                // Tap hint badge - Always visible (not dependent on image load state)
                 if (onPhotoClick != null) {
                     Box(
                         modifier = Modifier

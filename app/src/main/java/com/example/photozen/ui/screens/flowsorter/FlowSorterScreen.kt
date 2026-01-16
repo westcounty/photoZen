@@ -88,6 +88,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.rotate
 import kotlinx.coroutines.delay
 import kotlin.random.Random
+import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
+import coil3.ImageLoader
+import coil3.request.ImageRequest
+import coil3.imageLoader
 
 /**
  * Flow Sorter Screen - Tinder-style swipe interface for sorting photos.
@@ -623,6 +628,7 @@ fun FlowSorterContent(
 
 /**
  * Card stack showing current and next photos.
+ * Includes image preloading for smoother transitions.
  */
 @Composable
 private fun CardStack(
@@ -633,6 +639,23 @@ private fun CardStack(
     onSwipeDown: () -> Unit,
     onPhotoClick: (PhotoEntity) -> Unit
 ) {
+    val context = LocalContext.current
+    val imageLoader = context.imageLoader
+    
+    // Preload next 3 images for smoother transitions
+    LaunchedEffect(uiState.currentPhoto?.id) {
+        // Preload images starting from index 1 (next photo) up to index 3
+        (1..3).forEach { offset ->
+            uiState.photos.getOrNull(offset)?.let { photo ->
+                val request = ImageRequest.Builder(context)
+                    .data(Uri.parse(photo.systemUri))
+                    .memoryCacheKey(photo.id)
+                    .build()
+                imageLoader.enqueue(request)
+            }
+        }
+    }
+    
     Box(modifier = Modifier.fillMaxSize()) {
         // Preview card (behind)
         uiState.nextPhoto?.let { nextPhoto ->
