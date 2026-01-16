@@ -44,7 +44,8 @@ data class HomeUiState(
     val error: String? = null,
     val achievementData: AchievementData = AchievementData(),
     val photoFilterMode: PhotoFilterMode = PhotoFilterMode.ALL,
-    val dailyTaskStatus: DailyTaskStatus? = null
+    val dailyTaskStatus: DailyTaskStatus? = null,
+    val onestopEnabled: Boolean = false
 ) {
     val sortedCount: Int
         get() = keepCount + trashCount + maybeCount
@@ -248,9 +249,13 @@ class HomeViewModel @Inject constructor(
             preferencesRepository.getAllAchievementData(),
             preferencesRepository.getPhotoFilterMode(),
             getDailyTaskStatusUseCase(),
-            combine(getFilteredTotalCount(), getFilteredSortedCount()) { t, s -> Pair(t, s) }
+            combine(
+                getFilteredTotalCount(), 
+                getFilteredSortedCount(),
+                preferencesRepository.getOnestopEnabled()
+            ) { t, s, onestop -> Triple(t, Pair(s, onestop), Unit) }
         ) { error, achievementData, filterMode, dailyTaskStatus, counts ->
-            FilteredData(error, achievementData, filterMode, counts.first, counts.second, dailyTaskStatus)
+            FilteredData(error, achievementData, filterMode, counts.first, counts.second.first, dailyTaskStatus, counts.second.second)
         }
     ) { values ->
         @Suppress("UNCHECKED_CAST")
@@ -270,7 +275,8 @@ class HomeViewModel @Inject constructor(
             error = combined.error,
             achievementData = combined.achievementData,
             photoFilterMode = combined.filterMode,
-            dailyTaskStatus = combined.dailyTaskStatus
+            dailyTaskStatus = combined.dailyTaskStatus,
+            onestopEnabled = combined.onestopEnabled
         )
     }.stateIn(
         scope = viewModelScope,
@@ -287,7 +293,8 @@ class HomeViewModel @Inject constructor(
         val filterMode: PhotoFilterMode,
         val filteredTotal: Int,
         val filteredSorted: Int,
-        val dailyTaskStatus: DailyTaskStatus?
+        val dailyTaskStatus: DailyTaskStatus?,
+        val onestopEnabled: Boolean
     )
     
     init {

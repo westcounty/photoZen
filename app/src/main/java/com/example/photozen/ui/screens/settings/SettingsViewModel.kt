@@ -40,6 +40,7 @@ data class SettingsUiState(
     val widgetStartDate: Long? = null,
     val widgetEndDate: Long? = null,
     val cardZoomEnabled: Boolean = true,
+    val onestopEnabled: Boolean = false,
     val error: String? = null
 )
 
@@ -92,6 +93,12 @@ class SettingsViewModel @Inject constructor(
         Triple(source, albumIds, dateRange)
     }
     
+    // Combine extra settings
+    private val extraSettingsFlow = combine(
+        preferencesRepository.getCardZoomEnabled(),
+        preferencesRepository.getOnestopEnabled()
+    ) { cardZoom, onestop -> Pair(cardZoom, onestop) }
+    
     val uiState: StateFlow<SettingsUiState> = combine(
         preferencesRepository.getTotalSortedCount(),
         preferencesRepository.getPhotoFilterMode(),
@@ -101,7 +108,7 @@ class SettingsViewModel @Inject constructor(
         preferencesRepository.getDailyReminderEnabled(),
         preferencesRepository.getDailyReminderTime(),
         widgetSettingsFlow,
-        preferencesRepository.getCardZoomEnabled(),
+        extraSettingsFlow,
         _internalState
     ) { params ->
         val totalSorted = params[0] as Int
@@ -114,7 +121,8 @@ class SettingsViewModel @Inject constructor(
         val reminderTime = params[6] as Pair<Int, Int>
         @Suppress("UNCHECKED_CAST")
         val widgetSettings = params[7] as Triple<WidgetPhotoSource, Set<String>, Pair<Long?, Long?>>
-        val cardZoomEnabled = params[8] as Boolean
+        @Suppress("UNCHECKED_CAST")
+        val extraSettings = params[8] as Pair<Boolean, Boolean>
         val internal = params[9] as InternalState
         
         SettingsUiState(
@@ -129,7 +137,8 @@ class SettingsViewModel @Inject constructor(
             widgetCustomAlbumIds = widgetSettings.second,
             widgetStartDate = widgetSettings.third.first,
             widgetEndDate = widgetSettings.third.second,
-            cardZoomEnabled = cardZoomEnabled,
+            cardZoomEnabled = extraSettings.first,
+            onestopEnabled = extraSettings.second,
             error = internal.error
         )
     }.stateIn(
@@ -193,6 +202,12 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
+    
+    fun setOnestopEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setOnestopEnabled(enabled)
+        }
+    }
     
     fun clearError() {
         _internalState.update { it.copy(error = null) }

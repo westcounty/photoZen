@@ -86,6 +86,7 @@ class PreferencesRepository @Inject constructor(
         
         // Feature settings
         val KEY_CARD_ZOOM_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("card_zoom_enabled")
+        val KEY_ONESTOP_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("onestop_enabled")
         
         // Achievement keys
         val KEY_TAGGED_COUNT = intPreferencesKey("total_tagged_count")
@@ -286,6 +287,23 @@ class PreferencesRepository @Inject constructor(
     suspend fun setCardZoomEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[KEY_CARD_ZOOM_ENABLED] = enabled
+        }
+    }
+    
+    /**
+     * Get whether one-stop sorting (一站式整理) is enabled on home screen.
+     * Default is false.
+     */
+    fun getOnestopEnabled(): Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[KEY_ONESTOP_ENABLED] ?: false
+    }
+    
+    /**
+     * Set one-stop sorting enabled state.
+     */
+    suspend fun setOnestopEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[KEY_ONESTOP_ENABLED] = enabled
         }
     }
     

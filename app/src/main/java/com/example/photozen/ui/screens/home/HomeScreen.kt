@@ -218,6 +218,14 @@ fun HomeScreen(
             
             // Action Cards
             if (!uiState.isLoading) {
+                // Compact stats header - shown when one-stop is disabled
+                if (!uiState.onestopEnabled && uiState.hasPhotos) {
+                    CompactStatsHeader(
+                        unsortedCount = uiState.unsortedCount,
+                        sortedCount = uiState.sortedCount
+                    )
+                }
+                
                 // Daily Task Card - Now the PRIMARY prominent card at top
                 if (uiState.dailyTaskStatus?.isEnabled == true) {
                     PrimaryDailyTaskCard(
@@ -242,8 +250,8 @@ fun HomeScreen(
                     )
                 }
                 
-                // Mission Card - Now the SECONDARY card
-                if (uiState.filteredUnsorted > 0) {
+                // Mission Card - Only shown when onestopEnabled is true
+                if (uiState.onestopEnabled && uiState.filteredUnsorted > 0) {
                     SecondaryMissionCard(
                         unsortedCount = uiState.filteredUnsorted,
                         sortedCount = uiState.filteredSorted,
@@ -346,6 +354,76 @@ fun HomeScreen(
                     }
                 )
             }
+        }
+    }
+}
+
+/**
+ * Compact stats header - Small display of unsorted/sorted counts.
+ * Shown when one-stop sorting is disabled.
+ */
+@Composable
+private fun CompactStatsHeader(
+    unsortedCount: Int,
+    sortedCount: Int
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Unsorted count
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            Icon(
+                imageVector = Icons.Default.PhotoLibrary,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "待整理",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = unsortedCount.toString(),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        
+        // Sorted count
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = KeepGreen,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "已整理",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = sortedCount.toString(),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = KeepGreen
+            )
         }
     }
 }

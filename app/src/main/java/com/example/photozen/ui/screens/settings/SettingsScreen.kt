@@ -133,6 +133,14 @@ fun SettingsScreen(
                 onClick = { showFilterDialog = true }
             )
             
+            SettingsSwitchItem(
+                icon = Icons.Default.Rocket,
+                title = "一站式整理",
+                subtitle = if (uiState.onestopEnabled) "首页显示一站式整理模块" else "首页隐藏一站式整理模块",
+                checked = uiState.onestopEnabled,
+                onCheckedChange = { viewModel.setOnestopEnabled(it) }
+            )
+            
             Spacer(modifier = Modifier.height(24.dp))
             
             // Acknowledgement Card - Flat display
@@ -359,7 +367,7 @@ fun DailyTaskSettingsDialog(
                             onClick = { onModeChange(DailyTaskMode.FLOW) },
                             shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
                         ) {
-                            Text("心流模式")
+                            Text("一条龙整理")
                         }
                         SegmentedButton(
                             selected = uiState.dailyTaskMode == DailyTaskMode.QUICK,
@@ -1067,14 +1075,14 @@ private fun ChangelogDialog(onDismiss: () -> Unit) {
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // v1.1 Version header
+                // v1.2 Version header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "v1.1.0.018",
+                        text = "v1.2.0.020",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -1087,24 +1095,50 @@ private fun ChangelogDialog(onDismiss: () -> Unit) {
                 }
                 
                 Text(
-                    text = "🚀 体验优化版本",
+                    text = "🎛️ 自定义首页版本",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 
                 Text(
-                    text = "针对用户反馈进行全面体验优化",
+                    text = "首页布局可自定义，更灵活的整理体验",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
-                // v1.1 features
-                ChangelogItem("🎯 首页布局", "每日任务升级为核心入口，一站式整理变为次要入口")
-                ChangelogItem("⚡ 快速滑动", "彻底解决快速滑动崩溃，恢复丝滑动画")
-                ChangelogItem("📊 进度显示", "修复分母显示，正确显示真实待整理总数")
-                ChangelogItem("📱 桌面小组件", "每日任务进度实时更新，布局优化")
-                ChangelogItem("⚙️ 默认设置", "快速整理模式、默认开启提醒、晚上10点")
+                // v1.2 features
+                ChangelogItem("🎛️ 一站式整理开关", "设置中可开关首页一站式整理模块显示")
+                ChangelogItem("📊 顶部统计", "关闭一站式整理后，首页顶部显示待整理/已整理数量")
+                ChangelogItem("🔄 任务模式改名", "心流模式更名为一条龙整理，更直观")
+                ChangelogItem("💬 意见反馈", "设置页面新增意见反馈与功能许愿入口")
+                
+                HorizontalDivider()
+                
+                // v1.1 Version header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "v1.1.0.018",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "2026-01-17",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                Text(
+                    text = "体验优化：快速滑动、进度显示、小组件",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 
                 HorizontalDivider()
                 
@@ -1360,7 +1394,7 @@ private fun AboutCard(
             
             TextButton(onClick = onVersionClick) {
                 Text(
-                    text = "v1.1.0.018",
+                    text = "v1.2.0.020",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
