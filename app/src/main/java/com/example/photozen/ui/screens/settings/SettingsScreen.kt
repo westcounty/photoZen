@@ -1,5 +1,6 @@
 package com.example.photozen.ui.screens.settings
 
+import com.example.photozen.BuildConfig
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -141,13 +142,17 @@ fun SettingsScreen(
                 onCheckedChange = { viewModel.setOnestopEnabled(it) }
             )
             
-            SettingsSwitchItem(
-                icon = Icons.Default.Science,
-                title = "实验性功能",
-                subtitle = "AI相关功能，施工中，不确定在您的手机上是什么样",
-                checked = uiState.experimentalEnabled,
-                onCheckedChange = { viewModel.setExperimentalEnabled(it) }
-            )
+            // 实验性功能开关仅在 explore 分支显示
+            // main 分支隐藏此开关，专注于照片整理功能
+            if (BuildConfig.SHOW_EXPERIMENTAL_SETTINGS) {
+                SettingsSwitchItem(
+                    icon = Icons.Default.Science,
+                    title = "实验性功能",
+                    subtitle = "AI相关功能，施工中，不确定在您的手机上是什么样",
+                    checked = uiState.experimentalEnabled,
+                    onCheckedChange = { viewModel.setExperimentalEnabled(it) }
+                )
+            }
             
             Spacer(modifier = Modifier.height(24.dp))
             

@@ -43,10 +43,14 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Feature Flag: 智能画廊功能开关
+        // Feature Flags: 智能画廊功能开关
         // main 分支: false (专注照片整理)
         // explore/smart-gallery 分支: true (完整智能画廊功能)
         buildConfigField("boolean", "ENABLE_SMART_GALLERY", "false")
+        // 是否显示实验性功能设置开关
+        // main 分支: false (隐藏)
+        // explore/smart-gallery 分支: true (显示)
+        buildConfigField("boolean", "SHOW_EXPERIMENTAL_SETTINGS", "false")
 
         // Room schema export
         ksp {
