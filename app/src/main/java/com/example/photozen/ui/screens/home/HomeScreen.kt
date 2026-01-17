@@ -38,10 +38,13 @@ import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwipeRight
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Rocket
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -278,7 +281,12 @@ fun HomeScreen(
                     exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut()
                 ) {
                     SmartGalleryCard(
-                        onClick = onNavigateToSmartGallery
+                        onClick = onNavigateToSmartGallery,
+                        personCount = uiState.smartGalleryPersonCount,
+                        labelCount = uiState.smartGalleryLabelCount,
+                        gpsPhotoCount = uiState.smartGalleryGpsPhotoCount,
+                        analysisProgress = uiState.smartGalleryAnalysisProgress,
+                        isAnalyzing = uiState.smartGalleryIsAnalyzing
                     )
                 }
             }
@@ -1004,10 +1012,16 @@ private fun PermissionDeniedCard(
 
 /**
  * Smart Gallery Card - Entry point to AI-powered features.
+ * Enhanced with quick stats preview and analysis progress.
  */
 @Composable
 private fun SmartGalleryCard(
     onClick: () -> Unit,
+    personCount: Int = 0,
+    labelCount: Int = 0,
+    gpsPhotoCount: Int = 0,
+    analysisProgress: Float = 0f,
+    isAnalyzing: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -1015,46 +1029,154 @@ private fun SmartGalleryCard(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
-        )
+        ),
+        shape = RoundedCornerShape(16.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(16.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
+            // Header row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "智能画廊",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
                 Icon(
-                    imageVector = Icons.Default.AutoAwesome,
+                    imageVector = Icons.Default.ChevronRight,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.size(24.dp)
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "智能画廊",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Quick stats row - 4 preview icons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                SmartGalleryStatItem(
+                    icon = Icons.Default.Person,
+                    count = personCount,
+                    label = "人物",
+                    tint = Color(0xFF8B5CF6) // Purple
                 )
-                Text(
-                    text = "AI 搜索 · 相似照片 · 人物分组 · 地图",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                SmartGalleryStatItem(
+                    icon = Icons.Default.Sell,
+                    count = labelCount,
+                    label = "标签",
+                    tint = Color(0xFF10B981) // Green
+                )
+                SmartGalleryStatItem(
+                    icon = Icons.Default.Search,
+                    count = null,
+                    label = "搜索",
+                    tint = Color(0xFF3B82F6) // Blue
+                )
+                SmartGalleryStatItem(
+                    icon = Icons.Filled.Place,
+                    count = gpsPhotoCount,
+                    label = "位置",
+                    tint = Color(0xFFF59E0B) // Amber
                 )
             }
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            
+            // Analysis progress (only show if there's progress or analyzing)
+            if (isAnalyzing || analysisProgress > 0f) {
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    LinearProgressIndicator(
+                        progress = { analysisProgress },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp)),
+                        color = MaterialTheme.colorScheme.tertiary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isAnalyzing) "分析中 ${(analysisProgress * 100).toInt()}%" else "已分析 ${(analysisProgress * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
+    }
+}
+
+/**
+ * Single stat item for Smart Gallery preview.
+ */
+@Composable
+private fun SmartGalleryStatItem(
+    icon: ImageVector,
+    count: Int?,
+    label: String,
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(tint.copy(alpha = 0.1f)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (count != null && count > 0) {
+                Text(
+                    text = if (count > 999) "999+" else count.toString(),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = tint
+                )
+            } else {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

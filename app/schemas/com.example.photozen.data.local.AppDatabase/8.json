@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 8,
-    "identityHash": "4cd5cc9bbe4a14f333e627bc2310c586",
+    "identityHash": "501292755f34f2f0c56695f530b92c01",
     "entities": [
       {
         "tableName": "photos",
@@ -458,7 +458,7 @@
       },
       {
         "tableName": "photo_analysis",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`photoId` TEXT NOT NULL, `labels` TEXT NOT NULL, `embedding` BLOB, `analyzedAt` INTEGER NOT NULL, `hasGps` INTEGER NOT NULL, `latitude` REAL, `longitude` REAL, `faceCount` INTEGER NOT NULL, `primaryCategory` TEXT, `primaryCategoryConfidence` REAL NOT NULL, PRIMARY KEY(`photoId`), FOREIGN KEY(`photoId`) REFERENCES `photos`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`photoId` TEXT NOT NULL, `labels` TEXT NOT NULL, `embedding` BLOB, `analyzedAt` INTEGER NOT NULL, `hasGps` INTEGER NOT NULL, `latitude` REAL, `longitude` REAL, `faceCount` INTEGER NOT NULL, `primaryCategory` TEXT, `primaryCategoryConfidence` REAL NOT NULL, `phash` TEXT, `dominantColor` TEXT, `accentColor` TEXT, `luminance` INTEGER NOT NULL, `chroma` INTEGER NOT NULL, `quality` INTEGER NOT NULL, `sharpness` INTEGER NOT NULL, `aspectRatio` REAL NOT NULL, PRIMARY KEY(`photoId`), FOREIGN KEY(`photoId`) REFERENCES `photos`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "photoId",
@@ -513,6 +513,51 @@
           {
             "fieldPath": "primaryCategoryConfidence",
             "columnName": "primaryCategoryConfidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "phash",
+            "columnName": "phash",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dominantColor",
+            "columnName": "dominantColor",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "accentColor",
+            "columnName": "accentColor",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "luminance",
+            "columnName": "luminance",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "chroma",
+            "columnName": "chroma",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quality",
+            "columnName": "quality",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sharpness",
+            "columnName": "sharpness",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aspectRatio",
+            "columnName": "aspectRatio",
             "affinity": "REAL",
             "notNull": true
           }
@@ -751,11 +796,85 @@
             "createSql": "CREATE INDEX IF NOT EXISTS `index_persons_faceCount` ON `${TABLE_NAME}` (`faceCount`)"
           }
         ]
+      },
+      {
+        "tableName": "photo_labels",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`photoId` TEXT NOT NULL, `label` TEXT NOT NULL, `confidence` REAL NOT NULL, PRIMARY KEY(`photoId`, `label`), FOREIGN KEY(`photoId`) REFERENCES `photos`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "photoId",
+            "columnName": "photoId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "photoId",
+            "label"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_photo_labels_photoId",
+            "unique": false,
+            "columnNames": [
+              "photoId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_photo_labels_photoId` ON `${TABLE_NAME}` (`photoId`)"
+          },
+          {
+            "name": "index_photo_labels_label",
+            "unique": false,
+            "columnNames": [
+              "label"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_photo_labels_label` ON `${TABLE_NAME}` (`label`)"
+          },
+          {
+            "name": "index_photo_labels_label_photoId",
+            "unique": false,
+            "columnNames": [
+              "label",
+              "photoId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_photo_labels_label_photoId` ON `${TABLE_NAME}` (`label`, `photoId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "photos",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "photoId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4cd5cc9bbe4a14f333e627bc2310c586')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '501292755f34f2f0c56695f530b92c01')"
     ]
   }
 }

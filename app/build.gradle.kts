@@ -107,6 +107,11 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.work.compiler)
+    
+    // WorkManager
+    implementation(libs.work.runtime.ktx)
 
     // Room (Database)
     implementation(libs.room.runtime)
@@ -127,9 +132,24 @@ dependencies {
     // Coroutines
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     // Serialization (for type-safe navigation)
     implementation(libs.kotlinx.serialization.json)
+    
+    // MapLibre (地图功能)
+    implementation(libs.maplibre.android)
+    
+    // ML Kit (AI 分析)
+    implementation(libs.mlkit.image.labeling)
+    implementation(libs.mlkit.face.detection)
+    
+    // Play Services Tasks (for ML Kit async operations)
+    implementation(libs.play.services.tasks)
+    
+    // TensorFlow Lite (图像/人脸嵌入)
+    implementation(libs.tensorflow.lite)
+    implementation(libs.tensorflow.lite.support)
 
     // Testing
     testImplementation(libs.junit)

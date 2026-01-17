@@ -292,6 +292,12 @@ interface PhotoDao {
     fun getTotalCount(): Flow<Int>
     
     /**
+     * Get count of all photos (synchronous version for background tasks).
+     */
+    @Query("SELECT COUNT(*) FROM photos WHERE is_virtual_copy = 0")
+    suspend fun getPhotoCount(): Int
+    
+    /**
      * Get count of photos by status.
      */
     @Query("SELECT COUNT(*) FROM photos WHERE status = :status AND is_virtual_copy = 0")

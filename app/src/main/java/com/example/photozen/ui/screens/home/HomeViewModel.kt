@@ -10,11 +10,15 @@ import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.MediaStoreDataSource
 import com.example.photozen.domain.usecase.DailyTaskStatus
 import com.example.photozen.domain.usecase.GetDailyTaskStatusUseCase
+import com.example.photozen.data.local.dao.FaceDao
+import com.example.photozen.data.local.dao.PhotoAnalysisDao
+import com.example.photozen.data.local.dao.PhotoLabelDao
 import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.GetUnsortedPhotosUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -46,7 +50,13 @@ data class HomeUiState(
     val photoFilterMode: PhotoFilterMode = PhotoFilterMode.ALL,
     val dailyTaskStatus: DailyTaskStatus? = null,
     val onestopEnabled: Boolean = false,
-    val experimentalEnabled: Boolean = false
+    val experimentalEnabled: Boolean = false,
+    // Smart Gallery stats
+    val smartGalleryPersonCount: Int = 0,
+    val smartGalleryLabelCount: Int = 0,
+    val smartGalleryGpsPhotoCount: Int = 0,
+    val smartGalleryAnalysisProgress: Float = 0f,
+    val smartGalleryIsAnalyzing: Boolean = false
 ) {
     val sortedCount: Int
         get() = keepCount + trashCount + maybeCount
@@ -88,7 +98,12 @@ class HomeViewModel @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val photoRepository: PhotoRepository,
-    private val getDailyTaskStatusUseCase: GetDailyTaskStatusUseCase
+    private val getDailyTaskStatusUseCase: GetDailyTaskStatusUseCase,
+    // Smart Gallery DAOs
+    private val faceDao: FaceDao,
+    private val photoLabelDao: PhotoLabelDao,
+    private val photoAnalysisDao: PhotoAnalysisDao,
+    private val photoDao: com.example.photozen.data.local.dao.PhotoDao
 ) : ViewModel() {
     
     private val _hasPermission = MutableStateFlow(false)
@@ -233,53 +248,126 @@ class HomeViewModel @Inject constructor(
     }
     
     /**
-     * UI State exposed to the screen.
+     * Smart Gallery statistics data class.
      */
-    val uiState: StateFlow<HomeUiState> = combine(
+    private data class SmartGalleryStats(
+        val personCount: Int = 0,
+        val labelCount: Int = 0,
+        val gpsPhotoCount: Int = 0,
+        val analyzedCount: Int = 0,
+        val totalPhotos: Int = 0
+    ) {
+        val analysisProgress: Float
+            get() = if (totalPhotos > 0) analyzedCount.toFloat() / totalPhotos else 0f
+    }
+    
+    /**
+     * Smart Gallery statistics flow.
+     * Must be defined before uiState to avoid initialization order issues.
+     */
+    private val smartGalleryStats: StateFlow<SmartGalleryStats> = combine(
+        faceDao.getPersonCountFlow(),
+        photoLabelDao.getUniqueLabelCountFlow(),
+        photoDao.getPhotosWithGpsCount(),
+        photoAnalysisDao.getAnalyzedCountFlow(),
+        getPhotosUseCase.getTotalCount()
+    ) { personCount, labelCount, gpsCount, analyzedCount, totalPhotos ->
+        SmartGalleryStats(
+            personCount = personCount,
+            labelCount = labelCount,
+            gpsPhotoCount = gpsCount,
+            analyzedCount = analyzedCount,
+            totalPhotos = totalPhotos
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = SmartGalleryStats()
+    )
+    
+    /**
+     * Intermediate flow for filtered counts.
+     */
+    private val filteredCountsFlow: Flow<FilteredCounts> = combine(
+        getFilteredTotalCount(),
+        getFilteredSortedCount(),
+        preferencesRepository.getOnestopEnabled(),
+        preferencesRepository.getExperimentalEnabled()
+    ) { total, sorted, onestop, experimental ->
+        FilteredCounts(total, sorted, onestop, experimental)
+    }
+    
+    /**
+     * Intermediate flow for extra data (error, achievement, filter mode, daily task, filtered counts).
+     */
+    private val extraDataFlow: Flow<ExtraData> = combine(
+        _error,
+        preferencesRepository.getAllAchievementData(),
+        preferencesRepository.getPhotoFilterMode(),
+        getDailyTaskStatusUseCase(),
+        filteredCountsFlow
+    ) { error, achievementData, filterMode, dailyTaskStatus, counts ->
+        ExtraData(error, achievementData, filterMode, dailyTaskStatus, counts)
+    }
+    
+    /**
+     * Intermediate flow for photo counts (total, unsorted, keep, trash, maybe).
+     */
+    private val photoCountsFlow: Flow<PhotoCounts> = combine(
         getPhotosUseCase.getTotalCount(),
         getFilteredUnsortedCount(),
         getPhotosUseCase.getCountByStatus(PhotoStatus.KEEP),
         getPhotosUseCase.getCountByStatus(PhotoStatus.TRASH),
-        getPhotosUseCase.getCountByStatus(PhotoStatus.MAYBE),
+        getPhotosUseCase.getCountByStatus(PhotoStatus.MAYBE)
+    ) { total, unsorted, keep, trash, maybe ->
+        PhotoCounts(total, unsorted, keep, trash, maybe)
+    }
+    
+    /**
+     * Intermediate flow for UI state flags.
+     */
+    private val uiStateFlags: Flow<UiStateFlags> = combine(
         _hasPermission,
         _isLoading,
         _isSyncing,
-        _syncResult,
-        combine(
-            _error, 
-            preferencesRepository.getAllAchievementData(),
-            preferencesRepository.getPhotoFilterMode(),
-            getDailyTaskStatusUseCase(),
-            combine(
-                getFilteredTotalCount(), 
-                getFilteredSortedCount(),
-                preferencesRepository.getOnestopEnabled(),
-                preferencesRepository.getExperimentalEnabled()
-            ) { t, s, onestop, experimental -> FilteredCounts(t, s, onestop, experimental) }
-        ) { error, achievementData, filterMode, dailyTaskStatus, counts ->
-            FilteredData(error, achievementData, filterMode, counts.filteredTotal, counts.filteredSorted, dailyTaskStatus, counts.onestopEnabled, counts.experimentalEnabled)
-        }
-    ) { values ->
-        @Suppress("UNCHECKED_CAST")
-        val combined = values[9] as FilteredData
+        _syncResult
+    ) { hasPermission, isLoading, isSyncing, syncResult ->
+        UiStateFlags(hasPermission, isLoading, isSyncing, syncResult)
+    }
+    
+    /**
+     * UI State exposed to the screen.
+     */
+    val uiState: StateFlow<HomeUiState> = combine(
+        photoCountsFlow,
+        uiStateFlags,
+        extraDataFlow,
+        smartGalleryStats
+    ) { counts, flags, extraData, sgStats ->
         HomeUiState(
-            totalPhotos = values[0] as Int,
-            unsortedCount = values[1] as Int,
-            keepCount = values[2] as Int,
-            trashCount = values[3] as Int,
-            maybeCount = values[4] as Int,
-            filteredTotal = combined.filteredTotal,
-            filteredSorted = combined.filteredSorted,
-            hasPermission = values[5] as Boolean,
-            isLoading = values[6] as Boolean,
-            isSyncing = values[7] as Boolean,
-            syncResult = values[8] as String?,
-            error = combined.error,
-            achievementData = combined.achievementData,
-            photoFilterMode = combined.filterMode,
-            dailyTaskStatus = combined.dailyTaskStatus,
-            onestopEnabled = combined.onestopEnabled,
-            experimentalEnabled = combined.experimentalEnabled
+            totalPhotos = counts.total,
+            unsortedCount = counts.unsorted,
+            keepCount = counts.keep,
+            trashCount = counts.trash,
+            maybeCount = counts.maybe,
+            filteredTotal = extraData.counts.filteredTotal,
+            filteredSorted = extraData.counts.filteredSorted,
+            hasPermission = flags.hasPermission,
+            isLoading = flags.isLoading,
+            isSyncing = flags.isSyncing,
+            syncResult = flags.syncResult,
+            error = extraData.error,
+            achievementData = extraData.achievementData,
+            photoFilterMode = extraData.filterMode,
+            dailyTaskStatus = extraData.dailyTaskStatus,
+            onestopEnabled = extraData.counts.onestopEnabled,
+            experimentalEnabled = extraData.counts.experimentalEnabled,
+            // Smart Gallery stats
+            smartGalleryPersonCount = sgStats.personCount,
+            smartGalleryLabelCount = sgStats.labelCount,
+            smartGalleryGpsPhotoCount = sgStats.gpsPhotoCount,
+            smartGalleryAnalysisProgress = sgStats.analysisProgress,
+            smartGalleryIsAnalyzing = false
         )
     }.stateIn(
         scope = viewModelScope,
@@ -297,15 +385,27 @@ class HomeViewModel @Inject constructor(
         val experimentalEnabled: Boolean
     )
     
-    private data class FilteredData(
+    private data class ExtraData(
         val error: String?,
         val achievementData: AchievementData,
         val filterMode: PhotoFilterMode,
-        val filteredTotal: Int,
-        val filteredSorted: Int,
         val dailyTaskStatus: DailyTaskStatus?,
-        val onestopEnabled: Boolean,
-        val experimentalEnabled: Boolean
+        val counts: FilteredCounts
+    )
+    
+    private data class PhotoCounts(
+        val total: Int,
+        val unsorted: Int,
+        val keep: Int,
+        val trash: Int,
+        val maybe: Int
+    )
+    
+    private data class UiStateFlags(
+        val hasPermission: Boolean,
+        val isLoading: Boolean,
+        val isSyncing: Boolean,
+        val syncResult: String?
     )
     
     init {

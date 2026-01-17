@@ -21,7 +21,15 @@ import com.example.photozen.ui.screens.lighttable.LightTableScreen
 import com.example.photozen.ui.screens.photolist.PhotoListScreen
 import com.example.photozen.ui.screens.quicktag.QuickTagScreen
 import com.example.photozen.ui.screens.settings.SettingsScreen
+import com.example.photozen.ui.screens.smartgallery.LabelBrowserScreen
+import com.example.photozen.ui.screens.smartgallery.LabelPhotosScreen
+import com.example.photozen.ui.screens.smartgallery.MapLibreScreen
+import com.example.photozen.ui.screens.smartgallery.PersonDetailScreen
+import com.example.photozen.ui.screens.smartgallery.PersonListScreen
+import com.example.photozen.ui.screens.smartgallery.SimilarPhotosScreen
 import com.example.photozen.ui.screens.smartgallery.SmartGalleryScreen
+import com.example.photozen.ui.screens.smartgallery.SmartSearchScreen
+import com.example.photozen.ui.screens.smartgallery.TimelineScreen
 import com.example.photozen.ui.screens.tags.TagBubbleScreen
 import com.example.photozen.ui.screens.tags.TaggedPhotosScreen
 import com.example.photozen.ui.screens.trash.TrashScreen
@@ -85,6 +93,114 @@ fun PicZenNavHost(
             SmartGalleryScreen(
                 onNavigateBack = {
                     navController.popBackStack()
+                },
+                onNavigateToLabels = {
+                    navController.navigate(Screen.LabelBrowser)
+                },
+                onNavigateToPersons = {
+                    navController.navigate(Screen.PersonList)
+                },
+                onNavigateToSearch = {
+                    navController.navigate(Screen.SmartSearch)
+                },
+                onNavigateToSimilar = {
+                    navController.navigate(Screen.SimilarPhotos)
+                },
+                onNavigateToMap = {
+                    navController.navigate(Screen.MapView)
+                },
+                onNavigateToTimeline = {
+                    navController.navigate(Screen.Timeline)
+                }
+            )
+        }
+        
+        // ==================== Smart Gallery Sub-screens ====================
+        
+        composable<Screen.LabelBrowser> {
+            LabelBrowserScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToLabel = { label ->
+                    navController.navigate(Screen.LabelPhotos(label))
+                }
+            )
+        }
+        
+        composable<Screen.LabelPhotos> {
+            LabelPhotosScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToEditor = { photoId ->
+                    navController.navigate(Screen.PhotoEditor(photoId))
+                }
+            )
+        }
+        
+        composable<Screen.PersonList> {
+            PersonListScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToPersonDetail = { personId ->
+                    navController.navigate(Screen.PersonDetail(personId))
+                }
+            )
+        }
+        
+        composable<Screen.PersonDetail> {
+            PersonDetailScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToPhoto = { photoId ->
+                    navController.navigate(Screen.PhotoEditor(photoId))
+                }
+            )
+        }
+        
+        composable<Screen.SmartSearch> {
+            SmartSearchScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onPhotoClick = { photoId ->
+                    navController.navigate(Screen.PhotoEditor(photoId))
+                }
+            )
+        }
+        
+        composable<Screen.SimilarPhotos> {
+            SimilarPhotosScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onPhotoClick = { photoId ->
+                    navController.navigate(Screen.PhotoEditor(photoId))
+                }
+            )
+        }
+        
+        composable<Screen.MapView> {
+            MapLibreScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onPhotoClick = { photoId ->
+                    navController.navigate(Screen.PhotoEditor(photoId))
+                }
+            )
+        }
+        
+        composable<Screen.Timeline> {
+            TimelineScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onPhotoClick = { photoId ->
+                    navController.navigate(Screen.PhotoEditor(photoId))
                 }
             )
         }

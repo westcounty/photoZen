@@ -5,7 +5,10 @@ import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.photozen.data.local.AppDatabase
+import com.example.photozen.data.local.dao.FaceDao
+import com.example.photozen.data.local.dao.PhotoAnalysisDao
 import com.example.photozen.data.local.dao.PhotoDao
+import com.example.photozen.data.local.dao.PhotoLabelDao
 import com.example.photozen.data.local.dao.TagDao
 import dagger.Module
 import dagger.Provides
@@ -67,6 +70,94 @@ private val MIGRATION_5_6 = object : Migration(5, 6) {
 }
 
 /**
+ * Migration from version 7 to 8: Add Smart Gallery tables.
+ * - photo_analysis: AI analysis results (labels, embeddings, GPS)
+ * - faces: Detected faces with embeddings
+ * - persons: Clustered persons from face recognition
+ * - photo_labels: Photo-label associations for fast queries
+ */
+private val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Create photo_analysis table with all fields including duplicate detection
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS photo_analysis (
+                photoId TEXT NOT NULL PRIMARY KEY,
+                labels TEXT NOT NULL DEFAULT '[]',
+                embedding BLOB,
+                analyzedAt INTEGER NOT NULL DEFAULT 0,
+                hasGps INTEGER NOT NULL DEFAULT 0,
+                latitude REAL,
+                longitude REAL,
+                faceCount INTEGER NOT NULL DEFAULT 0,
+                primaryCategory TEXT,
+                primaryCategoryConfidence REAL NOT NULL DEFAULT 0,
+                phash TEXT,
+                dominantColor TEXT,
+                accentColor TEXT,
+                luminance INTEGER NOT NULL DEFAULT 0,
+                chroma INTEGER NOT NULL DEFAULT 0,
+                quality INTEGER NOT NULL DEFAULT 0,
+                sharpness INTEGER NOT NULL DEFAULT 0,
+                aspectRatio REAL NOT NULL DEFAULT 0,
+                FOREIGN KEY (photoId) REFERENCES photos(id) ON DELETE CASCADE
+            )
+        """)
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_photo_analysis_photoId ON photo_analysis (photoId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_photo_analysis_hasGps ON photo_analysis (hasGps)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_photo_analysis_analyzedAt ON photo_analysis (analyzedAt)")
+        
+        // Create persons table (must be created before faces due to foreign key)
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS persons (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT,
+                coverFaceId TEXT NOT NULL,
+                faceCount INTEGER NOT NULL DEFAULT 1,
+                createdAt INTEGER NOT NULL DEFAULT 0,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                isFavorite INTEGER NOT NULL DEFAULT 0,
+                isHidden INTEGER NOT NULL DEFAULT 0,
+                averageEmbedding BLOB
+            )
+        """)
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_persons_name ON persons (name)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_persons_faceCount ON persons (faceCount)")
+        
+        // Create faces table
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS faces (
+                id TEXT NOT NULL PRIMARY KEY,
+                photoId TEXT NOT NULL,
+                boundingBox TEXT NOT NULL,
+                embedding BLOB,
+                personId TEXT,
+                confidence REAL NOT NULL DEFAULT 0,
+                detectedAt INTEGER NOT NULL DEFAULT 0,
+                isManuallyVerified INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (photoId) REFERENCES photos(id) ON DELETE CASCADE,
+                FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE SET NULL
+            )
+        """)
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_faces_photoId ON faces (photoId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_faces_personId ON faces (personId)")
+        
+        // Create photo_labels table
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS photo_labels (
+                photoId TEXT NOT NULL,
+                label TEXT NOT NULL,
+                confidence REAL NOT NULL DEFAULT 0,
+                PRIMARY KEY (photoId, label),
+                FOREIGN KEY (photoId) REFERENCES photos(id) ON DELETE CASCADE
+            )
+        """)
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_photo_labels_photoId ON photo_labels (photoId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_photo_labels_label ON photo_labels (label)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_photo_labels_label_photoId ON photo_labels (label, photoId)")
+    }
+}
+
+/**
  * Hilt module for providing Room database and DAOs.
  */
 @Module
@@ -86,7 +177,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME
         )
-            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_7_8)
             .fallbackToDestructiveMigration(dropAllTables = true) // For development - use migrations in production
             .build()
     }
@@ -116,5 +207,32 @@ object DatabaseModule {
     @Singleton
     fun provideDailyStatsDao(database: AppDatabase): com.example.photozen.data.local.dao.DailyStatsDao {
         return database.dailyStatsDao()
+    }
+    
+    /**
+     * Provides PhotoAnalysisDao from the database.
+     */
+    @Provides
+    @Singleton
+    fun providePhotoAnalysisDao(database: AppDatabase): PhotoAnalysisDao {
+        return database.photoAnalysisDao()
+    }
+    
+    /**
+     * Provides FaceDao from the database.
+     */
+    @Provides
+    @Singleton
+    fun provideFaceDao(database: AppDatabase): FaceDao {
+        return database.faceDao()
+    }
+    
+    /**
+     * Provides PhotoLabelDao from the database.
+     */
+    @Provides
+    @Singleton
+    fun providePhotoLabelDao(database: AppDatabase): PhotoLabelDao {
+        return database.photoLabelDao()
     }
 }
