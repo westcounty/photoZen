@@ -2,6 +2,7 @@ package com.example.photozen.ui.screens.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.photozen.BuildConfig
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.AchievementData
 import com.example.photozen.data.repository.PhotoFilterMode
@@ -264,26 +265,34 @@ class HomeViewModel @Inject constructor(
     /**
      * Smart Gallery statistics flow.
      * Must be defined before uiState to avoid initialization order issues.
+     * 
+     * NOTE: Only queries the database when ENABLE_SMART_GALLERY is true.
+     * When disabled, returns empty stats to avoid unnecessary database operations.
      */
-    private val smartGalleryStats: StateFlow<SmartGalleryStats> = combine(
-        faceDao.getPersonCountFlow(),
-        photoLabelDao.getUniqueLabelCountFlow(),
-        photoDao.getPhotosWithGpsCount(),
-        photoAnalysisDao.getAnalyzedCountFlow(),
-        getPhotosUseCase.getTotalCount()
-    ) { personCount, labelCount, gpsCount, analyzedCount, totalPhotos ->
-        SmartGalleryStats(
-            personCount = personCount,
-            labelCount = labelCount,
-            gpsPhotoCount = gpsCount,
-            analyzedCount = analyzedCount,
-            totalPhotos = totalPhotos
+    private val smartGalleryStats: StateFlow<SmartGalleryStats> = if (BuildConfig.ENABLE_SMART_GALLERY) {
+        combine(
+            faceDao.getPersonCountFlow(),
+            photoLabelDao.getUniqueLabelCountFlow(),
+            photoDao.getPhotosWithGpsCount(),
+            photoAnalysisDao.getAnalyzedCountFlow(),
+            getPhotosUseCase.getTotalCount()
+        ) { personCount, labelCount, gpsCount, analyzedCount, totalPhotos ->
+            SmartGalleryStats(
+                personCount = personCount,
+                labelCount = labelCount,
+                gpsPhotoCount = gpsCount,
+                analyzedCount = analyzedCount,
+                totalPhotos = totalPhotos
+            )
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = SmartGalleryStats()
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = SmartGalleryStats()
-    )
+    } else {
+        // When Smart Gallery is disabled, return empty stats without database queries
+        MutableStateFlow(SmartGalleryStats())
+    }
     
     /**
      * Intermediate flow for filtered counts.

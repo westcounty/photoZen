@@ -11,12 +11,17 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Crash logger that saves crash logs to a file for debugging.
+ * Crash logger that saves crash logs to internal storage for debugging.
+ * 
+ * This logger uses internal storage (filesDir) instead of external storage for reliability:
+ * - No permissions required
+ * - Always available, even during early app startup
+ * - Works on all devices
  * 
  * Usage:
- * 1. Initialize in Application.onCreate(): CrashLogger.init(this)
- * 2. After crash, reopen app and check: /sdcard/Android/data/com.example.photozen/files/crash_logs/
- * 3. Or share logs from Settings -> About -> "导出崩溃日志"
+ * 1. Early init via CrashLoggerInitProvider (automatic, before Application.onCreate)
+ * 2. Full init in Application.onCreate(): CrashLogger.init(this)
+ * 3. Get logs via ADB: adb shell run-as com.example.photozen cat files/crash_logs/startup_log.txt
  * 
  * Startup logging:
  * - Call logStartupEvent() to record startup progress
@@ -32,11 +37,16 @@ object CrashLogger {
     
     private var applicationContext: Context? = null
     private var defaultHandler: Thread.UncaughtExceptionHandler? = null
+    private var isEarlyInitialized = false
+    private var isFullyInitialized = false
     
     /**
-     * Initialize the crash logger. Call this FIRST in Application.onCreate()
+     * Early initialization called from ContentProvider (before Application.onCreate).
+     * Sets up the uncaught exception handler to capture early crashes.
      */
-    fun init(context: Context) {
+    fun initEarly(context: Context) {
+        if (isEarlyInitialized) return
+        
         applicationContext = context.applicationContext
         defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         
@@ -51,11 +61,44 @@ object CrashLogger {
             defaultHandler?.uncaughtException(thread, throwable)
         }
         
-        // Clear old startup log and start fresh
-        clearStartupLog(context)
-        logStartupEvent(context, "CrashLogger initialized")
+        isEarlyInitialized = true
         
-        Log.i(TAG, "CrashLogger initialized")
+        // Log the early initialization
+        logStartupEventInternal(context, "CrashLogger early init (ContentProvider)")
+        Log.i(TAG, "CrashLogger early initialization complete")
+    }
+    
+    /**
+     * Full initialization called from Application.onCreate().
+     * Clears old logs and starts fresh session logging.
+     */
+    fun init(context: Context) {
+        if (isFullyInitialized) return
+        
+        // If early init wasn't done, do it now
+        if (!isEarlyInitialized) {
+            initEarly(context)
+        }
+        
+        applicationContext = context.applicationContext
+        
+        // Clear old startup log and start fresh session
+        clearStartupLog(context)
+        logStartupEventInternal(context, "CrashLogger full init (Application.onCreate)")
+        
+        isFullyInitialized = true
+        Log.i(TAG, "CrashLogger full initialization complete")
+    }
+    
+    /**
+     * Get the log directory using internal storage (filesDir).
+     * This is more reliable than external storage as it:
+     * - Requires no permissions
+     * - Is always available
+     * - Works during early startup
+     */
+    private fun getLogDir(context: Context): File {
+        return File(context.filesDir, CRASH_LOG_DIR)
     }
     
     /**
@@ -63,8 +106,15 @@ object CrashLogger {
      * This helps identify which component is causing the crash.
      */
     fun logStartupEvent(context: Context, event: String) {
+        logStartupEventInternal(context, event)
+    }
+    
+    /**
+     * Internal implementation of startup event logging.
+     */
+    private fun logStartupEventInternal(context: Context, event: String) {
         try {
-            val logDir = File(context.getExternalFilesDir(null), CRASH_LOG_DIR)
+            val logDir = getLogDir(context)
             if (!logDir.exists()) {
                 logDir.mkdirs()
             }
@@ -85,7 +135,7 @@ object CrashLogger {
      */
     private fun clearStartupLog(context: Context) {
         try {
-            val logDir = File(context.getExternalFilesDir(null), CRASH_LOG_DIR)
+            val logDir = getLogDir(context)
             if (!logDir.exists()) {
                 logDir.mkdirs()
             }
@@ -111,7 +161,7 @@ object CrashLogger {
      */
     fun getStartupLog(context: Context): String? {
         return try {
-            val logFile = File(context.getExternalFilesDir(null), "$CRASH_LOG_DIR/$STARTUP_LOG_FILE")
+            val logFile = File(getLogDir(context), STARTUP_LOG_FILE)
             if (logFile.exists()) logFile.readText() else null
         } catch (e: Exception) {
             null
@@ -124,7 +174,7 @@ object CrashLogger {
     private fun saveCrashLog(thread: Thread, throwable: Throwable) {
         val context = applicationContext ?: return
         
-        val logDir = File(context.getExternalFilesDir(null), CRASH_LOG_DIR)
+        val logDir = getLogDir(context)
         if (!logDir.exists()) {
             logDir.mkdirs()
         }
@@ -148,6 +198,10 @@ object CrashLogger {
             appendLine("Android: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
             appendLine("App Version: ${getAppVersion(context)}")
             appendLine()
+            appendLine("=== Initialization State ===")
+            appendLine("Early Init: $isEarlyInitialized")
+            appendLine("Full Init: $isFullyInitialized")
+            appendLine()
             appendLine("=== Exception ===")
             appendLine("Type: ${throwable.javaClass.name}")
             appendLine("Message: ${throwable.message}")
@@ -167,6 +221,15 @@ object CrashLogger {
         
         logFile.writeText(logContent)
         Log.i(TAG, "Crash log saved to: ${logFile.absolutePath}")
+        
+        // Also log to startup log for debugging
+        try {
+            val startupLogFile = File(logDir, STARTUP_LOG_FILE)
+            val crashSummary = "CRASH: ${throwable.javaClass.simpleName}: ${throwable.message}"
+            startupLogFile.appendText("\n[CRASH] $crashSummary\n")
+        } catch (e: Exception) {
+            // Ignore
+        }
     }
     
     /**
@@ -198,7 +261,7 @@ object CrashLogger {
      * Get all crash logs
      */
     fun getCrashLogs(context: Context): List<File> {
-        val logDir = File(context.getExternalFilesDir(null), CRASH_LOG_DIR)
+        val logDir = getLogDir(context)
         return logDir.listFiles { file -> file.name.startsWith("crash_") && file.name.endsWith(".txt") }
             ?.sortedByDescending { it.lastModified() }
             ?: emptyList()
@@ -216,14 +279,16 @@ object CrashLogger {
      * Clear all crash logs
      */
     fun clearCrashLogs(context: Context) {
-        val logDir = File(context.getExternalFilesDir(null), CRASH_LOG_DIR)
+        val logDir = getLogDir(context)
         logDir.listFiles()?.forEach { it.delete() }
     }
     
     /**
-     * Get crash log directory path for user reference
+     * Get crash log directory path for user reference.
+     * Note: This is now internal storage, accessible via:
+     * adb shell run-as com.example.photozen ls files/crash_logs/
      */
     fun getCrashLogPath(context: Context): String {
-        return File(context.getExternalFilesDir(null), CRASH_LOG_DIR).absolutePath
+        return getLogDir(context).absolutePath
     }
 }

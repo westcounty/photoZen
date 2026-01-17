@@ -14,7 +14,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
-        android:name=".PhotoZenApp"
+        android:name=".PicZenApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -24,6 +24,13 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.PhotoZen"
         tools:targetApi="31">
+        
+        <!-- CrashLogger early initialization - runs before Application.onCreate() -->
+        <provider
+            android:name=".util.CrashLoggerInitProvider"
+            android:authorities="${applicationId}.crashlogger"
+            android:initOrder="9999"
+            android:exported="false" />
         
         <activity
             android:name=".MainActivity"

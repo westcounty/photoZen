@@ -11,6 +11,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import com.example.photozen.BuildConfig
 import com.example.photozen.ui.components.AchievementCelebration
 import com.example.photozen.ui.screens.achievements.AchievementsScreen
 import com.example.photozen.ui.screens.editor.PhotoEditorScreen
@@ -84,126 +85,134 @@ fun PicZenNavHost(
                     navController.navigate(Screen.PhotoFilterSelection(mode = mode, targetCount = target))
                 },
                 onNavigateToSmartGallery = {
-                    navController.navigate(Screen.SmartGallery)
+                    // Only navigate if Smart Gallery is enabled
+                    if (BuildConfig.ENABLE_SMART_GALLERY) {
+                        navController.navigate(Screen.SmartGallery)
+                    }
                 }
             )
         }
         
-        composable<Screen.SmartGallery> {
-            SmartGalleryScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onNavigateToLabels = {
-                    navController.navigate(Screen.LabelBrowser)
-                },
-                onNavigateToPersons = {
-                    navController.navigate(Screen.PersonList)
-                },
-                onNavigateToSearch = {
-                    navController.navigate(Screen.SmartSearch)
-                },
-                onNavigateToSimilar = {
-                    navController.navigate(Screen.SimilarPhotos)
-                },
-                onNavigateToMap = {
-                    navController.navigate(Screen.MapView)
-                },
-                onNavigateToTimeline = {
-                    navController.navigate(Screen.Timeline)
-                }
-            )
+        // ==================== Smart Gallery Screens (Feature Flag Controlled) ====================
+        // These routes are only registered when ENABLE_SMART_GALLERY is true
+        
+        if (BuildConfig.ENABLE_SMART_GALLERY) {
+            composable<Screen.SmartGallery> {
+                SmartGalleryScreen(
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onNavigateToLabels = {
+                        navController.navigate(Screen.LabelBrowser)
+                    },
+                    onNavigateToPersons = {
+                        navController.navigate(Screen.PersonList)
+                    },
+                    onNavigateToSearch = {
+                        navController.navigate(Screen.SmartSearch)
+                    },
+                    onNavigateToSimilar = {
+                        navController.navigate(Screen.SimilarPhotos)
+                    },
+                    onNavigateToMap = {
+                        navController.navigate(Screen.MapView)
+                    },
+                    onNavigateToTimeline = {
+                        navController.navigate(Screen.Timeline)
+                    }
+                )
+            }
+            
+            composable<Screen.LabelBrowser> {
+                LabelBrowserScreen(
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onNavigateToLabel = { label ->
+                        navController.navigate(Screen.LabelPhotos(label))
+                    }
+                )
+            }
+            
+            composable<Screen.LabelPhotos> {
+                LabelPhotosScreen(
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onNavigateToEditor = { photoId ->
+                        navController.navigate(Screen.PhotoEditor(photoId))
+                    }
+                )
+            }
+            
+            composable<Screen.PersonList> {
+                PersonListScreen(
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onNavigateToPersonDetail = { personId ->
+                        navController.navigate(Screen.PersonDetail(personId))
+                    }
+                )
+            }
+            
+            composable<Screen.PersonDetail> {
+                PersonDetailScreen(
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onNavigateToPhoto = { photoId ->
+                        navController.navigate(Screen.PhotoEditor(photoId))
+                    }
+                )
+            }
+            
+            composable<Screen.SmartSearch> {
+                SmartSearchScreen(
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onPhotoClick = { photoId ->
+                        navController.navigate(Screen.PhotoEditor(photoId))
+                    }
+                )
+            }
+            
+            composable<Screen.SimilarPhotos> {
+                SimilarPhotosScreen(
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onPhotoClick = { photoId ->
+                        navController.navigate(Screen.PhotoEditor(photoId))
+                    }
+                )
+            }
+            
+            composable<Screen.MapView> {
+                MapLibreScreen(
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onPhotoClick = { photoId ->
+                        navController.navigate(Screen.PhotoEditor(photoId))
+                    }
+                )
+            }
+            
+            composable<Screen.Timeline> {
+                TimelineScreen(
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onPhotoClick = { photoId ->
+                        navController.navigate(Screen.PhotoEditor(photoId))
+                    }
+                )
+            }
         }
         
-        // ==================== Smart Gallery Sub-screens ====================
-        
-        composable<Screen.LabelBrowser> {
-            LabelBrowserScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onNavigateToLabel = { label ->
-                    navController.navigate(Screen.LabelPhotos(label))
-                }
-            )
-        }
-        
-        composable<Screen.LabelPhotos> {
-            LabelPhotosScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onNavigateToEditor = { photoId ->
-                    navController.navigate(Screen.PhotoEditor(photoId))
-                }
-            )
-        }
-        
-        composable<Screen.PersonList> {
-            PersonListScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onNavigateToPersonDetail = { personId ->
-                    navController.navigate(Screen.PersonDetail(personId))
-                }
-            )
-        }
-        
-        composable<Screen.PersonDetail> {
-            PersonDetailScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onNavigateToPhoto = { photoId ->
-                    navController.navigate(Screen.PhotoEditor(photoId))
-                }
-            )
-        }
-        
-        composable<Screen.SmartSearch> {
-            SmartSearchScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onPhotoClick = { photoId ->
-                    navController.navigate(Screen.PhotoEditor(photoId))
-                }
-            )
-        }
-        
-        composable<Screen.SimilarPhotos> {
-            SimilarPhotosScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onPhotoClick = { photoId ->
-                    navController.navigate(Screen.PhotoEditor(photoId))
-                }
-            )
-        }
-        
-        composable<Screen.MapView> {
-            MapLibreScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onPhotoClick = { photoId ->
-                    navController.navigate(Screen.PhotoEditor(photoId))
-                }
-            )
-        }
-        
-        composable<Screen.Timeline> {
-            TimelineScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onPhotoClick = { photoId ->
-                    navController.navigate(Screen.PhotoEditor(photoId))
-                }
-            )
-        }
+        // ==================== Core Photo Organization Screens ====================
         
         composable<Screen.FlowSorter> {
             FlowSorterScreen(

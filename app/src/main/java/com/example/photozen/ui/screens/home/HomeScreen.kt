@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import com.example.photozen.BuildConfig
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -274,20 +275,24 @@ fun HomeScreen(
                     )
                 }
                 
-                // Smart Gallery Card - Only shown when experimental features enabled
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = uiState.experimentalEnabled,
-                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
-                    exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut()
-                ) {
-                    SmartGalleryCard(
-                        onClick = onNavigateToSmartGallery,
-                        personCount = uiState.smartGalleryPersonCount,
-                        labelCount = uiState.smartGalleryLabelCount,
-                        gpsPhotoCount = uiState.smartGalleryGpsPhotoCount,
-                        analysisProgress = uiState.smartGalleryAnalysisProgress,
-                        isAnalyzing = uiState.smartGalleryIsAnalyzing
-                    )
+                // Smart Gallery Card - Only shown when:
+                // 1. BuildConfig.ENABLE_SMART_GALLERY is true (compile-time flag)
+                // 2. Experimental features are enabled in settings (runtime flag)
+                if (BuildConfig.ENABLE_SMART_GALLERY) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = uiState.experimentalEnabled,
+                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
+                        exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut()
+                    ) {
+                        SmartGalleryCard(
+                            onClick = onNavigateToSmartGallery,
+                            personCount = uiState.smartGalleryPersonCount,
+                            labelCount = uiState.smartGalleryLabelCount,
+                            gpsPhotoCount = uiState.smartGalleryGpsPhotoCount,
+                            analysisProgress = uiState.smartGalleryAnalysisProgress,
+                            isAnalyzing = uiState.smartGalleryIsAnalyzing
+                        )
+                    }
                 }
             }
             
