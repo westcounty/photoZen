@@ -46,7 +46,7 @@ android {
         // Feature Flag: 智能画廊功能开关
         // main 分支: false (专注照片整理)
         // explore/smart-gallery 分支: true (完整智能画廊功能)
-        buildConfigField("boolean", "ENABLE_SMART_GALLERY", "false")
+        buildConfigField("boolean", "ENABLE_SMART_GALLERY", "true")
 
         // Room schema export
         ksp {
