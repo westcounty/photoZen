@@ -39,6 +39,7 @@ private const val PRELOAD_MAX_SIZE = 1200
  * while the ViewModel processes the actual data update in the background.
  * 
  * @param photos List of photos to display in the stack
+ * @param swipeSensitivity Sensitivity setting for swipe gestures (0.5 = very sensitive, 1.5 = less sensitive)
  * @param onSwipeLeft Called with photo ID when swiped left (Keep)
  * @param onSwipeRight Called with photo ID when swiped right (Keep)
  * @param onSwipeUp Called with photo ID when swiped up (Trash)
@@ -49,6 +50,7 @@ private const val PRELOAD_MAX_SIZE = 1200
 @Composable
 fun SwipeableCardStack(
     photos: List<PhotoEntity>,
+    swipeSensitivity: Float = 1.0f,
     onSwipeLeft: (String) -> Unit,
     onSwipeRight: (String) -> Unit,
     onSwipeUp: (String) -> Unit,
@@ -126,6 +128,7 @@ fun SwipeableCardStack(
                 SwipeablePhotoCard(
                     photo = photo,
                     isTopCard = isTopCard,
+                    swipeSensitivity = swipeSensitivity,
                     onSwipeLeft = {
                         if (photoId !in swipedOutIds) {
                             swipedOutIds.add(photoId)

@@ -56,3 +56,46 @@ val PicZenError = Color(0xFFFFB4AB)
 val PicZenOnError = Color(0xFF690005)
 val PicZenErrorContainer = Color(0xFF93000A)
 val PicZenOnErrorContainer = Color(0xFFFFDAD6)
+
+// ==================== Light Theme Colors ====================
+
+// Light Primary - Teal accent
+val PicZenLightPrimary = Color(0xFF006B5F)
+val PicZenLightOnPrimary = Color(0xFFFFFFFF)
+val PicZenLightPrimaryContainer = Color(0xFF9EF5E5)
+val PicZenLightOnPrimaryContainer = Color(0xFF00201C)
+
+// Light Secondary
+val PicZenLightSecondary = Color(0xFF4A635F)
+val PicZenLightOnSecondary = Color(0xFFFFFFFF)
+val PicZenLightSecondaryContainer = Color(0xFFCCE8E2)
+val PicZenLightOnSecondaryContainer = Color(0xFF06201C)
+
+// Light Tertiary - Amber
+val PicZenLightTertiary = Color(0xFF7D5700)
+val PicZenLightOnTertiary = Color(0xFFFFFFFF)
+val PicZenLightTertiaryContainer = Color(0xFFFFDEA6)
+val PicZenLightOnTertiaryContainer = Color(0xFF271900)
+
+// Light Background & Surface
+val PicZenLightBackground = Color(0xFFFBFDFB)
+val PicZenLightOnBackground = Color(0xFF191C1B)
+val PicZenLightSurface = Color(0xFFFBFDFB)
+val PicZenLightOnSurface = Color(0xFF191C1B)
+val PicZenLightSurfaceVariant = Color(0xFFDBE5E1)
+val PicZenLightOnSurfaceVariant = Color(0xFF3F4946)
+
+// Light Outline
+val PicZenLightOutline = Color(0xFF6F7976)
+val PicZenLightOutlineVariant = Color(0xFFBFC9C5)
+
+// Light Inverse
+val PicZenLightInverseSurface = Color(0xFF2D3130)
+val PicZenLightInverseOnSurface = Color(0xFFEFF1EF)
+val PicZenLightInversePrimary = Color(0xFF5EEAD4)
+
+// Light Error
+val PicZenLightError = Color(0xFFBA1A1A)
+val PicZenLightOnError = Color(0xFFFFFFFF)
+val PicZenLightErrorContainer = Color(0xFFFFDAD6)
+val PicZenLightOnErrorContainer = Color(0xFF410002)

@@ -621,6 +621,7 @@ private fun CardStack(
 ) {
     SwipeableCardStack(
         photos = uiState.photos,
+        swipeSensitivity = uiState.swipeSensitivity,
         onSwipeLeft = onSwipeLeft,
         onSwipeRight = onSwipeRight,
         onSwipeUp = onSwipeUp,

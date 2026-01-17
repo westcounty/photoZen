@@ -1,5 +1,9 @@
 package com.example.photozen.ui.screens.flowsorter
 
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -18,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -29,9 +34,22 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * Threshold for triggering a swipe action (as fraction of screen width/height)
+ * Base threshold for triggering a swipe action (as fraction of screen width/height)
+ * This is the default when sensitivity = 1.0
  */
-private const val SWIPE_THRESHOLD = 0.25f
+private const val BASE_SWIPE_THRESHOLD = 0.25f
+
+/**
+ * Direction-specific threshold multipliers:
+ * - Right (Keep): 1.0 (baseline)
+ * - Left (Keep): 0.9 (slightly easier)
+ * - Up (Trash): 0.8 (easier, as it's destructive)
+ * - Down (Maybe): 0.7 (easiest, as it's non-destructive)
+ */
+private const val THRESHOLD_MULTIPLIER_RIGHT = 1.0f
+private const val THRESHOLD_MULTIPLIER_LEFT = 0.9f
+private const val THRESHOLD_MULTIPLIER_UP = 0.8f
+private const val THRESHOLD_MULTIPLIER_DOWN = 0.7f
 
 /**
  * Rotation multiplier for card tilt during horizontal swipe
@@ -43,6 +61,7 @@ private const val ROTATION_MULTIPLIER = 15f
  * 
  * @param photo The photo to display
  * @param isTopCard Whether this card is the top card (receives gestures)
+ * @param swipeSensitivity Sensitivity setting (0.5 = very sensitive, 1.5 = less sensitive)
  * @param onSwipeLeft Called when swiped left (Keep)
  * @param onSwipeRight Called when swiped right (Keep)
  * @param onSwipeUp Called when swiped up (Trash)
@@ -54,6 +73,7 @@ private const val ROTATION_MULTIPLIER = 15f
 fun SwipeablePhotoCard(
     photo: PhotoEntity,
     isTopCard: Boolean = true,
+    swipeSensitivity: Float = 1.0f,
     onSwipeLeft: () -> Unit,
     onSwipeRight: () -> Unit,
     onSwipeUp: () -> Unit,
@@ -65,10 +85,30 @@ fun SwipeablePhotoCard(
     val haptic = LocalHapticFeedback.current
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
+    val context = LocalContext.current
+    
+    // Get vibrator for threshold feedback
+    val vibrator = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = context.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            vibratorManager?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as? Vibrator
+        }
+    }
     
     // Screen dimensions for threshold calculation
     val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
     val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
+    
+    // Calculate direction-specific thresholds based on sensitivity
+    // Higher sensitivity value = larger threshold = harder to trigger
+    val baseThreshold = BASE_SWIPE_THRESHOLD * swipeSensitivity
+    val thresholdRight = screenWidthPx * baseThreshold * THRESHOLD_MULTIPLIER_RIGHT
+    val thresholdLeft = screenWidthPx * baseThreshold * THRESHOLD_MULTIPLIER_LEFT
+    val thresholdUp = screenHeightPx * baseThreshold * THRESHOLD_MULTIPLIER_UP
+    val thresholdDown = screenHeightPx * baseThreshold * THRESHOLD_MULTIPLIER_DOWN
     
     // Animatable offsets for smooth animations
     val offsetX = remember(photo.id) { Animatable(0f) }
@@ -79,6 +119,12 @@ fun SwipeablePhotoCard(
     
     // Track current swipe direction for visual feedback
     var currentDirection by remember(photo.id) { mutableStateOf(SwipeDirection.NONE) }
+    
+    // Track whether threshold has been reached for each direction (for haptic and visual feedback)
+    var hasReachedThresholdRight by remember(photo.id) { mutableStateOf(false) }
+    var hasReachedThresholdLeft by remember(photo.id) { mutableStateOf(false) }
+    var hasReachedThresholdUp by remember(photo.id) { mutableStateOf(false) }
+    var hasReachedThresholdDown by remember(photo.id) { mutableStateOf(false) }
     
     // Calculate normalized progress (-1 to 1 for X and Y)
     val progressX = (offsetX.value / screenWidthPx).coerceIn(-1f, 1f)
@@ -93,6 +139,15 @@ fun SwipeablePhotoCard(
         else -> SwipeDirection.NONE
     }
     
+    // Check if current position has reached threshold
+    val currentlyReachedRight = offsetX.value > thresholdRight
+    val currentlyReachedLeft = offsetX.value < -thresholdLeft
+    val currentlyReachedUp = offsetY.value < -thresholdUp && abs(offsetY.value) > abs(offsetX.value)
+    val currentlyReachedDown = offsetY.value > thresholdDown && abs(offsetY.value) > abs(offsetX.value)
+    
+    // Determine overall threshold state for visual feedback
+    val hasReachedThreshold = currentlyReachedRight || currentlyReachedLeft || currentlyReachedUp || currentlyReachedDown
+    
     // Calculate rotation based on horizontal offset
     val rotation = (offsetX.value / screenWidthPx) * ROTATION_MULTIPLIER
     
@@ -106,6 +161,22 @@ fun SwipeablePhotoCard(
     val alpha = if (offsetY.value > 0) {
         1f - (offsetY.value / screenHeightPx) * 0.5f
     } else 1f
+    
+    // Helper function for threshold haptic feedback
+    fun performThresholdHaptic() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val effect = VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
+                vibrator?.vibrate(effect)
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(10)
+            }
+        } catch (e: Exception) {
+            // Fallback to standard haptic
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+    }
     
     Box(
         modifier = modifier
@@ -122,16 +193,18 @@ fun SwipeablePhotoCard(
                     onDragStart = {
                         if (!isTopCard || hasTriggeredSwipe) return@detectDragGestures
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        // Reset threshold states
+                        hasReachedThresholdRight = false
+                        hasReachedThresholdLeft = false
+                        hasReachedThresholdUp = false
+                        hasReachedThresholdDown = false
                     },
                     onDragEnd = {
                         if (!isTopCard || hasTriggeredSwipe) return@detectDragGestures
                         
-                        val thresholdX = screenWidthPx * SWIPE_THRESHOLD
-                        val thresholdY = screenHeightPx * SWIPE_THRESHOLD
-                        
                         when {
                             // Swipe up → Trash
-                            offsetY.value < -thresholdY && abs(offsetY.value) > abs(offsetX.value) -> {
+                            currentlyReachedUp -> {
                                 hasTriggeredSwipe = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onSwipeUp()
@@ -140,7 +213,7 @@ fun SwipeablePhotoCard(
                                 }
                             }
                             // Swipe down → Maybe
-                            offsetY.value > thresholdY && abs(offsetY.value) > abs(offsetX.value) -> {
+                            currentlyReachedDown -> {
                                 hasTriggeredSwipe = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onSwipeDown()
@@ -149,7 +222,7 @@ fun SwipeablePhotoCard(
                                 }
                             }
                             // Swipe right → Keep
-                            offsetX.value > thresholdX -> {
+                            currentlyReachedRight -> {
                                 hasTriggeredSwipe = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onSwipeRight()
@@ -158,7 +231,7 @@ fun SwipeablePhotoCard(
                                 }
                             }
                             // Swipe left → Keep
-                            offsetX.value < -thresholdX -> {
+                            currentlyReachedLeft -> {
                                 hasTriggeredSwipe = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onSwipeLeft()
@@ -199,6 +272,41 @@ fun SwipeablePhotoCard(
                             offsetX.snapTo(offsetX.value + dragAmount.x)
                             offsetY.snapTo(offsetY.value + dragAmount.y)
                         }
+                        
+                        // Check for threshold crossing and provide haptic feedback
+                        val newReachedRight = offsetX.value > thresholdRight
+                        val newReachedLeft = offsetX.value < -thresholdLeft
+                        val newReachedUp = offsetY.value < -thresholdUp && abs(offsetY.value) > abs(offsetX.value)
+                        val newReachedDown = offsetY.value > thresholdDown && abs(offsetY.value) > abs(offsetX.value)
+                        
+                        // Trigger haptic when crossing threshold (entering threshold zone)
+                        if (newReachedRight && !hasReachedThresholdRight) {
+                            performThresholdHaptic()
+                            hasReachedThresholdRight = true
+                        } else if (!newReachedRight) {
+                            hasReachedThresholdRight = false
+                        }
+                        
+                        if (newReachedLeft && !hasReachedThresholdLeft) {
+                            performThresholdHaptic()
+                            hasReachedThresholdLeft = true
+                        } else if (!newReachedLeft) {
+                            hasReachedThresholdLeft = false
+                        }
+                        
+                        if (newReachedUp && !hasReachedThresholdUp) {
+                            performThresholdHaptic()
+                            hasReachedThresholdUp = true
+                        } else if (!newReachedUp) {
+                            hasReachedThresholdUp = false
+                        }
+                        
+                        if (newReachedDown && !hasReachedThresholdDown) {
+                            performThresholdHaptic()
+                            hasReachedThresholdDown = true
+                        } else if (!newReachedDown) {
+                            hasReachedThresholdDown = false
+                        }
                     }
                 )
             }
@@ -208,6 +316,7 @@ fun SwipeablePhotoCard(
             swipeProgress = progressX,
             swipeProgressY = progressY,
             swipeDirection = currentDirection,
+            hasReachedThreshold = hasReachedThreshold,
             onPhotoClick = onPhotoClick
         )
     }

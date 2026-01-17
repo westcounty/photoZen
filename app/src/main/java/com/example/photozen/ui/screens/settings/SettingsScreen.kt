@@ -77,6 +77,7 @@ fun SettingsScreen(
     var showAboutDialog by remember { mutableStateOf(false) }
     var showChangelogDialog by remember { mutableStateOf(false) }
     var showAcknowledgementDialog by remember { mutableStateOf(false) }
+    var showThemeDialog by remember { mutableStateOf(false) }
     
     // Show error messages
     LaunchedEffect(uiState.error) {
@@ -140,6 +141,24 @@ fun SettingsScreen(
                 subtitle = if (uiState.onestopEnabled) "首页显示一站式整理模块" else "首页隐藏一站式整理模块",
                 checked = uiState.onestopEnabled,
                 onCheckedChange = { viewModel.setOnestopEnabled(it) }
+            )
+            
+            // Theme Settings
+            SettingsMenuItem(
+                icon = Icons.Default.Palette,
+                title = "外观样式",
+                subtitle = when (uiState.themeMode) {
+                    com.example.photozen.data.repository.ThemeMode.DARK -> "深色模式"
+                    com.example.photozen.data.repository.ThemeMode.LIGHT -> "浅色模式"
+                    com.example.photozen.data.repository.ThemeMode.SYSTEM -> "跟随系统"
+                },
+                onClick = { showThemeDialog = true }
+            )
+            
+            // Swipe Sensitivity Settings
+            SwipeSensitivitySetting(
+                sensitivity = uiState.swipeSensitivity,
+                onSensitivityChange = { viewModel.setSwipeSensitivity(it) }
             )
             
             // 实验性功能开关仅在 explore 分支显示
@@ -219,6 +238,17 @@ fun SettingsScreen(
     
     if (showAcknowledgementDialog) {
         AcknowledgementDialog(onDismiss = { showAcknowledgementDialog = false })
+    }
+    
+    if (showThemeDialog) {
+        ThemeSelectionDialog(
+            currentMode = uiState.themeMode,
+            onDismiss = { showThemeDialog = false },
+            onModeSelected = { mode ->
+                viewModel.setThemeMode(mode)
+                showThemeDialog = false
+            }
+        )
     }
 }
 
@@ -1602,4 +1632,133 @@ private fun FloatingHeartAnimation(
             .alpha(alpha)
             .size(20.dp)
     )
+}
+
+/**
+ * Theme selection dialog.
+ */
+@Composable
+private fun ThemeSelectionDialog(
+    currentMode: com.example.photozen.data.repository.ThemeMode,
+    onDismiss: () -> Unit,
+    onModeSelected: (com.example.photozen.data.repository.ThemeMode) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("外观样式") },
+        text = {
+            Column {
+                com.example.photozen.data.repository.ThemeMode.entries.forEach { mode ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onModeSelected(mode) }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = mode == currentMode,
+                            onClick = { onModeSelected(mode) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = when (mode) {
+                                    com.example.photozen.data.repository.ThemeMode.DARK -> "深色模式"
+                                    com.example.photozen.data.repository.ThemeMode.LIGHT -> "浅色模式"
+                                    com.example.photozen.data.repository.ThemeMode.SYSTEM -> "跟随系统"
+                                },
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                text = when (mode) {
+                                    com.example.photozen.data.repository.ThemeMode.DARK -> "深色背景，适合夜间使用"
+                                    com.example.photozen.data.repository.ThemeMode.LIGHT -> "浅色背景，适合白天使用"
+                                    com.example.photozen.data.repository.ThemeMode.SYSTEM -> "根据系统设置自动切换"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
+}
+
+/**
+ * Swipe sensitivity setting with slider.
+ */
+@Composable
+private fun SwipeSensitivitySetting(
+    sensitivity: Float,
+    onSensitivityChange: (Float) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.TouchApp,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "滑动灵敏度",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = when {
+                        sensitivity <= 0.6f -> "非常灵敏"
+                        sensitivity <= 0.8f -> "灵敏"
+                        sensitivity <= 1.1f -> "正常"
+                        sensitivity <= 1.3f -> "不灵敏"
+                        else -> "非常不灵敏"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "灵敏",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Slider(
+                value = sensitivity,
+                onValueChange = onSensitivityChange,
+                valueRange = 0.5f..1.5f,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+            )
+            Text(
+                text = "不灵敏",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }

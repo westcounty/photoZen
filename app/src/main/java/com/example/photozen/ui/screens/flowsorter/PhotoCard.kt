@@ -17,9 +17,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Help
+import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.Card
@@ -67,6 +74,7 @@ import java.util.Locale
  * @param swipeProgress Current horizontal swipe progress (-1 to 1)
  * @param swipeProgressY Current vertical swipe progress (-1 to 1)
  * @param swipeDirection Current swipe direction based on gesture
+ * @param hasReachedThreshold Whether the swipe has reached the action threshold
  * @param onPhotoClick Called when photo is clicked (for fullscreen view)
  * @param modifier Modifier for the card
  */
@@ -76,6 +84,7 @@ fun PhotoCard(
     swipeProgress: Float = 0f,
     swipeProgressY: Float = 0f,
     swipeDirection: SwipeDirection = SwipeDirection.NONE,
+    hasReachedThreshold: Boolean = false,
     onPhotoClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -206,6 +215,7 @@ fun PhotoCard(
                 swipeDirection = swipeDirection,
                 swipeProgressX = swipeProgress,
                 swipeProgressY = swipeProgressY,
+                hasReachedThreshold = hasReachedThreshold,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -298,29 +308,38 @@ private fun PhotoInfoOverlay(
  * Displays swipe direction indicators with animated opacity.
  * All indicators are centered at top of the photo for better visibility.
  * Icon only, no text label.
+ * Shows different icons based on whether threshold has been reached.
  * 
  * Gesture mapping:
- * - LEFT/RIGHT → Keep (Green)
- * - UP → Trash (Red)
- * - DOWN → Maybe (Amber)
+ * - LEFT/RIGHT → Keep (Green) - Heart icons
+ * - UP → Trash (Red) - Delete icons
+ * - DOWN → Maybe (Amber) - Help icons
  */
 @Composable
 private fun SwipeIndicatorOverlay(
     swipeDirection: SwipeDirection,
     swipeProgressX: Float,
     swipeProgressY: Float,
+    hasReachedThreshold: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     // Consistent alpha for all indicators (0.85 = clearly visible)
     val indicatorAlpha = 0.85f
     
+    // Scale animation when reaching threshold
+    val iconScale by animateFloatAsState(
+        targetValue = if (hasReachedThreshold) 1.2f else 1.0f,
+        label = "iconScale"
+    )
+    
     Box(modifier = modifier) {
-        // Keep indicator (right swipe) - Green
+        // Keep indicator (right swipe) - Green with heart icon
         if (swipeDirection == SwipeDirection.RIGHT || (swipeDirection == SwipeDirection.NONE && swipeProgressX > 0.1f)) {
             SwipeIndicatorIcon(
-                icon = Icons.Default.Check,
+                icon = if (hasReachedThreshold) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 color = KeepGreen,
                 alpha = indicatorAlpha,
+                scale = iconScale,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 80.dp)
@@ -330,33 +349,36 @@ private fun SwipeIndicatorOverlay(
         // Keep indicator (left swipe) - Green (same as right)
         if (swipeDirection == SwipeDirection.LEFT || (swipeDirection == SwipeDirection.NONE && swipeProgressX < -0.1f)) {
             SwipeIndicatorIcon(
-                icon = Icons.Default.Check,
+                icon = if (hasReachedThreshold) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 color = KeepGreen,
                 alpha = indicatorAlpha,
+                scale = iconScale,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 80.dp)
             )
         }
         
-        // Trash indicator (up swipe) - Red
+        // Trash indicator (up swipe) - Red with delete icon
         if (swipeDirection == SwipeDirection.UP) {
             SwipeIndicatorIcon(
-                icon = Icons.Default.Close,
+                icon = if (hasReachedThreshold) Icons.Default.Delete else Icons.Default.DeleteOutline,
                 color = TrashRed,
                 alpha = indicatorAlpha,
+                scale = iconScale,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 80.dp)
             )
         }
         
-        // Maybe indicator (down swipe) - Amber
+        // Maybe indicator (down swipe) - Amber with help icon
         if (swipeDirection == SwipeDirection.DOWN) {
             SwipeIndicatorIcon(
-                icon = Icons.Default.QuestionMark,
+                icon = if (hasReachedThreshold) Icons.Default.Help else Icons.Default.HelpOutline,
                 color = MaybeAmber,
                 alpha = indicatorAlpha,
+                scale = iconScale,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 80.dp)
@@ -367,18 +389,27 @@ private fun SwipeIndicatorOverlay(
 
 /**
  * Individual swipe indicator icon (no text label).
+ * Supports scale animation for threshold feedback.
  */
 @Composable
 private fun SwipeIndicatorIcon(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     color: Color,
+    scale: Float = 1.0f,
     alpha: Float,
     modifier: Modifier = Modifier
 ) {
+    val iconSize = (64 * scale).dp
+    val innerIconSize = (32 * scale).dp
+    
     Box(
         modifier = modifier
-            .graphicsLayer { this.alpha = alpha }
-            .size(64.dp)
+            .graphicsLayer { 
+                this.alpha = alpha
+                scaleX = scale
+                scaleY = scale
+            }
+            .size(iconSize)
             .clip(CircleShape)
             .background(color.copy(alpha = 0.9f)),
         contentAlignment = Alignment.Center
@@ -387,7 +418,7 @@ private fun SwipeIndicatorIcon(
             imageVector = icon,
             contentDescription = null,
             tint = Color.White,
-            modifier = Modifier.size(32.dp)
+            modifier = Modifier.size(innerIconSize)
         )
     }
 }

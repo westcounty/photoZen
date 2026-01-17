@@ -43,6 +43,15 @@ enum class DailyTaskMode {
 }
 
 /**
+ * Theme Mode for app appearance.
+ */
+enum class ThemeMode {
+    DARK,   // 深色模式
+    LIGHT,  // 浅色模式
+    SYSTEM  // 跟随系统
+}
+
+/**
  * Repository for managing app preferences using DataStore.
  * Handles persistent storage for settings like cumulative sort count and achievements.
  */
@@ -88,6 +97,12 @@ class PreferencesRepository @Inject constructor(
         val KEY_CARD_ZOOM_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("card_zoom_enabled")
         val KEY_ONESTOP_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("onestop_enabled")
         val KEY_EXPERIMENTAL_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("experimental_enabled")
+        
+        // Theme settings
+        val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
+        
+        // Swipe sensitivity settings (1.0 = default, 0.5 = very sensitive, 1.5 = less sensitive)
+        val KEY_SWIPE_SENSITIVITY = androidx.datastore.preferences.core.floatPreferencesKey("swipe_sensitivity")
         
         // Achievement keys
         val KEY_TAGGED_COUNT = intPreferencesKey("total_tagged_count")
@@ -322,6 +337,51 @@ class PreferencesRepository @Inject constructor(
     suspend fun setExperimentalEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[KEY_EXPERIMENTAL_ENABLED] = enabled
+        }
+    }
+    
+    // ==================== THEME SETTINGS ====================
+    
+    /**
+     * Get current theme mode.
+     * Default is SYSTEM (follow system dark mode).
+     */
+    fun getThemeMode(): Flow<ThemeMode> = dataStore.data.map { preferences ->
+        val modeStr = preferences[KEY_THEME_MODE] ?: ThemeMode.DARK.name
+        try {
+            ThemeMode.valueOf(modeStr)
+        } catch (e: IllegalArgumentException) {
+            ThemeMode.DARK
+        }
+    }
+    
+    /**
+     * Set theme mode.
+     */
+    suspend fun setThemeMode(mode: ThemeMode) {
+        dataStore.edit { preferences ->
+            preferences[KEY_THEME_MODE] = mode.name
+        }
+    }
+    
+    // ==================== SWIPE SENSITIVITY SETTINGS ====================
+    
+    /**
+     * Get swipe sensitivity for card sorting.
+     * Default is 1.0 (normal).
+     * Range: 0.5 (very sensitive) to 1.5 (less sensitive)
+     */
+    fun getSwipeSensitivity(): Flow<Float> = dataStore.data.map { preferences ->
+        preferences[KEY_SWIPE_SENSITIVITY] ?: 1.0f
+    }
+    
+    /**
+     * Set swipe sensitivity.
+     * @param sensitivity Value between 0.5 and 1.5
+     */
+    suspend fun setSwipeSensitivity(sensitivity: Float) {
+        dataStore.edit { preferences ->
+            preferences[KEY_SWIPE_SENSITIVITY] = sensitivity.coerceIn(0.5f, 1.5f)
         }
     }
     

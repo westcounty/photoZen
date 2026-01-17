@@ -23,6 +23,7 @@ import com.example.photozen.util.AlarmScheduler
 import com.example.photozen.util.WidgetUpdater
 
 import com.example.photozen.data.repository.WidgetPhotoSource
+import com.example.photozen.data.repository.ThemeMode
 
 /**
  * UI State for Settings screen.
@@ -42,6 +43,8 @@ data class SettingsUiState(
     val cardZoomEnabled: Boolean = true,
     val onestopEnabled: Boolean = false,
     val experimentalEnabled: Boolean = false,
+    val themeMode: ThemeMode = ThemeMode.DARK,
+    val swipeSensitivity: Float = 1.0f,
     val error: String? = null
 )
 
@@ -101,6 +104,12 @@ class SettingsViewModel @Inject constructor(
         preferencesRepository.getExperimentalEnabled()
     ) { cardZoom, onestop, experimental -> Triple(cardZoom, onestop, experimental) }
     
+    // Combine appearance and swipe settings
+    private val appearanceSettingsFlow = combine(
+        preferencesRepository.getThemeMode(),
+        preferencesRepository.getSwipeSensitivity()
+    ) { themeMode, sensitivity -> Pair(themeMode, sensitivity) }
+    
     val uiState: StateFlow<SettingsUiState> = combine(
         preferencesRepository.getTotalSortedCount(),
         preferencesRepository.getPhotoFilterMode(),
@@ -111,7 +120,7 @@ class SettingsViewModel @Inject constructor(
         preferencesRepository.getDailyReminderTime(),
         widgetSettingsFlow,
         extraSettingsFlow,
-        _internalState
+        combine(_internalState, appearanceSettingsFlow) { internal, appearance -> Pair(internal, appearance) }
     ) { params ->
         val totalSorted = params[0] as Int
         val filterMode = params[1] as PhotoFilterMode
@@ -125,7 +134,10 @@ class SettingsViewModel @Inject constructor(
         val widgetSettings = params[7] as Triple<WidgetPhotoSource, Set<String>, Pair<Long?, Long?>>
         @Suppress("UNCHECKED_CAST")
         val extraSettings = params[8] as Triple<Boolean, Boolean, Boolean>
-        val internal = params[9] as InternalState
+        @Suppress("UNCHECKED_CAST")
+        val internalAndAppearance = params[9] as Pair<InternalState, Pair<ThemeMode, Float>>
+        val internal = internalAndAppearance.first
+        val appearanceSettings = internalAndAppearance.second
         
         SettingsUiState(
             totalSorted = totalSorted,
@@ -142,6 +154,8 @@ class SettingsViewModel @Inject constructor(
             cardZoomEnabled = extraSettings.first,
             onestopEnabled = extraSettings.second,
             experimentalEnabled = extraSettings.third,
+            themeMode = appearanceSettings.first,
+            swipeSensitivity = appearanceSettings.second,
             error = internal.error
         )
     }.stateIn(
@@ -215,6 +229,25 @@ class SettingsViewModel @Inject constructor(
     fun setExperimentalEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setExperimentalEnabled(enabled)
+        }
+    }
+    
+    /**
+     * Set theme mode (DARK, LIGHT, SYSTEM).
+     */
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch {
+            preferencesRepository.setThemeMode(mode)
+        }
+    }
+    
+    /**
+     * Set swipe sensitivity for card sorting.
+     * @param sensitivity Value between 0.5 (very sensitive) and 1.5 (less sensitive)
+     */
+    fun setSwipeSensitivity(sensitivity: Float) {
+        viewModelScope.launch {
+            preferencesRepository.setSwipeSensitivity(sensitivity)
         }
     }
     

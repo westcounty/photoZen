@@ -101,7 +101,8 @@ data class FlowSorterUiState(
     val dailyTaskTarget: Int = -1,
     val dailyTaskCurrent: Int = 0,
     val isDailyTaskComplete: Boolean = false,
-    val cardZoomEnabled: Boolean = true
+    val cardZoomEnabled: Boolean = true,
+    val swipeSensitivity: Float = 1.0f
 ) {
     val currentPhoto: PhotoEntity?
         get() = photos.getOrNull(currentIndex)
@@ -321,6 +322,9 @@ class FlowSorterViewModel @Inject constructor(
         }
     }
     
+    /** Debounce job for loadMorePhotosIfNeeded */
+    private var loadMoreDebounceJob: Job? = null
+    
     /**
      * Load more photos when approaching the end of the current batch.
      * Called automatically when remaining unsorted photos drop below threshold.
@@ -328,13 +332,23 @@ class FlowSorterViewModel @Inject constructor(
      * IMPORTANT: Uses adjusted offset to account for photos sorted since last load.
      * Without this adjustment, some photos would be skipped when loading next page
      * because the database query only includes UNSORTED photos (sorted ones are excluded).
+     * 
+     * NOTE: This method uses debouncing to avoid rapid consecutive calls during fast swiping.
+     * Errors are silently handled to prevent "加载照片失败" messages during normal operation.
      */
     private fun loadMorePhotosIfNeeded() {
-        if (_isLoadingMore.value || !hasMorePages) return
+        if (_isLoadingMore.value || !hasMorePages || _isReloading.value) return
         
         val unsortedRemaining = _pagedPhotos.value.count { it.id !in _sortedPhotoIds.value }
         if (unsortedRemaining < GetUnsortedPhotosUseCase.PRELOAD_THRESHOLD) {
-            viewModelScope.launch {
+            // Cancel any pending load to avoid duplicate requests
+            loadMoreDebounceJob?.cancel()
+            loadMoreDebounceJob = viewModelScope.launch {
+                // Small delay to debounce rapid calls
+                delay(50)
+                
+                if (_isLoadingMore.value || !hasMorePages) return@launch
+                
                 _isLoadingMore.value = true
                 try {
                     // Calculate offset adjustment to account for photos sorted since initial load.
@@ -355,8 +369,13 @@ class FlowSorterViewModel @Inject constructor(
                         }
                     }
                     hasMorePages = morePhotos.size >= GetUnsortedPhotosUseCase.PAGE_SIZE
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    // Coroutine was cancelled, don't treat as error
+                    currentPage-- // Revert page increment
+                    throw e
                 } catch (e: Exception) {
-                    // Log error but don't show to user
+                    // Silent error handling for background loading
+                    // Don't show error to user for pagination failures
                     currentPage-- // Revert page increment on error
                 } finally {
                     _isLoadingMore.value = false
@@ -448,7 +467,15 @@ class FlowSorterViewModel @Inject constructor(
         combine(_error, _counters, _combo) { e, c, co -> Triple(e, c, co) },
         _viewMode,
         combine(_selectedPhotoIds, _sortOrder, _gridColumns) { ids, order, cols -> Triple(ids, order, cols) },
-        combine(preferencesRepository.getPhotoFilterMode(), _cameraAlbumsLoaded, preferencesRepository.getCardZoomEnabled()) { mode, loaded, zoom -> Triple(mode, loaded, zoom) },
+        combine(
+            preferencesRepository.getPhotoFilterMode(), 
+            _cameraAlbumsLoaded, 
+            preferencesRepository.getCardZoomEnabled(),
+            preferencesRepository.getSwipeSensitivity()
+        ) { mode, loaded, zoom, sensitivity -> 
+            // Use Pair of Pairs for 4 values: ((mode, loaded), (zoom, sensitivity))
+            Pair(Pair(mode, loaded), Pair(zoom, sensitivity))
+        },
         if (isDailyTask) getDailyTaskStatusUseCase() else flowOf(null)
     ) { values ->
         @Suppress("UNCHECKED_CAST")
@@ -464,7 +491,7 @@ class FlowSorterViewModel @Inject constructor(
         val viewMode = values[6] as FlowSorterViewMode
         val selectionAndSortAndCols = values[7] as Triple<Set<String>, PhotoSortOrder, Int>
         @Suppress("UNCHECKED_CAST")
-        val filterLoadedZoom = values[8] as Triple<PhotoFilterMode, Boolean, Boolean>
+        val prefsState = values[8] as Pair<Pair<PhotoFilterMode, Boolean>, Pair<Boolean, Float>>
         val dailyStatus = values[9] as com.example.photozen.domain.usecase.DailyTaskStatus?
         
         val error = combined.first
@@ -473,9 +500,10 @@ class FlowSorterViewModel @Inject constructor(
         val selectedIds = selectionAndSortAndCols.first
         val sortOrder = selectionAndSortAndCols.second
         val gridColumns = selectionAndSortAndCols.third
-        val filterMode = filterLoadedZoom.first
-        val cameraLoaded = filterLoadedZoom.second
-        val cardZoomEnabled = filterLoadedZoom.third
+        val filterMode = prefsState.first.first
+        val cameraLoaded = prefsState.first.second
+        val cardZoomEnabled = prefsState.second.first
+        val swipeSensitivity = prefsState.second.second
         
         var isDailyComplete = false
         var dailyCurrent = 0
@@ -542,7 +570,8 @@ class FlowSorterViewModel @Inject constructor(
             dailyTaskTarget = targetCount,
             dailyTaskCurrent = dailyCurrent,
             isDailyTaskComplete = isDailyComplete,
-            cardZoomEnabled = cardZoomEnabled
+            cardZoomEnabled = cardZoomEnabled,
+            swipeSensitivity = swipeSensitivity
         )
     }.stateIn(
         scope = viewModelScope,

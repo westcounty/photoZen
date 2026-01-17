@@ -10,6 +10,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import com.example.photozen.data.repository.ThemeMode
 
 /**
  * PicZen Dark Color Scheme
@@ -46,34 +47,56 @@ private val PicZenDarkColorScheme = darkColorScheme(
 )
 
 /**
- * PicZen Light Color Scheme (for future use if needed)
+ * PicZen Light Color Scheme
+ * Clean and bright for daytime use
  */
 private val PicZenLightColorScheme = lightColorScheme(
-    primary = PicZenPrimaryContainer,
-    onPrimary = PicZenOnPrimaryContainer,
-    primaryContainer = PicZenPrimary,
-    onPrimaryContainer = PicZenOnPrimary,
-    secondary = PicZenSecondaryContainer,
-    onSecondary = PicZenOnSecondaryContainer,
-    secondaryContainer = PicZenSecondary,
-    onSecondaryContainer = PicZenOnSecondary,
-    background = PicZenOnBackground,
-    onBackground = PicZenBackground,
-    surface = PicZenInverseSurface,
-    onSurface = PicZenInverseOnSurface
+    primary = PicZenLightPrimary,
+    onPrimary = PicZenLightOnPrimary,
+    primaryContainer = PicZenLightPrimaryContainer,
+    onPrimaryContainer = PicZenLightOnPrimaryContainer,
+    secondary = PicZenLightSecondary,
+    onSecondary = PicZenLightOnSecondary,
+    secondaryContainer = PicZenLightSecondaryContainer,
+    onSecondaryContainer = PicZenLightOnSecondaryContainer,
+    tertiary = PicZenLightTertiary,
+    onTertiary = PicZenLightOnTertiary,
+    tertiaryContainer = PicZenLightTertiaryContainer,
+    onTertiaryContainer = PicZenLightOnTertiaryContainer,
+    background = PicZenLightBackground,
+    onBackground = PicZenLightOnBackground,
+    surface = PicZenLightSurface,
+    onSurface = PicZenLightOnSurface,
+    surfaceVariant = PicZenLightSurfaceVariant,
+    onSurfaceVariant = PicZenLightOnSurfaceVariant,
+    outline = PicZenLightOutline,
+    outlineVariant = PicZenLightOutlineVariant,
+    inverseSurface = PicZenLightInverseSurface,
+    inverseOnSurface = PicZenLightInverseOnSurface,
+    inversePrimary = PicZenLightInversePrimary,
+    error = PicZenLightError,
+    onError = PicZenLightOnError,
+    errorContainer = PicZenLightErrorContainer,
+    onErrorContainer = PicZenLightOnErrorContainer
 )
 
 /**
  * PicZen Theme
  * 
- * @param darkTheme Defaults to true for optimal photo viewing experience
+ * @param themeMode The theme mode to use (DARK, LIGHT, or SYSTEM)
  * @param content Composable content
  */
 @Composable
 fun PicZenTheme(
-    darkTheme: Boolean = true, // Default to dark theme for photo viewing
+    themeMode: ThemeMode = ThemeMode.DARK,
     content: @Composable () -> Unit
 ) {
+    val darkTheme = when (themeMode) {
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    }
+    
     val colorScheme = if (darkTheme) PicZenDarkColorScheme else PicZenLightColorScheme
 
     val view = LocalView.current
@@ -88,6 +111,23 @@ fun PicZenTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
+        content = content
+    )
+}
+
+/**
+ * Legacy PicZen Theme for backward compatibility
+ * 
+ * @param darkTheme Defaults to true for optimal photo viewing experience
+ * @param content Composable content
+ */
+@Composable
+fun PicZenTheme(
+    darkTheme: Boolean = true,
+    content: @Composable () -> Unit
+) {
+    PicZenTheme(
+        themeMode = if (darkTheme) ThemeMode.DARK else ThemeMode.LIGHT,
         content = content
     )
 }
