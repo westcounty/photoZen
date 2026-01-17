@@ -43,18 +43,27 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Feature Flags: 智能画廊功能开关
-        // main 分支: false (专注照片整理)
-        // explore/smart-gallery 分支: true (完整智能画廊功能)
-        buildConfigField("boolean", "ENABLE_SMART_GALLERY", "true")
-        // 是否显示实验性功能设置开关
-        // main 分支: false (隐藏)
-        // explore/smart-gallery 分支: true (显示)
-        buildConfigField("boolean", "SHOW_EXPERIMENTAL_SETTINGS", "true")
-
         // Room schema export
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")
+        }
+    }
+
+    flavorDimensions += "version"
+    productFlavors {
+        create("standard") {
+            dimension = "version"
+            // 主干版本：无智能画廊，无实验性功能
+            buildConfigField("boolean", "ENABLE_SMART_GALLERY", "false")
+            buildConfigField("boolean", "SHOW_EXPERIMENTAL_SETTINGS", "false")
+        }
+        create("explore") {
+            dimension = "version"
+            applicationIdSuffix = ".explore"
+            versionNameSuffix = "-explore"
+            // 探索版本：完整智能画廊
+            buildConfigField("boolean", "ENABLE_SMART_GALLERY", "true")
+            buildConfigField("boolean", "SHOW_EXPERIMENTAL_SETTINGS", "true")
         }
     }
 
