@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -110,6 +111,13 @@ fun SwipeablePhotoCard(
     val thresholdUp = screenHeightPx * baseThreshold * THRESHOLD_MULTIPLIER_UP
     val thresholdDown = screenHeightPx * baseThreshold * THRESHOLD_MULTIPLIER_DOWN
     
+    // Use rememberUpdatedState to ensure lambda captures latest threshold values
+    // This is critical when swipeSensitivity changes while the card is displayed
+    val currentThresholdRight by rememberUpdatedState(thresholdRight)
+    val currentThresholdLeft by rememberUpdatedState(thresholdLeft)
+    val currentThresholdUp by rememberUpdatedState(thresholdUp)
+    val currentThresholdDown by rememberUpdatedState(thresholdDown)
+    
     // Animatable offsets for smooth animations
     val offsetX = remember(photo.id) { Animatable(0f) }
     val offsetY = remember(photo.id) { Animatable(0f) }
@@ -140,10 +148,11 @@ fun SwipeablePhotoCard(
     }
     
     // Check if current position has reached threshold
-    val currentlyReachedRight = offsetX.value > thresholdRight
-    val currentlyReachedLeft = offsetX.value < -thresholdLeft
-    val currentlyReachedUp = offsetY.value < -thresholdUp && abs(offsetY.value) > abs(offsetX.value)
-    val currentlyReachedDown = offsetY.value > thresholdDown && abs(offsetY.value) > abs(offsetX.value)
+    // Use currentThreshold* (from rememberUpdatedState) to always use latest values
+    val currentlyReachedRight = offsetX.value > currentThresholdRight
+    val currentlyReachedLeft = offsetX.value < -currentThresholdLeft
+    val currentlyReachedUp = offsetY.value < -currentThresholdUp && abs(offsetY.value) > abs(offsetX.value)
+    val currentlyReachedDown = offsetY.value > currentThresholdDown && abs(offsetY.value) > abs(offsetX.value)
     
     // Determine overall threshold state for visual feedback
     val hasReachedThreshold = currentlyReachedRight || currentlyReachedLeft || currentlyReachedUp || currentlyReachedDown
@@ -188,7 +197,7 @@ fun SwipeablePhotoCard(
                 scaleY = scale
                 this.alpha = alpha
             }
-            .pointerInput(photo.id) {
+            .pointerInput(photo.id, swipeSensitivity) {
                 detectDragGestures(
                     onDragStart = {
                         if (!isTopCard || hasTriggeredSwipe) return@detectDragGestures
@@ -202,9 +211,15 @@ fun SwipeablePhotoCard(
                     onDragEnd = {
                         if (!isTopCard || hasTriggeredSwipe) return@detectDragGestures
                         
+                        // Calculate thresholds in real-time to avoid closure capture issues
+                        val reachedRight = offsetX.value > currentThresholdRight
+                        val reachedLeft = offsetX.value < -currentThresholdLeft
+                        val reachedUp = offsetY.value < -currentThresholdUp && abs(offsetY.value) > abs(offsetX.value)
+                        val reachedDown = offsetY.value > currentThresholdDown && abs(offsetY.value) > abs(offsetX.value)
+                        
                         when {
                             // Swipe up → Trash
-                            currentlyReachedUp -> {
+                            reachedUp -> {
                                 hasTriggeredSwipe = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onSwipeUp()
@@ -213,7 +228,7 @@ fun SwipeablePhotoCard(
                                 }
                             }
                             // Swipe down → Maybe
-                            currentlyReachedDown -> {
+                            reachedDown -> {
                                 hasTriggeredSwipe = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onSwipeDown()
@@ -222,7 +237,7 @@ fun SwipeablePhotoCard(
                                 }
                             }
                             // Swipe right → Keep
-                            currentlyReachedRight -> {
+                            reachedRight -> {
                                 hasTriggeredSwipe = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onSwipeRight()
@@ -231,7 +246,7 @@ fun SwipeablePhotoCard(
                                 }
                             }
                             // Swipe left → Keep
-                            currentlyReachedLeft -> {
+                            reachedLeft -> {
                                 hasTriggeredSwipe = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onSwipeLeft()
@@ -274,10 +289,11 @@ fun SwipeablePhotoCard(
                         }
                         
                         // Check for threshold crossing and provide haptic feedback
-                        val newReachedRight = offsetX.value > thresholdRight
-                        val newReachedLeft = offsetX.value < -thresholdLeft
-                        val newReachedUp = offsetY.value < -thresholdUp && abs(offsetY.value) > abs(offsetX.value)
-                        val newReachedDown = offsetY.value > thresholdDown && abs(offsetY.value) > abs(offsetX.value)
+                        // Use currentThreshold* to always use latest sensitivity values
+                        val newReachedRight = offsetX.value > currentThresholdRight
+                        val newReachedLeft = offsetX.value < -currentThresholdLeft
+                        val newReachedUp = offsetY.value < -currentThresholdUp && abs(offsetY.value) > abs(offsetX.value)
+                        val newReachedDown = offsetY.value > currentThresholdDown && abs(offsetY.value) > abs(offsetX.value)
                         
                         // Trigger haptic when crossing threshold (entering threshold zone)
                         if (newReachedRight && !hasReachedThresholdRight) {

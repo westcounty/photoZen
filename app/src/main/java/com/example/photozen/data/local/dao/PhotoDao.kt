@@ -221,6 +221,55 @@ interface PhotoDao {
         endDate: Long?
     ): Flow<List<PhotoEntity>>
     
+    // ==================== ID LIST QUERY (FOR MEMORY SHUFFLE PAGINATION) ====================
+    
+    /**
+     * Get all unsorted photo IDs.
+     * Ordered by date_added DESC for consistent snapshot pagination.
+     */
+    @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY date_added DESC")
+    suspend fun getUnsortedPhotoIds(): List<String>
+    
+    /**
+     * Get unsorted photo IDs filtered by buckets.
+     * Ordered by date_added DESC.
+     */
+    @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) ORDER BY date_added DESC")
+    suspend fun getUnsortedPhotoIdsByBuckets(bucketIds: List<String>): List<String>
+    
+    /**
+     * Get unsorted photo IDs excluding buckets.
+     * Ordered by date_added DESC.
+     */
+    @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL) ORDER BY date_added DESC")
+    suspend fun getUnsortedPhotoIdsExcludingBuckets(bucketIds: List<String>): List<String>
+    
+    /**
+     * Get unsorted photo IDs filtered by buckets and date range.
+     * Ordered by date_added DESC.
+     */
+    @Query("""
+        SELECT id FROM photos 
+        WHERE status = 'UNSORTED' 
+        AND is_virtual_copy = 0 
+        AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
+        AND (:startDate IS NULL OR date_added >= :startDate)
+        AND (:endDate IS NULL OR date_added <= :endDate)
+        ORDER BY date_added DESC
+    """)
+    suspend fun getUnsortedPhotoIdsFiltered(
+        bucketIds: List<String>?,
+        startDate: Long?,
+        endDate: Long?
+    ): List<String>
+    
+    /**
+     * Get photos by ID list.
+     * Note: SQL IN clause does not guarantee order, so sorting must be done in memory.
+     */
+    @Query("SELECT * FROM photos WHERE id IN (:ids)")
+    suspend fun getPhotosByIds(ids: List<String>): List<PhotoEntity>
+
     // ==================== PAGED QUERIES FOR FLOW SORTER ====================
     // These queries apply ORDER BY to ALL matching photos, then paginate.
     // This ensures correct sorting across the entire dataset, not just within a page.

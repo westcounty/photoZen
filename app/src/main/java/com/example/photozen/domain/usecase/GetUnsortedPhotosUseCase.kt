@@ -104,6 +104,69 @@ class GetUnsortedPhotosUseCase @Inject constructor(
         return photoRepository.getUnsortedCountExcludingBuckets(bucketIds)
     }
     
+    // ==================== MEMORY SHUFFLE SUPPORT ====================
+    
+    /**
+     * Get all unsorted photo IDs for memory snapshot pagination.
+     * Supports DESC (default from DB) and ASC (reversed in memory).
+     */
+    suspend fun getAllIds(
+        filterMode: com.example.photozen.data.repository.PhotoFilterMode,
+        cameraIds: List<String>,
+        sessionFilter: com.example.photozen.data.repository.CustomFilterSession?,
+        sortOrder: PhotoSortOrder
+    ): List<String> {
+        val ids = when (filterMode) {
+            com.example.photozen.data.repository.PhotoFilterMode.ALL -> {
+                photoDao.getUnsortedPhotoIds()
+            }
+            com.example.photozen.data.repository.PhotoFilterMode.CAMERA_ONLY -> {
+                if (cameraIds.isNotEmpty()) {
+                    photoDao.getUnsortedPhotoIdsByBuckets(cameraIds)
+                } else {
+                    emptyList()
+                }
+            }
+            com.example.photozen.data.repository.PhotoFilterMode.EXCLUDE_CAMERA -> {
+                if (cameraIds.isNotEmpty()) {
+                    photoDao.getUnsortedPhotoIdsExcludingBuckets(cameraIds)
+                } else {
+                    photoDao.getUnsortedPhotoIds()
+                }
+            }
+            com.example.photozen.data.repository.PhotoFilterMode.CUSTOM -> {
+                val bucketIds = sessionFilter?.albumIds
+                val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
+                
+                // Convert milliseconds to seconds for database comparison
+                val startSeconds = sessionFilter?.startDate?.let { it / 1000 }
+                val endSeconds = sessionFilter?.endDate?.let { it / 1000 + 86400 }
+                
+                photoDao.getUnsortedPhotoIdsFiltered(safeBucketIds, startSeconds, endSeconds)
+            }
+        }
+        
+        // Handle sorting: DB always returns DESC
+        return if (sortOrder == PhotoSortOrder.DATE_ASC) {
+            ids.asReversed() // Efficient view if ArrayList, or create new list
+        } else {
+            ids
+        }
+    }
+    
+    /**
+     * Get photos by ID list.
+     * The results are re-ordered in memory to match the input `ids` order.
+     */
+    suspend fun getPhotosByIds(ids: List<String>): List<PhotoEntity> {
+        if (ids.isEmpty()) return emptyList()
+        
+        val photosMap = photoDao.getPhotosByIds(ids).associateBy { it.id }
+        
+        // Reconstruct list in the order of requested IDs, filtering out any that might have been deleted
+        return ids.mapNotNull { id -> photosMap[id] }
+    }
+
     // ==================== PAGINATED QUERIES ====================
     // These methods support proper pagination with database-level sorting.
     // Sorting is applied to ALL matching photos, then paginated.

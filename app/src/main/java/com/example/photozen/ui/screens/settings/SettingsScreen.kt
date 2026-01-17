@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.photozen.data.repository.DailyTaskMode
@@ -1118,14 +1119,14 @@ private fun ChangelogDialog(onDismiss: () -> Unit) {
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // v1.2 Version header
+                // v1.3.1 Version header (Latest)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "v1.2.0.020",
+                        text = "v1.3.1.046",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -1138,10 +1139,50 @@ private fun ChangelogDialog(onDismiss: () -> Unit) {
                 }
                 
                 Text(
-                    text = "🎛️ 自定义首页版本",
+                    text = "🎨 体验优化",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
+                )
+                
+                Text(
+                    text = "外观设置和滑动体验全面优化",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                // v1.3.1 features
+                ChangelogItem("🎨 外观设置", "新增主题模式切换（深色/浅色/跟随系统）")
+                ChangelogItem("👆 滑动灵敏度", "新增滑动灵敏度调节，不同方向不同阈值")
+                ChangelogItem("✨ 阈值反馈", "到达阈值震动反馈，图标空心变实心")
+                ChangelogItem("🔧 排序修复", "修复筛选状态下排序只在500张内生效的问题")
+                
+                HorizontalDivider()
+                
+                // v1.2 Version header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "v1.2.0.020",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "2026-01-17",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                Text(
+                    text = "🎛️ 自定义首页版本",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
                 Text(
@@ -1338,7 +1379,7 @@ private fun AcknowledgementCard(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "感谢 土土酱 · 涵涵酱 的宝贵建议",
+                        text = "感谢宝子们的积极体验与宝贵建议",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1437,7 +1478,7 @@ private fun AboutCard(
             
             TextButton(onClick = onVersionClick) {
                 Text(
-                    text = "v1.2.0.020",
+                    text = "v1.3.1.046",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -1553,16 +1594,18 @@ private fun AcknowledgementDialog(onDismiss: () -> Unit) {
                     Spacer(modifier = Modifier.height(8.dp))
                     
                     Text(
-                        text = "土土酱 · 涵涵酱",
-                        style = MaterialTheme.typography.headlineSmall,
+                        text = "土土酱 · 涵涵酱 · hi\n霁光 · momo · 晚菀第三声\nAdobe PS",
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 32.sp
                     )
                     
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     Text(
-                        text = "感谢你们的宝贵建议和反馈\n让 PhotoZen 变得更好",
+                        text = "感谢你们的积极体验与宝贵建议\n让 PhotoZen 变得更好",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center

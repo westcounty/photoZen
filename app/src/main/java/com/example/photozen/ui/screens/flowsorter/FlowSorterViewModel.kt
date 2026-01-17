@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -184,6 +185,15 @@ class FlowSorterViewModel @Inject constructor(
     // Pagination ensures correct sorting across ALL photos, not just the first 500.
     // The database applies ORDER BY to all matching photos, then LIMIT/OFFSET for pagination.
     
+    // Unified Pagination Strategy:
+    // We fetch ALL matching photo IDs (sorted globally by DB) into memory (Snapshot).
+    // This ensures:
+    // 1. Consistent sorting order (Global Sort).
+    // 2. Stability during pagination (Snapshot).
+    // 3. Random sort works by shuffling this list.
+    // 4. Date sort works by keeping the DB order (or reversing for ASC).
+    private var currentSessionIds: List<String>? = null
+    
     /** Current page of photos loaded (0-indexed) */
     private var currentPage = 0
     
@@ -237,6 +247,8 @@ class FlowSorterViewModel @Inject constructor(
      * Called when filter mode or sort order changes.
      * 
      * Uses _isReloading flag to prevent "complete" screen flash during reload.
+     * IMPORTANT: Uses flow.first() to get the CURRENT values at call time,
+     * ensuring correct filter/sort parameters are used (especially for CUSTOM mode).
      */
     private fun loadInitialPhotos() {
         loadPhotosJob?.cancel()
@@ -250,6 +262,7 @@ class FlowSorterViewModel @Inject constructor(
             _pagedPhotos.value = emptyList()
             _sortedPhotoIds.value = emptySet()
             _isLoadingMore.value = true
+            currentSessionIds = null // Reset snapshot
             
             // Reset initial total count to recalculate with new filter/sort
             // This ensures accurate total count after filter changes
@@ -259,7 +272,35 @@ class FlowSorterViewModel @Inject constructor(
             _counters.value = SortCounters()
             
             try {
-                val photos = loadPhotosPage(0)
+                // Get CURRENT values using first() to ensure correct parameters
+                // This is critical for CUSTOM mode where sessionFilter must be correct
+                val filterMode = preferencesRepository.getPhotoFilterMode().first()
+                val sessionFilter = preferencesRepository.getSessionCustomFilterFlow().first()
+                val sortOrder = _sortOrder.value
+                val cameraIds = _cameraAlbumIds.value
+                
+                // Initialize the ID snapshot for ALL sort modes
+                // This guarantees global sorting and stability
+                val allIds = getUnsortedPhotosUseCase.getAllIds(
+                    filterMode, 
+                    cameraIds, 
+                    sessionFilter,
+                    sortOrder
+                )
+                
+                // For RANDOM, shuffle the list
+                currentSessionIds = if (sortOrder == PhotoSortOrder.RANDOM) {
+                    allIds.shuffled(java.util.Random(randomSeed))
+                } else {
+                    allIds
+                }
+                
+                val photos = loadPhotosPage(
+                    page = 0,
+                    filterMode = filterMode,
+                    sessionFilter = sessionFilter,
+                    sortOrder = sortOrder
+                )
                 _pagedPhotos.value = photos
                 hasMorePages = photos.size >= GetUnsortedPhotosUseCase.PAGE_SIZE
             } catch (e: Exception) {
@@ -275,51 +316,36 @@ class FlowSorterViewModel @Inject constructor(
     /**
      * Load a specific page of photos based on current filter mode and sort order.
      * 
+     * Uses explicit parameters to ensure correct values are used (especially after sort/filter changes).
+     * This is critical for CUSTOM filter mode where sessionFilter must be read correctly.
+     * 
      * @param page Page number (0-indexed)
-     * @param offsetAdjustment Adjustment to offset for pagination accuracy.
-     *                         Pass negative value equal to number of photos sorted since last load.
-     *                         This compensates for photos that are no longer UNSORTED in DB.
+     * @param filterMode Current filter mode
+     * @param sessionFilter Current custom filter session (for CUSTOM mode)
+     * @param sortOrder Current sort order
+     * @param offsetAdjustment IGNORED. We use snapshot pagination now.
      */
-    private suspend fun loadPhotosPage(page: Int, offsetAdjustment: Int = 0): List<PhotoEntity> {
-        val filterMode = preferencesRepository.getPhotoFilterMode().stateIn(viewModelScope).value
-        val sortOrder = _sortOrder.value
-        val cameraIds = _cameraAlbumIds.value
-        val sessionFilter = preferencesRepository.getSessionCustomFilterFlow().stateIn(viewModelScope).value
+    private suspend fun loadPhotosPage(
+        page: Int,
+        filterMode: PhotoFilterMode,
+        sessionFilter: CustomFilterSession?,
+        sortOrder: PhotoSortOrder,
+        offsetAdjustment: Int = 0
+    ): List<PhotoEntity> {
+        // Unified Snapshot Pagination for ALL modes (Random, Date, etc.)
+        // This ensures consistent global sorting and stability.
+        val allIds = currentSessionIds ?: return emptyList()
         
-        return when (filterMode) {
-            PhotoFilterMode.ALL -> {
-                getUnsortedPhotosUseCase.getPage(page, sortOrder, randomSeed, offsetAdjustment)
-            }
-            PhotoFilterMode.CAMERA_ONLY -> {
-                if (cameraIds.isNotEmpty()) {
-                    getUnsortedPhotosUseCase.getPageByBuckets(cameraIds, page, sortOrder, randomSeed, offsetAdjustment)
-                } else {
-                    emptyList()
-                }
-            }
-            PhotoFilterMode.EXCLUDE_CAMERA -> {
-                if (cameraIds.isNotEmpty()) {
-                    getUnsortedPhotosUseCase.getPageExcludingBuckets(cameraIds, page, sortOrder, randomSeed, offsetAdjustment)
-                } else {
-                    getUnsortedPhotosUseCase.getPage(page, sortOrder, randomSeed, offsetAdjustment)
-                }
-            }
-            PhotoFilterMode.CUSTOM -> {
-                if (sessionFilter != null) {
-                    getUnsortedPhotosUseCase.getPageFiltered(
-                        bucketIds = sessionFilter.albumIds,
-                        startDate = sessionFilter.startDate,
-                        endDate = sessionFilter.endDate,
-                        page = page,
-                        sortOrder = sortOrder,
-                        randomSeed = randomSeed,
-                        offsetAdjustment = offsetAdjustment
-                    )
-                } else {
-                    getUnsortedPhotosUseCase.getPage(page, sortOrder, randomSeed, offsetAdjustment)
-                }
-            }
-        }
+        // Calculate slice range based on page
+        val fromIndex = page * GetUnsortedPhotosUseCase.PAGE_SIZE
+        if (fromIndex >= allIds.size) return emptyList()
+        
+        val toIndex = minOf(fromIndex + GetUnsortedPhotosUseCase.PAGE_SIZE, allIds.size)
+        // Ensure valid sublist range
+        if (fromIndex >= toIndex) return emptyList()
+        
+        val pageIds = allIds.subList(fromIndex, toIndex)
+        return getUnsortedPhotosUseCase.getPhotosByIds(pageIds)
     }
     
     /** Debounce job for loadMorePhotosIfNeeded */
@@ -335,6 +361,7 @@ class FlowSorterViewModel @Inject constructor(
      * 
      * NOTE: This method uses debouncing to avoid rapid consecutive calls during fast swiping.
      * Errors are silently handled to prevent "加载照片失败" messages during normal operation.
+     * Uses flow.first() to get current filter/sort values for correct pagination.
      */
     private fun loadMorePhotosIfNeeded() {
         if (_isLoadingMore.value || !hasMorePages || _isReloading.value) return
@@ -351,14 +378,23 @@ class FlowSorterViewModel @Inject constructor(
                 
                 _isLoadingMore.value = true
                 try {
-                    // Calculate offset adjustment to account for photos sorted since initial load.
-                    // When photos are sorted, they become non-UNSORTED in DB, effectively shifting
-                    // the result set. We compensate by reducing offset by the number of sorted photos.
-                    val sortedCount = _sortedPhotoIds.value.size
-                    val offsetAdjustment = -sortedCount  // Negative to shift offset back
+                    // Get CURRENT filter/sort values using first()
+                    val filterMode = preferencesRepository.getPhotoFilterMode().first()
+                    val sessionFilter = preferencesRepository.getSessionCustomFilterFlow().first()
+                    val sortOrder = _sortOrder.value
+                    
+                    // Unified Snapshot Pagination: No offset adjustment needed
+                    // Just load the next page of IDs from the snapshot
+                    val offsetAdjustment = 0
                     
                     currentPage++
-                    val morePhotos = loadPhotosPage(currentPage, offsetAdjustment)
+                    val morePhotos = loadPhotosPage(
+                        page = currentPage,
+                        filterMode = filterMode,
+                        sessionFilter = sessionFilter,
+                        sortOrder = sortOrder,
+                        offsetAdjustment = offsetAdjustment
+                    )
                     
                     if (morePhotos.isNotEmpty()) {
                         // Filter out any photos we already have (duplicates due to offset shift)
@@ -610,6 +646,16 @@ class FlowSorterViewModel @Inject constructor(
             preferencesRepository.getPhotoFilterMode().collect { _ ->
                 // Reload photos when filter mode changes
                 if (_cameraAlbumsLoaded.value) {
+                    loadInitialPhotos()
+                }
+            }
+        }
+        // Monitor sessionFilter changes and reload photos when in CUSTOM mode
+        // This ensures sorting is applied to ALL photos when filter criteria change
+        viewModelScope.launch {
+            preferencesRepository.getSessionCustomFilterFlow().collect { _ ->
+                val mode = preferencesRepository.getPhotoFilterMode().first()
+                if (mode == PhotoFilterMode.CUSTOM && _cameraAlbumsLoaded.value) {
                     loadInitialPhotos()
                 }
             }
