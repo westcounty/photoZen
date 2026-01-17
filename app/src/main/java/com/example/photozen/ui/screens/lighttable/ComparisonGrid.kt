@@ -46,6 +46,7 @@ private data class LayoutConfig(
  * 
  * @param photos List of photos to compare (max 6)
  * @param transformState Shared transformation state for sync zoom
+ * @param syncZoomEnabled When true, all photos zoom together; when false, each photo has independent zoom
  * @param selectedPhotoIds Set of selected photo IDs
  * @param onSelectPhoto Callback when a photo is tapped
  * @param onFullscreenClick Callback when fullscreen button is clicked
@@ -55,6 +56,7 @@ private data class LayoutConfig(
 fun ComparisonGrid(
     photos: List<PhotoEntity>,
     transformState: TransformState,
+    syncZoomEnabled: Boolean = true,
     selectedPhotoIds: Set<String>,
     onSelectPhoto: (String) -> Unit,
     onFullscreenClick: ((Int) -> Unit)? = null,
@@ -101,6 +103,7 @@ fun ComparisonGrid(
             layout = optimalLayout,
             photos = photos.take(photoCount),
             transformState = transformState,
+            syncZoomEnabled = syncZoomEnabled,
             selectedPhotoIds = selectedPhotoIds,
             onSelectPhoto = onSelectPhoto,
             onFullscreenClick = onFullscreenClick,
@@ -274,6 +277,7 @@ private fun RenderLayout(
     layout: LayoutConfig,
     photos: List<PhotoEntity>,
     transformState: TransformState,
+    syncZoomEnabled: Boolean,
     selectedPhotoIds: Set<String>,
     onSelectPhoto: (String) -> Unit,
     onFullscreenClick: ((Int) -> Unit)?,
@@ -282,6 +286,15 @@ private fun RenderLayout(
     val density = LocalDensity.current
     val photoWidthDp = with(density) { layout.photoWidth.toDp() }
     val photoHeightDp = with(density) { layout.photoHeight.toDp() }
+    
+    // Create individual transform states for independent zoom mode
+    val individualTransformStates = remember(photos.size, syncZoomEnabled) {
+        if (syncZoomEnabled) {
+            emptyList()
+        } else {
+            List(photos.size) { TransformState() }
+        }
+    }
     
     var photoIndex = 0
     
@@ -302,9 +315,16 @@ private fun RenderLayout(
                         val photo = photos[photoIndex]
                         val currentIndex = photoIndex
                         
+                        // Use shared or individual transform state based on sync mode
+                        val effectiveTransformState = if (syncZoomEnabled) {
+                            transformState
+                        } else {
+                            individualTransformStates.getOrNull(currentIndex) ?: transformState
+                        }
+                        
                         SyncZoomImage(
                             photo = photo,
-                            transformState = transformState,
+                            transformState = effectiveTransformState,
                             isSelected = photo.id in selectedPhotoIds,
                             onSelect = { onSelectPhoto(photo.id) },
                             onFullscreenClick = onFullscreenClick?.let { { it(currentIndex) } },

@@ -128,6 +128,10 @@ class PreferencesRepository @Inject constructor(
         val KEY_ALBUM_TAG_SIZE = androidx.datastore.preferences.core.floatPreferencesKey("album_tag_size")
         val KEY_MAX_ALBUM_TAG_COUNT = intPreferencesKey("max_album_tag_count")
         
+        // Changelog and Quick Start version tracking
+        val KEY_LAST_SEEN_CHANGELOG_VERSION = stringPreferencesKey("last_seen_changelog_version")
+        val KEY_COMPLETED_QUICK_START_VERSION = stringPreferencesKey("completed_quick_start_version")
+        
         // Achievement keys
         val KEY_TAGGED_COUNT = intPreferencesKey("total_tagged_count")
         val KEY_MAX_COMBO = intPreferencesKey("max_combo")
@@ -951,6 +955,44 @@ class PreferencesRepository @Inject constructor(
         }
         setGridColumns(screen, next)
         return next
+    }
+    
+    // ==================== CHANGELOG AND QUICK START VERSION TRACKING ====================
+    
+    /**
+     * Get the last seen changelog version.
+     * Returns null if user has never seen any changelog.
+     */
+    fun getLastSeenChangelogVersion(): Flow<String?> = dataStore.data.map { preferences ->
+        preferences[KEY_LAST_SEEN_CHANGELOG_VERSION]
+    }
+    
+    /**
+     * Set the last seen changelog version.
+     * Should be called after user dismisses the changelog dialog.
+     */
+    suspend fun setLastSeenChangelogVersion(version: String) {
+        dataStore.edit { preferences ->
+            preferences[KEY_LAST_SEEN_CHANGELOG_VERSION] = version
+        }
+    }
+    
+    /**
+     * Get the completed quick start guide version.
+     * Returns null if user has never completed the quick start guide.
+     */
+    fun getCompletedQuickStartVersion(): Flow<String?> = dataStore.data.map { preferences ->
+        preferences[KEY_COMPLETED_QUICK_START_VERSION]
+    }
+    
+    /**
+     * Set the completed quick start guide version.
+     * Should be called after user completes all steps of the quick start guide.
+     */
+    suspend fun setCompletedQuickStartVersion(version: String) {
+        dataStore.edit { preferences ->
+            preferences[KEY_COMPLETED_QUICK_START_VERSION] = version
+        }
     }
     
     // ==================== ALL ACHIEVEMENT DATA ====================

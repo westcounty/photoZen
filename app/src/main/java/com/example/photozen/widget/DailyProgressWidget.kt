@@ -93,7 +93,7 @@ class DailyProgressWidget : AppWidgetProvider() {
                 if (!isEnabled) {
                     Log.d(TAG, "Daily task is disabled")
                     views.setTextViewText(R.id.widget_emoji, "😴")
-                    views.setTextViewText(R.id.widget_status_text, "任务未开启")
+                    views.setTextViewText(R.id.widget_status_text, "每日任务未开启")
                     views.setViewVisibility(R.id.widget_progress_bar, android.view.View.GONE)
                     views.setViewVisibility(R.id.widget_progress_text, android.view.View.GONE)
                 } else {
@@ -102,22 +102,24 @@ class DailyProgressWidget : AppWidgetProvider() {
                     val isCompleted = target > 0 && current >= target
                     val isInProgress = current > 0 && !isCompleted
                     val notStarted = current == 0
+                    val progressPercent = if (target > 0) (current * 100 / target) else 0
                     
-                    // Set emoji based on state
+                    // Set emoji based on state - enhanced visual design
                     val emoji = when {
-                        isCompleted -> "🥳"      // Celebration - task done!
-                        isInProgress -> "💪"    // Flexed arm - working on it!
-                        else -> "😴"             // Sleeping - not started yet
+                        isCompleted -> "🏆"      // Trophy - task completed!
+                        isInProgress -> "🔥"    // Flame - keep going!
+                        else -> "🌅"             // Sunrise - new day, new start
                     }
                     
-                    // Set status text based on state (progress numbers shown below in progress bar)
+                    // Set status text based on state - more engaging messages
                     val statusText = when {
-                        isCompleted -> "任务完成！"
-                        isInProgress -> "进行中"
-                        else -> "开始整理吧"
+                        isCompleted -> "太棒了！今日完成"
+                        isInProgress && progressPercent >= 50 -> "已过半！继续加油"
+                        isInProgress -> "继续加油！"
+                        else -> "新的一天，开始整理吧！"
                     }
                     
-                    Log.d(TAG, "Setting emoji: $emoji, statusText: $statusText, isCompleted=$isCompleted, isInProgress=$isInProgress (current=$current, target=$target)")
+                    Log.d(TAG, "Setting emoji: $emoji, statusText: $statusText, isCompleted=$isCompleted, isInProgress=$isInProgress (current=$current, target=$target, progress=$progressPercent%)")
                     
                     views.setTextViewText(R.id.widget_emoji, emoji)
                     views.setTextViewText(R.id.widget_status_text, statusText)

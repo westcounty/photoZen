@@ -65,6 +65,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,6 +90,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.rotate
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.random.Random
 
 /**
@@ -110,6 +112,7 @@ fun FlowSorterScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     val hapticManager = rememberHapticFeedbackManager()
     
     // Fullscreen viewer state
@@ -307,6 +310,8 @@ fun FlowSorterContent(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val hapticManager = rememberHapticFeedbackManager()
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     
     var fullscreenPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
     
@@ -459,8 +464,16 @@ fun FlowSorterContent(
                                     hapticManager.performClick()
                                     viewModel.keepAndAddToAlbum(album.bucketId)
                                 },
+                                onAddAlbumClick = {
+                                    hapticManager.performClick()
+                                    // Show snackbar with hint to go to Album Bubble
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            message = "请在首页「相册气泡」中管理相册列表"
+                                        )
+                                    }
+                                },
                                 visible = uiState.cardSortingAlbumEnabled && 
-                                          uiState.albumBubbleList.isNotEmpty() && 
                                           uiState.currentPhoto != null,
                                 modifier = Modifier.align(Alignment.BottomCenter)
                             )
@@ -618,6 +631,12 @@ fun FlowSorterContent(
                 )
             }
         }
+        
+        // Snackbar host for messages
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
     }
 }
 

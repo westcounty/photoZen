@@ -42,6 +42,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.ZoomOutMap
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.FloatingActionButton
@@ -124,6 +126,9 @@ fun LightTableScreen(
     // Fullscreen preview state
     var showFullscreen by remember { mutableStateOf(false) }
     var fullscreenStartIndex by remember { mutableIntStateOf(0) }
+    
+    // Sync zoom toggle state (default: enabled for synchronized zoom)
+    var syncZoomEnabled by remember { mutableStateOf(true) }
     
     // Handle back press in comparison mode or fullscreen
     BackHandler(enabled = showFullscreen || uiState.mode == LightTableMode.COMPARISON) {
@@ -233,6 +238,7 @@ fun LightTableScreen(
                     ComparisonGrid(
                         photos = uiState.comparisonPhotos,
                         transformState = transformState,
+                        syncZoomEnabled = syncZoomEnabled,
                         selectedPhotoIds = uiState.selectedInComparison,
                         onSelectPhoto = { viewModel.toggleComparisonSelection(it) },
                         onFullscreenClick = { index ->
@@ -260,22 +266,46 @@ fun LightTableScreen(
                         )
                     }
                     
-                    // Top-right: Reset zoom button (floating)
-                    SmallFloatingActionButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            transformState.reset()
-                        },
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    // Top-right: Sync zoom toggle and Reset zoom buttons (floating)
+                    Row(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(end = 16.dp, top = 48.dp)
+                            .padding(end = 16.dp, top = 48.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.ZoomOutMap,
-                            contentDescription = "重置缩放"
-                        )
+                        // Sync zoom toggle button
+                        SmallFloatingActionButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                syncZoomEnabled = !syncZoomEnabled
+                            },
+                            containerColor = if (syncZoomEnabled) 
+                                MaterialTheme.colorScheme.primaryContainer 
+                            else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            contentColor = if (syncZoomEnabled)
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            else MaterialTheme.colorScheme.onSurface
+                        ) {
+                            Icon(
+                                imageVector = if (syncZoomEnabled) Icons.Default.Link else Icons.Default.LinkOff,
+                                contentDescription = if (syncZoomEnabled) "联动缩放已开启" else "联动缩放已关闭"
+                            )
+                        }
+                        
+                        // Reset zoom button
+                        SmallFloatingActionButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                transformState.reset()
+                            },
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ZoomOutMap,
+                                contentDescription = "重置缩放"
+                            )
+                        }
                     }
                     
                     // Bottom compact action buttons (pill-shaped)
@@ -882,6 +912,9 @@ fun LightTableContent(
     var showFullscreen by remember { mutableStateOf(false) }
     var fullscreenStartIndex by remember { mutableIntStateOf(0) }
     
+    // Sync zoom toggle state (default: enabled for synchronized zoom)
+    var syncZoomEnabled by remember { mutableStateOf(true) }
+    
     // Handle back press in comparison mode
     BackHandler(enabled = showFullscreen || uiState.mode == LightTableMode.COMPARISON) {
         if (showFullscreen) {
@@ -970,6 +1003,7 @@ fun LightTableContent(
                     ComparisonGrid(
                         photos = uiState.comparisonPhotos,
                         transformState = transformState,
+                        syncZoomEnabled = syncZoomEnabled,
                         selectedPhotoIds = uiState.selectedInComparison,
                         onSelectPhoto = { viewModel.toggleComparisonSelection(it) },
                         onFullscreenClick = { index ->
@@ -997,22 +1031,46 @@ fun LightTableContent(
                         )
                     }
                     
-                    // Top-right: Reset zoom button (floating)
-                    SmallFloatingActionButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            transformState.reset()
-                        },
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    // Top-right: Sync zoom toggle and Reset zoom buttons (floating)
+                    Row(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(end = 16.dp, top = 16.dp)
+                            .padding(end = 16.dp, top = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.ZoomOutMap,
-                            contentDescription = "重置缩放"
-                        )
+                        // Sync zoom toggle button
+                        SmallFloatingActionButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                syncZoomEnabled = !syncZoomEnabled
+                            },
+                            containerColor = if (syncZoomEnabled) 
+                                MaterialTheme.colorScheme.primaryContainer 
+                            else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            contentColor = if (syncZoomEnabled)
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            else MaterialTheme.colorScheme.onSurface
+                        ) {
+                            Icon(
+                                imageVector = if (syncZoomEnabled) Icons.Default.Link else Icons.Default.LinkOff,
+                                contentDescription = if (syncZoomEnabled) "联动缩放已开启" else "联动缩放已关闭"
+                            )
+                        }
+                        
+                        // Reset zoom button
+                        SmallFloatingActionButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                transformState.reset()
+                            },
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ZoomOutMap,
+                                contentDescription = "重置缩放"
+                            )
+                        }
                     }
                     
                     // Bottom compact action buttons (pill-shaped)

@@ -8,6 +8,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -29,6 +31,7 @@ import com.example.photozen.data.local.entity.AlbumBubbleEntity
  * @param tagSize Scale factor for tag size (0.6 - 1.5)
  * @param maxCount Maximum number of albums to display (0 = unlimited)
  * @param onAlbumClick Callback when an album is clicked
+ * @param onAddAlbumClick Optional callback when "Add Album" button is clicked (shows edit dialog)
  * @param visible Whether the floating tags are visible
  * @param modifier Modifier for the component
  */
@@ -39,6 +42,7 @@ fun FloatingAlbumTags(
     tagSize: Float = 1.0f,
     maxCount: Int = 0,
     onAlbumClick: (AlbumBubbleEntity) -> Unit,
+    onAddAlbumClick: (() -> Unit)? = null,
     visible: Boolean = true,
     modifier: Modifier = Modifier
 ) {
@@ -48,8 +52,11 @@ fun FloatingAlbumTags(
         albums
     }
     
+    // Show component if there are albums OR if add button is enabled
+    val shouldShow = visible && (displayAlbums.isNotEmpty() || onAddAlbumClick != null)
+    
     AnimatedVisibility(
-        visible = visible && displayAlbums.isNotEmpty(),
+        visible = shouldShow,
         enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
         exit = fadeOut() + slideOutVertically(targetOffsetY = { it }),
         modifier = modifier
@@ -67,6 +74,14 @@ fun FloatingAlbumTags(
                     album = album,
                     tagSize = tagSize,
                     onClick = { onAlbumClick(album) }
+                )
+            }
+            
+            // Add album button at the end
+            if (onAddAlbumClick != null) {
+                AddAlbumButton(
+                    tagSize = tagSize,
+                    onClick = onAddAlbumClick
                 )
             }
         }
@@ -109,6 +124,46 @@ private fun FloatingAlbumTag(
                 vertical = scaledPaddingVertical
             )
         )
+    }
+}
+
+/**
+ * Add Album button - shows at the end of floating tags.
+ * Opens the album picker dialog when clicked.
+ */
+@Composable
+private fun AddAlbumButton(
+    tagSize: Float,
+    onClick: () -> Unit
+) {
+    val baseIconSize = 18.dp
+    val scaledIconSize = baseIconSize * tagSize
+    val basePaddingHorizontal = 12.dp
+    val basePaddingVertical = 10.dp
+    val scaledPaddingHorizontal = basePaddingHorizontal * tagSize
+    val scaledPaddingVertical = basePaddingVertical * tagSize
+    
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape((24 * tagSize).dp),
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.9f),
+        shadowElevation = 4.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(
+                horizontal = scaledPaddingHorizontal,
+                vertical = scaledPaddingVertical
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = "添加相册",
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(scaledIconSize)
+            )
+        }
     }
 }
 

@@ -83,6 +83,8 @@ import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.DailyTaskMode
 import com.example.photozen.domain.usecase.DailyTaskStatus
 import com.example.photozen.ui.components.AchievementSummaryCard
+import com.example.photozen.ui.components.ChangelogDialog
+import com.example.photozen.ui.components.QuickStartSheet
 import com.example.photozen.ui.components.generateAchievements
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
@@ -394,6 +396,32 @@ fun HomeScreen(
                 )
             }
         }
+    }
+    
+    // Quick Start Sheet - Higher priority than Changelog
+    if (uiState.shouldShowQuickStart) {
+        QuickStartSheet(
+            onComplete = { dailyTaskEnabled, dailyTaskTarget, swipeSensitivity, classificationMode ->
+                viewModel.completeQuickStartWithSettings(
+                    dailyTaskEnabled = dailyTaskEnabled,
+                    dailyTaskTarget = dailyTaskTarget,
+                    swipeSensitivity = swipeSensitivity,
+                    classificationMode = classificationMode
+                )
+            },
+            onDismiss = {
+                viewModel.dismissQuickStart()
+            }
+        )
+    }
+    
+    // Changelog Dialog - Only shown if quick start is completed
+    if (uiState.shouldShowChangelog) {
+        ChangelogDialog(
+            onDismiss = {
+                viewModel.markChangelogSeen()
+            }
+        )
     }
 }
 

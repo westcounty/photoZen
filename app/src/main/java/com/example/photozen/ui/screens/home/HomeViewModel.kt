@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -59,7 +60,10 @@ data class HomeUiState(
     val smartGalleryLabelCount: Int = 0,
     val smartGalleryGpsPhotoCount: Int = 0,
     val smartGalleryAnalysisProgress: Float = 0f,
-    val smartGalleryIsAnalyzing: Boolean = false
+    val smartGalleryIsAnalyzing: Boolean = false,
+    // Changelog and Quick Start
+    val shouldShowChangelog: Boolean = false,
+    val shouldShowQuickStart: Boolean = false
 ) {
     val sortedCount: Int
         get() = keepCount + trashCount + maybeCount
@@ -118,6 +122,10 @@ class HomeViewModel @Inject constructor(
     // Camera album IDs - loaded once and cached
     private val _cameraAlbumIds = MutableStateFlow<List<String>>(emptyList())
     private val _cameraAlbumsLoaded = MutableStateFlow(false)
+    
+    // Changelog and Quick Start dialog states
+    private val _shouldShowChangelog = MutableStateFlow(false)
+    private val _shouldShowQuickStart = MutableStateFlow(false)
     
     /**
      * Get filtered unsorted count based on filter mode.
@@ -357,14 +365,25 @@ class HomeViewModel @Inject constructor(
     }
     
     /**
+     * Intermediate flow for dialog states.
+     */
+    private val dialogStatesFlow: Flow<DialogStates> = combine(
+        _shouldShowChangelog,
+        _shouldShowQuickStart
+    ) { showChangelog, showQuickStart ->
+        DialogStates(showChangelog, showQuickStart)
+    }
+    
+    /**
      * UI State exposed to the screen.
      */
     val uiState: StateFlow<HomeUiState> = combine(
         photoCountsFlow,
         uiStateFlags,
         extraDataFlow,
-        smartGalleryStats
-    ) { counts, flags, extraData, sgStats ->
+        smartGalleryStats,
+        dialogStatesFlow
+    ) { counts, flags, extraData, sgStats, dialogStates ->
         HomeUiState(
             totalPhotos = counts.total,
             unsortedCount = counts.unsorted,
@@ -389,7 +408,10 @@ class HomeViewModel @Inject constructor(
             smartGalleryLabelCount = sgStats.labelCount,
             smartGalleryGpsPhotoCount = sgStats.gpsPhotoCount,
             smartGalleryAnalysisProgress = sgStats.analysisProgress,
-            smartGalleryIsAnalyzing = false
+            smartGalleryIsAnalyzing = false,
+            // Dialog states
+            shouldShowChangelog = dialogStates.showChangelog,
+            shouldShowQuickStart = dialogStates.showQuickStart
         )
     }.stateIn(
         scope = viewModelScope,
@@ -431,6 +453,11 @@ class HomeViewModel @Inject constructor(
         val syncResult: String?
     )
     
+    private data class DialogStates(
+        val showChangelog: Boolean,
+        val showQuickStart: Boolean
+    )
+    
     init {
         // Update consecutive days tracking on app launch
         viewModelScope.launch {
@@ -440,6 +467,97 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             loadCameraAlbumIds()
         }
+        // Check if we should show changelog or quick start
+        viewModelScope.launch {
+            checkVersionDialogs()
+        }
+    }
+    
+    /**
+     * Check if we should show changelog or quick start dialogs.
+     * Priority: Quick Start > Changelog
+     */
+    private suspend fun checkVersionDialogs() {
+        val currentAppVersion = BuildConfig.VERSION_NAME
+        val completedQuickStartVersion = preferencesRepository.getCompletedQuickStartVersion().first()
+        val lastSeenChangelogVersion = preferencesRepository.getLastSeenChangelogVersion().first()
+        
+        // Import the quick start guide version constant
+        val quickStartGuideVersion = com.example.photozen.ui.components.QUICK_START_GUIDE_VERSION
+        
+        // Check quick start first (higher priority)
+        if (completedQuickStartVersion != quickStartGuideVersion) {
+            _shouldShowQuickStart.value = true
+        } else if (lastSeenChangelogVersion != currentAppVersion) {
+            // Only show changelog if quick start is completed
+            _shouldShowChangelog.value = true
+        }
+    }
+    
+    /**
+     * Mark changelog as seen for current version.
+     */
+    fun markChangelogSeen() {
+        viewModelScope.launch {
+            preferencesRepository.setLastSeenChangelogVersion(BuildConfig.VERSION_NAME)
+            _shouldShowChangelog.value = false
+        }
+    }
+    
+    /**
+     * Mark quick start as completed for current guide version.
+     */
+    fun markQuickStartCompleted() {
+        viewModelScope.launch {
+            preferencesRepository.setCompletedQuickStartVersion(
+                com.example.photozen.ui.components.QUICK_START_GUIDE_VERSION
+            )
+            _shouldShowQuickStart.value = false
+            // After completing quick start, check if we should show changelog
+            val currentAppVersion = BuildConfig.VERSION_NAME
+            val lastSeenChangelogVersion = preferencesRepository.getLastSeenChangelogVersion().first()
+            if (lastSeenChangelogVersion != currentAppVersion) {
+                _shouldShowChangelog.value = true
+            }
+        }
+    }
+    
+    /**
+     * Save settings from quick start and mark as completed.
+     */
+    fun completeQuickStartWithSettings(
+        dailyTaskEnabled: Boolean,
+        dailyTaskTarget: Int,
+        swipeSensitivity: Float,
+        classificationMode: PhotoClassificationMode
+    ) {
+        viewModelScope.launch {
+            // Save all the settings
+            preferencesRepository.setDailyTaskEnabled(dailyTaskEnabled)
+            preferencesRepository.setDailyTaskTarget(dailyTaskTarget)
+            preferencesRepository.setSwipeSensitivity(swipeSensitivity)
+            preferencesRepository.setPhotoClassificationMode(classificationMode)
+            
+            // Mark quick start as completed
+            preferencesRepository.setCompletedQuickStartVersion(
+                com.example.photozen.ui.components.QUICK_START_GUIDE_VERSION
+            )
+            _shouldShowQuickStart.value = false
+            
+            // After completing quick start, check if we should show changelog
+            val currentAppVersion = BuildConfig.VERSION_NAME
+            val lastSeenChangelogVersion = preferencesRepository.getLastSeenChangelogVersion().first()
+            if (lastSeenChangelogVersion != currentAppVersion) {
+                _shouldShowChangelog.value = true
+            }
+        }
+    }
+    
+    /**
+     * Dismiss quick start without marking as completed.
+     */
+    fun dismissQuickStart() {
+        _shouldShowQuickStart.value = false
     }
     
     /**

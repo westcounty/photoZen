@@ -1,4 +1,4 @@
-package com.example.photozen.ui.screens.smartgallery
+这个问题修了好几次都没修好package com.example.photozen.ui.screens.smartgallery
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
