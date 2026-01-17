@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -303,8 +305,15 @@ class FlowSorterViewModel @Inject constructor(
                 )
                 _pagedPhotos.value = photos
                 hasMorePages = photos.size >= GetUnsortedPhotosUseCase.PAGE_SIZE
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Coroutine was cancelled (e.g., by a new loadInitialPhotos call)
+                // This is expected behavior, don't show error to user
+                throw e
             } catch (e: Exception) {
-                _error.value = "加载照片失败: ${e.message}"
+                // Only show error if we're not being cancelled
+                if (loadPhotosJob?.isActive == true) {
+                    _error.value = "加载照片失败: ${e.message}"
+                }
             } finally {
                 _isLoadingMore.value = false
                 _isLoading.value = false
@@ -642,23 +651,32 @@ class FlowSorterViewModel @Inject constructor(
             }
         }
         // Monitor filter mode changes and reload photos
+        // CRITICAL: 
+        // 1. Use drop(1) to skip initial emission (we already call loadInitialPhotos above)
+        // 2. Use distinctUntilChanged() to prevent reloads when DataStore emits 
+        //    due to unrelated preference changes (e.g., incrementSortedCount)
         viewModelScope.launch {
-            preferencesRepository.getPhotoFilterMode().collect { _ ->
-                // Reload photos when filter mode changes
-                if (_cameraAlbumsLoaded.value) {
-                    loadInitialPhotos()
+            preferencesRepository.getPhotoFilterMode()
+                .drop(1) // Skip initial emission - we handle initial load explicitly
+                .distinctUntilChanged()
+                .collect { _ ->
+                    if (_cameraAlbumsLoaded.value) {
+                        loadInitialPhotos()
+                    }
                 }
-            }
         }
         // Monitor sessionFilter changes and reload photos when in CUSTOM mode
         // This ensures sorting is applied to ALL photos when filter criteria change
         viewModelScope.launch {
-            preferencesRepository.getSessionCustomFilterFlow().collect { _ ->
-                val mode = preferencesRepository.getPhotoFilterMode().first()
-                if (mode == PhotoFilterMode.CUSTOM && _cameraAlbumsLoaded.value) {
-                    loadInitialPhotos()
+            preferencesRepository.getSessionCustomFilterFlow()
+                .drop(1) // Skip initial emission
+                .distinctUntilChanged()
+                .collect { _ ->
+                    val mode = preferencesRepository.getPhotoFilterMode().first()
+                    if (mode == PhotoFilterMode.CUSTOM && _cameraAlbumsLoaded.value) {
+                        loadInitialPhotos()
+                    }
                 }
-            }
         }
     }
     
