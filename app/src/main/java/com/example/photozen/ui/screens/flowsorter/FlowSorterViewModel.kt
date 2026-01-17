@@ -282,8 +282,15 @@ class FlowSorterViewModel @Inject constructor(
                 }
             }
             PhotoFilterMode.CUSTOM -> {
-                if (sessionFilter != null && !sessionFilter.albumIds.isNullOrEmpty()) {
-                    getUnsortedPhotosUseCase.getPageByBuckets(sessionFilter.albumIds, page, sortOrder, randomSeed)
+                if (sessionFilter != null) {
+                    getUnsortedPhotosUseCase.getPageFiltered(
+                        bucketIds = sessionFilter.albumIds,
+                        startDate = sessionFilter.startDate,
+                        endDate = sessionFilter.endDate,
+                        page = page,
+                        sortOrder = sortOrder,
+                        randomSeed = randomSeed
+                    )
                 } else {
                     getUnsortedPhotosUseCase.getPage(page, sortOrder, randomSeed)
                 }
@@ -374,16 +381,20 @@ class FlowSorterViewModel @Inject constructor(
                         getUnsortedPhotosUseCase.getCount()
                     }
                 }
-                PhotoFilterMode.CUSTOM -> {
-                    val sessionFilter = params.sessionFilter
-                    if (sessionFilter != null && !sessionFilter.albumIds.isNullOrEmpty()) {
-                        getUnsortedPhotosUseCase.getCountByBuckets(sessionFilter.albumIds)
-                    } else {
-                        getUnsortedPhotosUseCase.getCount()
-                    }
+            PhotoFilterMode.CUSTOM -> {
+                val sessionFilter = params.sessionFilter
+                if (sessionFilter != null) {
+                    getUnsortedPhotosUseCase.getCountFiltered(
+                        sessionFilter.albumIds,
+                        sessionFilter.startDate,
+                        sessionFilter.endDate
+                    )
+                } else {
+                    getUnsortedPhotosUseCase.getCount()
                 }
             }
         }
+    }
     }
     
     /**

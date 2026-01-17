@@ -334,6 +334,83 @@ interface PhotoDao {
     suspend fun getUnsortedPhotosExcludingBucketsPagedRandom(bucketIds: List<String>, seed: Long, limit: Int, offset: Int): List<PhotoEntity>
     
     /**
+     * Get unsorted photos filtered by bucket IDs (optional) and date range (optional) with pagination - Date Descending.
+     */
+    @Query("""
+        SELECT * FROM photos 
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
+        AND (:startDate IS NULL OR date_added >= :startDate)
+        AND (:endDate IS NULL OR date_added <= :endDate)
+        ORDER BY date_added DESC 
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosFilteredPagedDesc(
+        bucketIds: List<String>?,
+        startDate: Long?,
+        endDate: Long?,
+        limit: Int, 
+        offset: Int
+    ): List<PhotoEntity>
+    
+    /**
+     * Get unsorted photos filtered by bucket IDs (optional) and date range (optional) with pagination - Date Ascending.
+     */
+    @Query("""
+        SELECT * FROM photos 
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
+        AND (:startDate IS NULL OR date_added >= :startDate)
+        AND (:endDate IS NULL OR date_added <= :endDate)
+        ORDER BY date_added ASC 
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosFilteredPagedAsc(
+        bucketIds: List<String>?,
+        startDate: Long?,
+        endDate: Long?,
+        limit: Int, 
+        offset: Int
+    ): List<PhotoEntity>
+    
+    /**
+     * Get unsorted photos filtered by bucket IDs (optional) and date range (optional) with pagination - Random order.
+     */
+    @Query("""
+        SELECT * FROM photos 
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
+        AND (:startDate IS NULL OR date_added >= :startDate)
+        AND (:endDate IS NULL OR date_added <= :endDate)
+        ORDER BY (ABS(CAST(SUBSTR(id, 1, 8) AS INTEGER)) * :seed) % 2147483647
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosFilteredPagedRandom(
+        bucketIds: List<String>?,
+        startDate: Long?,
+        endDate: Long?,
+        seed: Long,
+        limit: Int, 
+        offset: Int
+    ): List<PhotoEntity>
+    
+    /**
+     * Get count of unsorted photos filtered by bucket IDs (optional) and date range (optional).
+     */
+    @Query("""
+        SELECT COUNT(*) FROM photos 
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
+        AND (:startDate IS NULL OR date_added >= :startDate)
+        AND (:endDate IS NULL OR date_added <= :endDate)
+    """)
+    fun getUnsortedCountFiltered(
+        bucketIds: List<String>?,
+        startDate: Long?,
+        endDate: Long?
+    ): Flow<Int>
+
+    /**
      * Get all camera bucket IDs from our database.
      */
     @Query("SELECT DISTINCT bucket_id FROM photos WHERE bucket_id IS NOT NULL")

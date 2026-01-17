@@ -163,4 +163,38 @@ class GetUnsortedPhotosUseCase @Inject constructor(
             PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosExcludingBucketsPagedRandom(bucketIds, randomSeed, PAGE_SIZE, offset)
         }
     }
+    
+    /**
+     * Get a page of unsorted photos filtered by bucket IDs (optional) and date range (optional).
+     */
+    suspend fun getPageFiltered(
+        bucketIds: List<String>?,
+        startDate: Long?,
+        endDate: Long?,
+        page: Int,
+        sortOrder: PhotoSortOrder,
+        randomSeed: Long = 0
+    ): List<PhotoEntity> {
+        val offset = page * PAGE_SIZE
+        // Room workaround: pass null for empty list to avoid SQL errors or ignoring the filter logic if intended
+        val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
+        
+        return when (sortOrder) {
+            PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosFilteredPagedDesc(safeBucketIds, startDate, endDate, PAGE_SIZE, offset)
+            PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosFilteredPagedAsc(safeBucketIds, startDate, endDate, PAGE_SIZE, offset)
+            PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosFilteredPagedRandom(safeBucketIds, startDate, endDate, randomSeed, PAGE_SIZE, offset)
+        }
+    }
+    
+    /**
+     * Get count of unsorted photos filtered by bucket IDs (optional) and date range (optional).
+     */
+    fun getCountFiltered(
+        bucketIds: List<String>?,
+        startDate: Long?,
+        endDate: Long?
+    ): Flow<Int> {
+        val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
+        return photoDao.getUnsortedCountFiltered(safeBucketIds, startDate, endDate)
+    }
 }
