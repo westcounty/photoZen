@@ -458,6 +458,23 @@ interface PhotoDao {
         startDate: Long?,
         endDate: Long?
     ): Flow<Int>
+    
+    /**
+     * Get count of unsorted photos filtered by bucket IDs (optional) and date range (optional).
+     * Suspend version for one-time queries.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM photos 
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
+        AND (:startDate IS NULL OR date_added >= :startDate)
+        AND (:endDate IS NULL OR date_added <= :endDate)
+    """)
+    suspend fun getUnsortedCountFilteredSync(
+        bucketIds: List<String>?,
+        startDate: Long?,
+        endDate: Long?
+    ): Int
 
     /**
      * Get all camera bucket IDs from our database.

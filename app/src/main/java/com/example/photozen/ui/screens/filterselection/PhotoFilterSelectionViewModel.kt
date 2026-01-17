@@ -2,11 +2,11 @@ package com.example.photozen.ui.screens.filterselection
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.repository.CustomFilterSession
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.Album
 import com.example.photozen.data.source.MediaStoreDataSource
-import com.example.photozen.data.source.PhotoFilter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,7 +33,8 @@ data class PhotoFilterSelectionUiState(
 @HiltViewModel
 class PhotoFilterSelectionViewModel @Inject constructor(
     private val mediaStoreDataSource: MediaStoreDataSource,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    private val photoDao: PhotoDao
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(PhotoFilterSelectionUiState())
@@ -50,12 +51,18 @@ class PhotoFilterSelectionViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val albums = mediaStoreDataSource.getAllAlbums()
-                val totalCount = mediaStoreDataSource.getPhotoCount()
+                // Get count of UNSORTED photos from database (not total from MediaStore)
+                // This ensures the displayed count matches what user will see in the sorter
+                val unsortedCount = photoDao.getUnsortedCountFilteredSync(
+                    bucketIds = null,
+                    startDate = null,
+                    endDate = null
+                )
                 _uiState.update { state ->
                     state.copy(
                         albums = albums,
                         isLoading = false,
-                        filteredPhotoCount = totalCount
+                        filteredPhotoCount = unsortedCount
                     )
                 }
             } catch (e: Exception) {
@@ -129,17 +136,30 @@ class PhotoFilterSelectionViewModel @Inject constructor(
     
     /**
      * Update filtered photo count based on current selection.
+     * IMPORTANT: This now queries UNSORTED photos from the database,
+     * not all photos from MediaStore. This ensures the count matches
+     * what the user will actually see in the sorting screen.
      */
     private fun updateFilteredCount() {
         viewModelScope.launch {
             try {
                 val state = _uiState.value
-                val filter = PhotoFilter(
-                    albumIds = if (state.selectedAlbumIds.isEmpty()) null else state.selectedAlbumIds.toList(),
-                    startDate = state.startDate,
-                    endDate = state.endDate
+                
+                // Convert bucket IDs: empty set means no filter (null)
+                val bucketIds = if (state.selectedAlbumIds.isEmpty()) null 
+                                else state.selectedAlbumIds.toList()
+                
+                // Convert dates from milliseconds to seconds for database query
+                // Database stores date_added in seconds (Unix timestamp)
+                val startSeconds = state.startDate?.let { it / 1000 }
+                // For end date, add 1 day (86400 seconds) to include the entire day
+                val endSeconds = state.endDate?.let { it / 1000 + 86400 }
+                
+                val count = photoDao.getUnsortedCountFilteredSync(
+                    bucketIds = bucketIds,
+                    startDate = startSeconds,
+                    endDate = endSeconds
                 )
-                val count = mediaStoreDataSource.getFilteredPhotoCount(filter)
                 _uiState.update { it.copy(filteredPhotoCount = count) }
             } catch (e: Exception) {
                 // Ignore count update errors
