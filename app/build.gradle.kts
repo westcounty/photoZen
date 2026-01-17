@@ -157,18 +157,18 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     
     // MapLibre (地图功能)
-    implementation(libs.maplibre.android)
+    "exploreImplementation"(libs.maplibre.android)
     
     // ML Kit (AI 分析)
-    implementation(libs.mlkit.image.labeling)
-    implementation(libs.mlkit.face.detection)
+    "exploreImplementation"(libs.mlkit.image.labeling)
+    "exploreImplementation"(libs.mlkit.face.detection)
     
     // Play Services Tasks (for ML Kit async operations)
     implementation(libs.play.services.tasks)
     
     // TensorFlow Lite (图像/人脸嵌入)
-    implementation(libs.tensorflow.lite)
-    implementation(libs.tensorflow.lite.support)
+    "exploreImplementation"(libs.tensorflow.lite)
+    "exploreImplementation"(libs.tensorflow.lite.support)
 
     // Testing
     testImplementation(libs.junit)
