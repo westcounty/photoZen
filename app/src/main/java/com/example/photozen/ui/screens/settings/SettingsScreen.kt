@@ -15,8 +15,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -71,6 +73,7 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
     
     // Dialog states
     var showDailyTaskDialog by remember { mutableStateOf(false) }
@@ -79,6 +82,7 @@ fun SettingsScreen(
     var showChangelogDialog by remember { mutableStateOf(false) }
     var showAcknowledgementDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
+    var showClassificationModeDialog by remember { mutableStateOf(false) }
     
     // Show error messages
     LaunchedEffect(uiState.error) {
@@ -154,6 +158,17 @@ fun SettingsScreen(
                     com.example.photozen.data.repository.ThemeMode.SYSTEM -> "跟随系统"
                 },
                 onClick = { showThemeDialog = true }
+            )
+            
+            // Photo Classification Mode Settings (moved before Swipe Sensitivity)
+            SettingsMenuItem(
+                icon = Icons.Default.PhotoAlbum,
+                title = "照片分类模式",
+                subtitle = when (uiState.photoClassificationMode) {
+                    com.example.photozen.data.repository.PhotoClassificationMode.TAG -> "标签模式"
+                    com.example.photozen.data.repository.PhotoClassificationMode.ALBUM -> "相册模式"
+                },
+                onClick = { showClassificationModeDialog = true }
             )
             
             // Swipe Sensitivity Settings
@@ -248,6 +263,33 @@ fun SettingsScreen(
             onModeSelected = { mode ->
                 viewModel.setThemeMode(mode)
                 showThemeDialog = false
+            }
+        )
+    }
+    
+    if (showClassificationModeDialog) {
+        ClassificationModeDialog(
+            currentMode = uiState.photoClassificationMode,
+            albumAddAction = uiState.albumAddAction,
+            cardSortingAlbumEnabled = uiState.cardSortingAlbumEnabled,
+            albumTagSize = uiState.albumTagSize,
+            maxAlbumTagCount = uiState.maxAlbumTagCount,
+            hasManageStoragePermission = uiState.hasManageStoragePermission,
+            isPermissionApplicable = viewModel.isManageStoragePermissionApplicable(),
+            onDismiss = { showClassificationModeDialog = false },
+            onModeSelected = { viewModel.setPhotoClassificationMode(it) },
+            onAlbumAddActionSelected = { viewModel.setAlbumAddAction(it) },
+            onCardSortingAlbumEnabledChanged = { viewModel.setCardSortingAlbumEnabled(it) },
+            onAlbumTagSizeChanged = { viewModel.setAlbumTagSize(it) },
+            onMaxAlbumTagCountChanged = { viewModel.setMaxAlbumTagCount(it) },
+            onRequestPermission = {
+                // Open settings to grant permission
+                val intent = android.content.Intent(
+                    android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION
+                ).apply {
+                    data = android.net.Uri.parse("package:${context.packageName}")
+                }
+                context.startActivity(intent)
             }
         )
     }
@@ -1803,5 +1845,287 @@ private fun SwipeSensitivitySetting(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+/**
+ * Classification mode settings dialog.
+ */
+@Composable
+private fun ClassificationModeDialog(
+    currentMode: com.example.photozen.data.repository.PhotoClassificationMode,
+    albumAddAction: com.example.photozen.data.repository.AlbumAddAction,
+    cardSortingAlbumEnabled: Boolean,
+    albumTagSize: Float,
+    maxAlbumTagCount: Int,
+    hasManageStoragePermission: Boolean,
+    isPermissionApplicable: Boolean,
+    onDismiss: () -> Unit,
+    onModeSelected: (com.example.photozen.data.repository.PhotoClassificationMode) -> Unit,
+    onAlbumAddActionSelected: (com.example.photozen.data.repository.AlbumAddAction) -> Unit,
+    onCardSortingAlbumEnabledChanged: (Boolean) -> Unit,
+    onAlbumTagSizeChanged: (Float) -> Unit,
+    onMaxAlbumTagCountChanged: (Int) -> Unit,
+    onRequestPermission: () -> Unit
+) {
+    var showPermissionDialog by remember { mutableStateOf(false) }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("照片分类模式设置") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
+                // Mode selection
+                Text(
+                    text = "分类模式",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                com.example.photozen.data.repository.PhotoClassificationMode.entries.forEach { mode ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onModeSelected(mode) }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = mode == currentMode,
+                            onClick = { onModeSelected(mode) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = when (mode) {
+                                    com.example.photozen.data.repository.PhotoClassificationMode.TAG -> "标签模式"
+                                    com.example.photozen.data.repository.PhotoClassificationMode.ALBUM -> "相册模式"
+                                },
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                text = when (mode) {
+                                    com.example.photozen.data.repository.PhotoClassificationMode.TAG -> "使用自定义标签管理照片"
+                                    com.example.photozen.data.repository.PhotoClassificationMode.ALBUM -> "使用系统相册组织照片"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                
+                // Album mode specific settings
+                if (currentMode == com.example.photozen.data.repository.PhotoClassificationMode.ALBUM) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+                    
+                    Text(
+                        text = "相册模式设置",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    
+                    // Album add action
+                    Text(
+                        text = "添加到相册时默认操作",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                    
+                    com.example.photozen.data.repository.AlbumAddAction.entries.forEach { action ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (action == com.example.photozen.data.repository.AlbumAddAction.MOVE &&
+                                        !hasManageStoragePermission && isPermissionApplicable) {
+                                        showPermissionDialog = true
+                                    }
+                                    onAlbumAddActionSelected(action)
+                                }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = action == albumAddAction,
+                                onClick = {
+                                    if (action == com.example.photozen.data.repository.AlbumAddAction.MOVE &&
+                                        !hasManageStoragePermission && isPermissionApplicable) {
+                                        showPermissionDialog = true
+                                    }
+                                    onAlbumAddActionSelected(action)
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = when (action) {
+                                        com.example.photozen.data.repository.AlbumAddAction.COPY -> "复制到相册"
+                                        com.example.photozen.data.repository.AlbumAddAction.MOVE -> "移动到相册"
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = when (action) {
+                                        com.example.photozen.data.repository.AlbumAddAction.COPY -> "照片保留在原位置"
+                                        com.example.photozen.data.repository.AlbumAddAction.MOVE -> "照片从原位置移除"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    
+                    // Permission warning
+                    if (albumAddAction == com.example.photozen.data.repository.AlbumAddAction.MOVE &&
+                        !hasManageStoragePermission && isPermissionApplicable) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f))
+                                .clickable { onRequestPermission() }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "需要文件管理权限",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                Text(
+                                    text = "点击前往设置授权",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+                    
+                    // Card sorting album enabled
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "卡片筛选时显示相册标签",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "在筛选界面底部显示快捷相册入口",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = cardSortingAlbumEnabled,
+                            onCheckedChange = onCardSortingAlbumEnabledChanged
+                        )
+                    }
+                    
+                    // Album tag settings (only if enabled)
+                    if (cardSortingAlbumEnabled) {
+                        // Album tag size
+                        Text(
+                            text = "相册标签大小",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "小",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Slider(
+                                value = albumTagSize,
+                                onValueChange = onAlbumTagSizeChanged,
+                                valueRange = 0.6f..1.5f,  // Extended range for more noticeable size change
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(horizontal = 8.dp)
+                            )
+                            Text(
+                                text = "大",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        
+                        // Max album tag count
+                        Text(
+                            text = "最大显示数量: ${if (maxAlbumTagCount == 0) "不限" else maxAlbumTagCount.toString()}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                        )
+                        Slider(
+                            value = maxAlbumTagCount.toFloat(),
+                            onValueChange = { onMaxAlbumTagCountChanged(it.toInt()) },
+                            valueRange = 0f..20f,
+                            steps = 19,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
+    
+    // Permission guidance dialog
+    if (showPermissionDialog) {
+        AlertDialog(
+            onDismissRequest = { showPermissionDialog = false },
+            title = { Text("需要权限") },
+            text = {
+                Text("移动照片需要文件管理权限。授权后，移动操作将无需每次确认。\n\n如不授权，系统会在每次移动时请求确认。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showPermissionDialog = false
+                    onRequestPermission()
+                }) {
+                    Text("去授权")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPermissionDialog = false }) {
+                    Text("稍后再说")
+                }
+            }
+        )
     }
 }

@@ -44,6 +44,8 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.ZoomOutMap
 import androidx.compose.material3.BottomAppBar
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -57,6 +59,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -141,180 +144,231 @@ fun LightTableScreen(
     }
     
     Box(modifier = modifier.fillMaxSize()) {
-        Scaffold(
-            snackbarHost = { SnackbarHost(snackbarHostState) },
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(
-                                text = when (uiState.mode) {
-                                    LightTableMode.SELECTION -> "Light Table"
-                                    LightTableMode.COMPARISON -> "照片对比"
-                                },
-                                style = MaterialTheme.typography.titleLarge
-                            )
-                            Text(
-                                text = when (uiState.mode) {
-                                    LightTableMode.SELECTION -> "${uiState.allMaybePhotos.size} 张待定照片"
-                                    LightTableMode.COMPARISON -> {
-                                        val selectedCount = uiState.selectedInComparison.size
-                                        if (selectedCount > 0) "已选中 $selectedCount 张" else "点击照片选中"
-                                    }
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(
-                            onClick = {
-                                if (uiState.mode == LightTableMode.COMPARISON) {
-                                    viewModel.exitComparison()
-                                    transformState.reset()
-                                } else {
-                                    onNavigateBack()
+        // Different layouts for SELECTION vs COMPARISON mode
+        when (uiState.mode) {
+            LightTableMode.SELECTION -> {
+                // Selection mode: Use Scaffold with topBar and bottomBar
+                Scaffold(
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
+                    topBar = {
+                        TopAppBar(
+                            title = {
+                                Column {
+                                    Text(
+                                        text = "Light Table",
+                                        style = MaterialTheme.typography.titleLarge
+                                    )
+                                    Text(
+                                        text = "${uiState.allMaybePhotos.size} 张待定照片",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回"
-                            )
-                        }
-                    },
-                    actions = {
-                        if (uiState.mode == LightTableMode.SELECTION) {
-                            // Select all button
-                            IconButton(
-                                onClick = { viewModel.selectAll() },
-                                enabled = uiState.allMaybePhotos.isNotEmpty()
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.SelectAll,
-                                    contentDescription = "全选"
-                                )
-                            }
-                        } else {
-                            // Reset zoom button
-                            IconButton(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    transformState.reset()
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ZoomOutMap,
-                                    contentDescription = "重置缩放"
-                                )
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
-            },
-            bottomBar = {
-                when (uiState.mode) {
-                    LightTableMode.SELECTION -> SelectionBottomBar(
-                        selectionCount = uiState.selectionCount,
-                        maxSelection = LightTableUiState.MAX_COMPARISON_PHOTOS,
-                        canCompare = uiState.canCompare,
-                        onClearSelection = { viewModel.clearSelection() },
-                        onStartComparison = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.startComparison()
-                        }
-                    )
-                    LightTableMode.COMPARISON -> ComparisonBottomBar(
-                        onKeepAll = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.keepAllSelected()
-                        },
-                        onTrashAll = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.trashAllSelected()
-                        }
-                    )
-                }
-            }
-        ) { paddingValues ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                when {
-                    uiState.isLoading -> {
-                        LoadingContent()
-                    }
-                    uiState.allMaybePhotos.isEmpty() -> {
-                        EmptyContent(onNavigateBack = onNavigateBack)
-                    }
-                    else -> {
-                        AnimatedContent(
-                            targetState = uiState.mode,
-                            transitionSpec = {
-                                fadeIn() + scaleIn(initialScale = 0.95f) togetherWith
-                                    fadeOut() + scaleOut(targetScale = 0.95f)
                             },
-                            label = "mode_transition"
-                        ) { mode ->
-                            when (mode) {
-                                LightTableMode.SELECTION -> {
-                                    PhotoThumbnailGrid(
-                                        photos = uiState.allMaybePhotos,
-                                        selectedIds = uiState.selectedForComparison,
-                                        onToggleSelection = { viewModel.toggleSelection(it) }
+                            navigationIcon = {
+                                IconButton(onClick = onNavigateBack) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = "返回"
                                     )
                                 }
-                                LightTableMode.COMPARISON -> {
-                                    ComparisonGrid(
-                                        photos = uiState.comparisonPhotos,
-                                        transformState = transformState,
-                                        selectedPhotoIds = uiState.selectedInComparison,
-                                        onSelectPhoto = { viewModel.toggleComparisonSelection(it) },
-                                        onFullscreenClick = { index ->
-                                            fullscreenStartIndex = index
-                                            showFullscreen = true
-                                        }
+                            },
+                            actions = {
+                                IconButton(
+                                    onClick = { viewModel.selectAll() },
+                                    enabled = uiState.allMaybePhotos.isNotEmpty()
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SelectAll,
+                                        contentDescription = "全选"
                                     )
                                 }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            )
+                        )
+                    },
+                    bottomBar = {
+                        SelectionBottomBar(
+                            selectionCount = uiState.selectionCount,
+                            maxSelection = LightTableUiState.MAX_COMPARISON_PHOTOS,
+                            canCompare = uiState.canCompare,
+                            onClearSelection = { viewModel.clearSelection() },
+                            onStartComparison = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.startComparison()
+                            }
+                        )
+                    }
+                ) { paddingValues ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(paddingValues)
+                    ) {
+                        when {
+                            uiState.isLoading -> LoadingContent()
+                            uiState.allMaybePhotos.isEmpty() -> EmptyContent(onNavigateBack = onNavigateBack)
+                            else -> {
+                                PhotoThumbnailGrid(
+                                    photos = uiState.allMaybePhotos,
+                                    selectedIds = uiState.selectedForComparison,
+                                    onToggleSelection = { viewModel.toggleSelection(it) }
+                                )
                             }
                         }
                     }
                 }
             }
-        }
-        
-        // Floating action button for "Keep Selected" (only in comparison mode with selections)
-        AnimatedVisibility(
-            visible = uiState.mode == LightTableMode.COMPARISON && uiState.hasSelectedInComparison,
-            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 100.dp)
-        ) {
-            ExtendedFloatingActionButton(
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    viewModel.keepSelectedTrashRest()
-                },
-                containerColor = KeepGreen,
-                contentColor = Color.White,
-                icon = {
-                    Icon(Icons.Default.Star, contentDescription = null)
-                },
-                text = {
-                    Text("保留选中 (${uiState.selectedInComparison.size})")
+            
+            LightTableMode.COMPARISON -> {
+                // Comparison mode: Immersive full-screen with floating buttons
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                ) {
+                    // Full-screen comparison grid
+                    ComparisonGrid(
+                        photos = uiState.comparisonPhotos,
+                        transformState = transformState,
+                        selectedPhotoIds = uiState.selectedInComparison,
+                        onSelectPhoto = { viewModel.toggleComparisonSelection(it) },
+                        onFullscreenClick = { index ->
+                            fullscreenStartIndex = index
+                            showFullscreen = true
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    
+                    // Top-left: Back button (floating)
+                    SmallFloatingActionButton(
+                        onClick = {
+                            viewModel.exitComparison()
+                            transformState.reset()
+                        },
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(start = 16.dp, top = 48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回"
+                        )
+                    }
+                    
+                    // Top-right: Reset zoom button (floating)
+                    SmallFloatingActionButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            transformState.reset()
+                        },
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(end = 16.dp, top = 48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ZoomOutMap,
+                            contentDescription = "重置缩放"
+                        )
+                    }
+                    
+                    // Bottom compact action buttons (pill-shaped)
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 24.dp, start = 32.dp, end = 32.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Trash all button (compact pill)
+                        Surface(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.trashAllSelected()
+                            },
+                            shape = RoundedCornerShape(24.dp),
+                            color = TrashRed.copy(alpha = 0.95f),
+                            shadowElevation = 4.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Default.Delete, null, Modifier.size(18.dp), tint = Color.White)
+                                Spacer(Modifier.width(6.dp))
+                                Text("丢弃", fontWeight = FontWeight.Medium, color = Color.White)
+                            }
+                        }
+                        
+                        // Keep all button (compact pill)
+                        Surface(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.keepAllSelected()
+                            },
+                            shape = RoundedCornerShape(24.dp),
+                            color = KeepGreen.copy(alpha = 0.95f),
+                            shadowElevation = 4.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Default.Check, null, Modifier.size(18.dp), tint = Color.White)
+                                Spacer(Modifier.width(6.dp))
+                                Text("保留", fontWeight = FontWeight.Medium, color = Color.White)
+                            }
+                        }
+                    }
+                    
+                    // "Keep Selected" compact button (when photos are selected)
+                    AnimatedVisibility(
+                        visible = uiState.hasSelectedInComparison,
+                        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 76.dp)
+                    ) {
+                        Surface(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.keepSelectedTrashRest()
+                            },
+                            shape = RoundedCornerShape(24.dp),
+                            color = KeepGreen,
+                            shadowElevation = 6.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Star, null, Modifier.size(18.dp), tint = Color.White)
+                                Spacer(Modifier.width(8.dp))
+                                Text("保留选中 (${uiState.selectedInComparison.size})", fontWeight = FontWeight.Medium, color = Color.White)
+                            }
+                        }
+                    }
+                    
+                    // Snackbar host
+                    SnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 160.dp)
+                    )
                 }
-            )
+            }
         }
         
-        // Fullscreen preview overlay
+        // Fullscreen preview overlay (works in both modes)
         if (showFullscreen && uiState.comparisonPhotos.isNotEmpty()) {
             FullscreenComparisonViewer(
                 photos = uiState.comparisonPhotos,
@@ -846,126 +900,204 @@ fun LightTableContent(
     }
     
     Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Main content
-            Box(modifier = Modifier.weight(1f)) {
-                when {
-                    uiState.isLoading -> {
-                        LoadingContent()
-                    }
-                    uiState.allMaybePhotos.isEmpty() -> {
-                        if (isWorkflowMode) {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        tint = KeepGreen,
-                                        modifier = Modifier.size(64.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    Text(
-                                        text = "对比完成",
-                                        style = MaterialTheme.typography.titleLarge,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        } else {
-                            EmptyContent(onNavigateBack = onNavigateBack)
-                        }
-                    }
-                    else -> {
-                        AnimatedContent(
-                            targetState = uiState.mode,
-                            transitionSpec = {
-                                fadeIn() + scaleIn(initialScale = 0.95f) togetherWith
-                                    fadeOut() + scaleOut(targetScale = 0.95f)
-                            },
-                            label = "mode_transition"
-                        ) { mode ->
-                            when (mode) {
-                                LightTableMode.SELECTION -> {
-                                    PhotoThumbnailGrid(
-                                        photos = uiState.allMaybePhotos,
-                                        selectedIds = uiState.selectedForComparison,
-                                        onToggleSelection = { viewModel.toggleSelection(it) }
-                                    )
-                                }
-                                LightTableMode.COMPARISON -> {
-                                    ComparisonGrid(
-                                        photos = uiState.comparisonPhotos,
-                                        transformState = transformState,
-                                        selectedPhotoIds = uiState.selectedInComparison,
-                                        onSelectPhoto = { viewModel.toggleComparisonSelection(it) },
-                                        onFullscreenClick = { index ->
-                                            fullscreenStartIndex = index
-                                            showFullscreen = true
+        // Different layouts for SELECTION vs COMPARISON mode
+        when (uiState.mode) {
+            LightTableMode.SELECTION -> {
+                // Selection mode: Use Column with bottom bar
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        when {
+                            uiState.isLoading -> LoadingContent()
+                            uiState.allMaybePhotos.isEmpty() -> {
+                                if (isWorkflowMode) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = KeepGreen,
+                                                modifier = Modifier.size(64.dp)
+                                            )
+                                            Spacer(modifier = Modifier.height(16.dp))
+                                            Text(
+                                                text = "对比完成",
+                                                style = MaterialTheme.typography.titleLarge,
+                                                fontWeight = FontWeight.Bold
+                                            )
                                         }
-                                    )
+                                    }
+                                } else {
+                                    EmptyContent(onNavigateBack = onNavigateBack)
                                 }
                             }
+                            else -> {
+                                PhotoThumbnailGrid(
+                                    photos = uiState.allMaybePhotos,
+                                    selectedIds = uiState.selectedForComparison,
+                                    onToggleSelection = { viewModel.toggleSelection(it) }
+                                )
+                            }
                         }
+                    }
+                    
+                    // Bottom bar for selection mode
+                    if (!uiState.isLoading && uiState.allMaybePhotos.isNotEmpty()) {
+                        SelectionBottomBar(
+                            selectionCount = uiState.selectionCount,
+                            maxSelection = LightTableUiState.MAX_COMPARISON_PHOTOS,
+                            canCompare = uiState.canCompare,
+                            onClearSelection = { viewModel.clearSelection() },
+                            onStartComparison = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.startComparison()
+                            }
+                        )
                     }
                 }
             }
             
-            // Bottom bar (only when there are photos)
-            if (!uiState.isLoading && uiState.allMaybePhotos.isNotEmpty()) {
-                when (uiState.mode) {
-                    LightTableMode.SELECTION -> SelectionBottomBar(
-                        selectionCount = uiState.selectionCount,
-                        maxSelection = LightTableUiState.MAX_COMPARISON_PHOTOS,
-                        canCompare = uiState.canCompare,
-                        onClearSelection = { viewModel.clearSelection() },
-                        onStartComparison = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.startComparison()
-                        }
-                    )
-                    LightTableMode.COMPARISON -> ComparisonBottomBar(
-                        onKeepAll = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.keepAllSelected()
+            LightTableMode.COMPARISON -> {
+                // Comparison mode: Immersive full-screen with floating buttons
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                ) {
+                    // Full-screen comparison grid
+                    ComparisonGrid(
+                        photos = uiState.comparisonPhotos,
+                        transformState = transformState,
+                        selectedPhotoIds = uiState.selectedInComparison,
+                        onSelectPhoto = { viewModel.toggleComparisonSelection(it) },
+                        onFullscreenClick = { index ->
+                            fullscreenStartIndex = index
+                            showFullscreen = true
                         },
-                        onTrashAll = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.trashAllSelected()
-                        }
+                        modifier = Modifier.fillMaxSize()
                     )
+                    
+                    // Top-left: Back button (floating)
+                    SmallFloatingActionButton(
+                        onClick = {
+                            viewModel.exitComparison()
+                            transformState.reset()
+                        },
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(start = 16.dp, top = 16.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回"
+                        )
+                    }
+                    
+                    // Top-right: Reset zoom button (floating)
+                    SmallFloatingActionButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            transformState.reset()
+                        },
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(end = 16.dp, top = 16.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ZoomOutMap,
+                            contentDescription = "重置缩放"
+                        )
+                    }
+                    
+                    // Bottom compact action buttons (pill-shaped)
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 24.dp, start = 32.dp, end = 32.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Trash all button (compact pill)
+                        Surface(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.trashAllSelected()
+                            },
+                            shape = RoundedCornerShape(24.dp),
+                            color = TrashRed.copy(alpha = 0.95f),
+                            shadowElevation = 4.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Default.Delete, null, Modifier.size(18.dp), tint = Color.White)
+                                Spacer(Modifier.width(6.dp))
+                                Text("丢弃", fontWeight = FontWeight.Medium, color = Color.White)
+                            }
+                        }
+                        
+                        // Keep all button (compact pill)
+                        Surface(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.keepAllSelected()
+                            },
+                            shape = RoundedCornerShape(24.dp),
+                            color = KeepGreen.copy(alpha = 0.95f),
+                            shadowElevation = 4.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Default.Check, null, Modifier.size(18.dp), tint = Color.White)
+                                Spacer(Modifier.width(6.dp))
+                                Text("保留", fontWeight = FontWeight.Medium, color = Color.White)
+                            }
+                        }
+                    }
+                    
+                    // "Keep Selected" compact button (when photos are selected)
+                    AnimatedVisibility(
+                        visible = uiState.hasSelectedInComparison,
+                        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 76.dp)
+                    ) {
+                        Surface(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.keepSelectedTrashRest()
+                            },
+                            shape = RoundedCornerShape(24.dp),
+                            color = KeepGreen,
+                            shadowElevation = 6.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Star, null, Modifier.size(18.dp), tint = Color.White)
+                                Spacer(Modifier.width(8.dp))
+                                Text("保留选中 (${uiState.selectedInComparison.size})", fontWeight = FontWeight.Medium, color = Color.White)
+                            }
+                        }
+                    }
                 }
             }
         }
         
-        // Floating action button for "Keep Selected"
-        AnimatedVisibility(
-            visible = uiState.mode == LightTableMode.COMPARISON && uiState.hasSelectedInComparison,
-            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 100.dp)
-        ) {
-            ExtendedFloatingActionButton(
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    viewModel.keepSelectedTrashRest()
-                },
-                containerColor = KeepGreen,
-                contentColor = Color.White,
-                icon = {
-                    Icon(Icons.Default.Star, contentDescription = null)
-                },
-                text = {
-                    Text("保留选中 (${uiState.selectedInComparison.size})")
-                }
-            )
-        }
-        
-        // Fullscreen preview
+        // Fullscreen preview (works in both modes)
         if (showFullscreen && uiState.comparisonPhotos.isNotEmpty()) {
             FullscreenComparisonViewer(
                 photos = uiState.comparisonPhotos,

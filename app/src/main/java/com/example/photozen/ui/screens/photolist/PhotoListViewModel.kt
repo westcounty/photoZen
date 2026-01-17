@@ -4,15 +4,21 @@ import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.photozen.data.local.dao.AlbumBubbleDao
 import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.dao.TagDao
+import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.local.entity.PhotoTagCrossRef
 import com.example.photozen.data.local.entity.TagEntity
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.data.repository.AlbumAddAction
+import com.example.photozen.data.repository.PhotoClassificationMode
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.MediaStoreDataSource
+import com.example.photozen.domain.usecase.AlbumOperationsUseCase
 import com.example.photozen.domain.usecase.GetPhotosUseCase
+import com.example.photozen.domain.usecase.MovePhotoResult
 import com.example.photozen.domain.usecase.SortPhotoUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,7 +52,12 @@ data class PhotoListUiState(
     val selectedPhotoIds: Set<String> = emptySet(),
     val availableTags: List<TagInfo> = emptyList(),
     val showTagDialog: Boolean = false,
-    val gridColumns: Int = 2
+    val gridColumns: Int = 2,
+    // Album mode support
+    val classificationMode: PhotoClassificationMode = PhotoClassificationMode.TAG,
+    val albumBubbleList: List<AlbumBubbleEntity> = emptyList(),
+    val albumAddAction: AlbumAddAction = AlbumAddAction.MOVE,
+    val showAlbumDialog: Boolean = false
 ) {
     val selectedCount: Int get() = selectedPhotoIds.size
     val allSelected: Boolean get() = photos.isNotEmpty() && selectedPhotoIds.size == photos.size
@@ -54,6 +65,8 @@ data class PhotoListUiState(
     val canBatchManage: Boolean get() = status in listOf(PhotoStatus.KEEP, PhotoStatus.MAYBE, PhotoStatus.TRASH)
     // Tag operations only for KEEP status
     val canBatchTag: Boolean get() = status == PhotoStatus.KEEP
+    // Album operations for KEEP status in album mode
+    val canBatchAlbum: Boolean get() = status == PhotoStatus.KEEP && classificationMode == PhotoClassificationMode.ALBUM
 }
 
 /**
@@ -74,7 +87,14 @@ private data class InternalState(
     val isSelectionMode: Boolean = false,
     val selectedPhotoIds: Set<String> = emptySet(),
     val showTagDialog: Boolean = false,
-    val gridColumns: Int = 2
+    val gridColumns: Int = 2,
+    val showAlbumDialog: Boolean = false
+)
+
+private data class AlbumState(
+    val classificationMode: PhotoClassificationMode = PhotoClassificationMode.TAG,
+    val albumBubbleList: List<AlbumBubbleEntity> = emptyList(),
+    val albumAddAction: AlbumAddAction = AlbumAddAction.MOVE
 )
 
 @HiltViewModel
@@ -85,7 +105,9 @@ class PhotoListViewModel @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val photoDao: PhotoDao,
-    private val tagDao: TagDao
+    private val tagDao: TagDao,
+    private val albumBubbleDao: AlbumBubbleDao,
+    private val albumOperationsUseCase: AlbumOperationsUseCase
 ) : ViewModel() {
     
     private val statusName: String = savedStateHandle.get<String>("statusName") ?: "UNSORTED"
@@ -106,12 +128,15 @@ class PhotoListViewModel @Inject constructor(
     // Available tags for batch tagging
     private val _availableTags = MutableStateFlow<List<TagInfo>>(emptyList())
     
+    // Album mode state
+    private val _albumState = MutableStateFlow(AlbumState())
+    
     val uiState: StateFlow<PhotoListUiState> = combine(
         getPhotosUseCase.getPhotosByStatus(status),
         _internalState,
         _untaggedCount,
-        _availableTags
-    ) { photos, internal, untaggedCount, tags ->
+        combine(_availableTags, _albumState) { tags, album -> Pair(tags, album) }
+    ) { photos, internal, untaggedCount, (tags, albumState) ->
         // Apply sorting based on dateAdded (creation time)
         val sortedPhotos = applySortOrder(photos, internal.sortOrder)
         // Filter out selected photos that no longer exist
@@ -130,7 +155,11 @@ class PhotoListViewModel @Inject constructor(
             selectedPhotoIds = validSelectedIds,
             availableTags = tags,
             showTagDialog = internal.showTagDialog,
-            gridColumns = internal.gridColumns
+            gridColumns = internal.gridColumns,
+            classificationMode = albumState.classificationMode,
+            albumBubbleList = albumState.albumBubbleList,
+            albumAddAction = albumState.albumAddAction,
+            showAlbumDialog = internal.showAlbumDialog
         )
     }.stateIn(
         scope = viewModelScope,
@@ -184,6 +213,22 @@ class PhotoListViewModel @Inject constructor(
                             photoCount = tagWithCount.photoCount
                         )
                     }
+                }
+            }
+            // Load album settings for KEEP status
+            viewModelScope.launch {
+                preferencesRepository.getPhotoClassificationMode().collect { mode ->
+                    _albumState.update { it.copy(classificationMode = mode) }
+                }
+            }
+            viewModelScope.launch {
+                preferencesRepository.getAlbumAddAction().collect { action ->
+                    _albumState.update { it.copy(albumAddAction = action) }
+                }
+            }
+            viewModelScope.launch {
+                albumBubbleDao.getAll().collect { albums ->
+                    _albumState.update { it.copy(albumBubbleList = albums) }
                 }
             }
         }
@@ -549,6 +594,153 @@ class PhotoListViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 _internalState.update { it.copy(message = "创建标签失败: ${e.message}") }
+            }
+        }
+    }
+    
+    // ==================== Album Operations ====================
+    
+    /**
+     * Show album selection dialog.
+     */
+    fun showAlbumDialog() {
+        _internalState.update { it.copy(showAlbumDialog = true) }
+    }
+    
+    /**
+     * Hide album selection dialog.
+     */
+    fun hideAlbumDialog() {
+        _internalState.update { it.copy(showAlbumDialog = false) }
+    }
+    
+    /**
+     * Add selected photos to album using default action (copy or move).
+     */
+    fun addSelectedToAlbum(bucketId: String) {
+        val selectedIds = _internalState.value.selectedPhotoIds
+        if (selectedIds.isEmpty()) return
+        
+        val action = _albumState.value.albumAddAction
+        if (action == AlbumAddAction.MOVE) {
+            moveSelectedToAlbum(bucketId)
+        } else {
+            copySelectedToAlbum(bucketId)
+        }
+    }
+    
+    /**
+     * Move selected photos to an album.
+     */
+    fun moveSelectedToAlbum(bucketId: String) {
+        val selectedIds = _internalState.value.selectedPhotoIds
+        if (selectedIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            try {
+                val album = _albumState.value.albumBubbleList.find { it.bucketId == bucketId }
+                val targetPath = "Pictures/${album?.displayName ?: "PhotoZen"}"
+                var successCount = 0
+                
+                for (photoId in selectedIds) {
+                    val photo = uiState.value.photos.find { it.id == photoId } ?: continue
+                    val photoUri = Uri.parse(photo.systemUri)
+                    
+                    when (val result = albumOperationsUseCase.movePhotoToAlbum(photoUri, targetPath)) {
+                        is MovePhotoResult.Success -> successCount++
+                        is MovePhotoResult.NeedsConfirmation -> {
+                            // Handle one at a time for confirmation
+                        }
+                        is MovePhotoResult.Error -> {
+                            // Continue with other photos
+                        }
+                    }
+                }
+                
+                _internalState.update { 
+                    it.copy(
+                        showAlbumDialog = false,
+                        message = "已移动 $successCount 张照片到「${album?.displayName}」",
+                        selectedPhotoIds = emptySet(),
+                        isSelectionMode = false
+                    )
+                }
+            } catch (e: Exception) {
+                _internalState.update { it.copy(message = "移动失败: ${e.message}") }
+            }
+        }
+    }
+    
+    /**
+     * Copy selected photos to an album.
+     */
+    fun copySelectedToAlbum(bucketId: String) {
+        val selectedIds = _internalState.value.selectedPhotoIds
+        if (selectedIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            try {
+                val album = _albumState.value.albumBubbleList.find { it.bucketId == bucketId }
+                val targetPath = "Pictures/${album?.displayName ?: "PhotoZen"}"
+                var successCount = 0
+                
+                for (photoId in selectedIds) {
+                    val photo = uiState.value.photos.find { it.id == photoId } ?: continue
+                    val photoUri = Uri.parse(photo.systemUri)
+                    
+                    val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
+                    if (result.isSuccess) {
+                        successCount++
+                    }
+                }
+                
+                _internalState.update { 
+                    it.copy(
+                        showAlbumDialog = false,
+                        message = "已复制 $successCount 张照片到「${album?.displayName}」",
+                        selectedPhotoIds = emptySet(),
+                        isSelectionMode = false
+                    )
+                }
+            } catch (e: Exception) {
+                _internalState.update { it.copy(message = "复制失败: ${e.message}") }
+            }
+        }
+    }
+    
+    /**
+     * Add a single photo to album (for long-press menu).
+     */
+    fun addPhotoToAlbum(photoId: String, bucketId: String, copy: Boolean = false) {
+        viewModelScope.launch {
+            try {
+                val photo = uiState.value.photos.find { it.id == photoId } ?: return@launch
+                val album = _albumState.value.albumBubbleList.find { it.bucketId == bucketId }
+                val targetPath = "Pictures/${album?.displayName ?: "PhotoZen"}"
+                val photoUri = Uri.parse(photo.systemUri)
+                
+                if (copy) {
+                    val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
+                    if (result.isSuccess) {
+                        _internalState.update { it.copy(message = "已复制到「${album?.displayName}」") }
+                    } else {
+                        _internalState.update { it.copy(message = "复制失败") }
+                    }
+                } else {
+                    when (val result = albumOperationsUseCase.movePhotoToAlbum(photoUri, targetPath)) {
+                        is MovePhotoResult.Success -> {
+                            _internalState.update { it.copy(message = "已移动到「${album?.displayName}」") }
+                        }
+                        is MovePhotoResult.NeedsConfirmation -> {
+                            _internalState.update { it.copy(message = "需要权限确认才能移动") }
+                        }
+                        is MovePhotoResult.Error -> {
+                            _internalState.update { it.copy(message = "移动失败: ${result.message}") }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                _internalState.update { it.copy(message = "操作失败: ${e.message}") }
             }
         }
     }

@@ -52,6 +52,23 @@ enum class ThemeMode {
 }
 
 /**
+ * Photo classification mode.
+ * Determines whether photos are organized using tags or albums.
+ */
+enum class PhotoClassificationMode {
+    TAG,    // 使用标签分类
+    ALBUM   // 使用相册分类
+}
+
+/**
+ * Default action when adding photos to an album.
+ */
+enum class AlbumAddAction {
+    COPY,   // 复制到相册（保留原位置）
+    MOVE    // 移动到相册（从原位置删除）
+}
+
+/**
  * Repository for managing app preferences using DataStore.
  * Handles persistent storage for settings like cumulative sort count and achievements.
  */
@@ -103,6 +120,13 @@ class PreferencesRepository @Inject constructor(
         
         // Swipe sensitivity settings (1.0 = default, 0.5 = very sensitive, 1.5 = less sensitive)
         val KEY_SWIPE_SENSITIVITY = androidx.datastore.preferences.core.floatPreferencesKey("swipe_sensitivity")
+        
+        // Photo classification mode settings
+        val KEY_PHOTO_CLASSIFICATION_MODE = stringPreferencesKey("photo_classification_mode")
+        val KEY_ALBUM_ADD_ACTION = stringPreferencesKey("album_add_action")
+        val KEY_CARD_SORTING_ALBUM_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("card_sorting_album_enabled")
+        val KEY_ALBUM_TAG_SIZE = androidx.datastore.preferences.core.floatPreferencesKey("album_tag_size")
+        val KEY_MAX_ALBUM_TAG_COUNT = intPreferencesKey("max_album_tag_count")
         
         // Achievement keys
         val KEY_TAGGED_COUNT = intPreferencesKey("total_tagged_count")
@@ -382,6 +406,107 @@ class PreferencesRepository @Inject constructor(
     suspend fun setSwipeSensitivity(sensitivity: Float) {
         dataStore.edit { preferences ->
             preferences[KEY_SWIPE_SENSITIVITY] = sensitivity.coerceIn(0.5f, 1.5f)
+        }
+    }
+    
+    // ==================== PHOTO CLASSIFICATION MODE SETTINGS ====================
+    
+    /**
+     * Get photo classification mode (TAG or ALBUM).
+     * Default is TAG.
+     */
+    fun getPhotoClassificationMode(): Flow<PhotoClassificationMode> = dataStore.data.map { preferences ->
+        val modeStr = preferences[KEY_PHOTO_CLASSIFICATION_MODE] ?: PhotoClassificationMode.TAG.name
+        try {
+            PhotoClassificationMode.valueOf(modeStr)
+        } catch (e: IllegalArgumentException) {
+            PhotoClassificationMode.TAG
+        }
+    }
+    
+    /**
+     * Set photo classification mode.
+     */
+    suspend fun setPhotoClassificationMode(mode: PhotoClassificationMode) {
+        dataStore.edit { preferences ->
+            preferences[KEY_PHOTO_CLASSIFICATION_MODE] = mode.name
+        }
+    }
+    
+    /**
+     * Get album add action (COPY or MOVE).
+     * Default is MOVE.
+     */
+    fun getAlbumAddAction(): Flow<AlbumAddAction> = dataStore.data.map { preferences ->
+        val actionStr = preferences[KEY_ALBUM_ADD_ACTION] ?: AlbumAddAction.MOVE.name
+        try {
+            AlbumAddAction.valueOf(actionStr)
+        } catch (e: IllegalArgumentException) {
+            AlbumAddAction.MOVE
+        }
+    }
+    
+    /**
+     * Set album add action.
+     */
+    suspend fun setAlbumAddAction(action: AlbumAddAction) {
+        dataStore.edit { preferences ->
+            preferences[KEY_ALBUM_ADD_ACTION] = action.name
+        }
+    }
+    
+    /**
+     * Get whether card sorting album classification is enabled.
+     * When enabled, album tags appear at the bottom of card sorting screen.
+     * Default is false.
+     */
+    fun getCardSortingAlbumEnabled(): Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[KEY_CARD_SORTING_ALBUM_ENABLED] ?: false
+    }
+    
+    /**
+     * Set card sorting album classification enabled.
+     */
+    suspend fun setCardSortingAlbumEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[KEY_CARD_SORTING_ALBUM_ENABLED] = enabled
+        }
+    }
+    
+    /**
+     * Get album tag size for card sorting screen.
+     * Default is 1.0 (normal size).
+     * Range: 0.8 (smaller) to 1.2 (larger)
+     */
+    fun getAlbumTagSize(): Flow<Float> = dataStore.data.map { preferences ->
+        preferences[KEY_ALBUM_TAG_SIZE] ?: 1.0f
+    }
+    
+    /**
+     * Set album tag size.
+     */
+    suspend fun setAlbumTagSize(size: Float) {
+        dataStore.edit { preferences ->
+            preferences[KEY_ALBUM_TAG_SIZE] = size.coerceIn(0.8f, 1.2f)
+        }
+    }
+    
+    /**
+     * Get max album tag count for card sorting screen.
+     * 0 means unlimited.
+     * Default is 0 (unlimited).
+     */
+    fun getMaxAlbumTagCount(): Flow<Int> = dataStore.data.map { preferences ->
+        preferences[KEY_MAX_ALBUM_TAG_COUNT] ?: 0
+    }
+    
+    /**
+     * Set max album tag count.
+     * @param count 0 for unlimited, or 1-20 for limited
+     */
+    suspend fun setMaxAlbumTagCount(count: Int) {
+        dataStore.edit { preferences ->
+            preferences[KEY_MAX_ALBUM_TAG_COUNT] = count.coerceIn(0, 20)
         }
     }
     

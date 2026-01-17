@@ -589,6 +589,18 @@ interface PhotoDao {
     fun getTotalCountExcludingBuckets(bucketIds: List<String>): Flow<Int>
     
     /**
+     * Get all photos in a specific album (bucket).
+     */
+    @Query("SELECT * FROM photos WHERE bucket_id = :bucketId AND is_virtual_copy = 0 ORDER BY date_added DESC")
+    fun getPhotosByBucketId(bucketId: String): Flow<List<PhotoEntity>>
+    
+    /**
+     * Get all photos in a specific album (bucket) - synchronous version.
+     */
+    @Query("SELECT * FROM photos WHERE bucket_id = :bucketId AND is_virtual_copy = 0 ORDER BY date_added DESC")
+    suspend fun getPhotosByBucketIdSync(bucketId: String): List<PhotoEntity>
+    
+    /**
      * Get sorted count of photos filtered by bucket IDs.
      */
     @Query("SELECT COUNT(*) FROM photos WHERE status != 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds)")

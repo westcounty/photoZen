@@ -78,6 +78,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.data.repository.PhotoClassificationMode
 import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.DailyTaskMode
 import com.example.photozen.domain.usecase.DailyTaskStatus
@@ -101,6 +102,7 @@ fun HomeScreen(
     onNavigateToTrash: () -> Unit,
     onNavigateToWorkflow: (Boolean, Int) -> Unit,
     onNavigateToTagBubble: () -> Unit,
+    onNavigateToAlbumBubble: () -> Unit,
     onNavigateToAchievements: () -> Unit,
     onNavigateToFilterSelection: (String, Int) -> Unit = { _, _ -> },
     onNavigateToSmartGallery: () -> Unit = { },
@@ -342,15 +344,26 @@ fun HomeScreen(
                     onClick = onNavigateToLightTable
                 )
                 
-                // Tag Bubble Card
-                ActionCard(
-                    title = "标签气泡",
-                    subtitle = "可视化浏览和管理标签",
-                    icon = Icons.Default.Sell,
-                    iconTint = Color(0xFFA78BFA), // Purple
-                    enabled = true,
-                    onClick = onNavigateToTagBubble
-                )
+                // Tag/Album Bubble Card - based on classification mode
+                if (uiState.photoClassificationMode == PhotoClassificationMode.ALBUM) {
+                    ActionCard(
+                        title = "相册气泡",
+                        subtitle = "可视化管理我的相册",
+                        icon = Icons.Default.Collections,
+                        iconTint = Color(0xFF4FC3F7), // Light Blue
+                        enabled = true,
+                        onClick = onNavigateToAlbumBubble
+                    )
+                } else {
+                    ActionCard(
+                        title = "标签气泡",
+                        subtitle = "可视化浏览和管理标签",
+                        icon = Icons.Default.Sell,
+                        iconTint = Color(0xFFA78BFA), // Purple
+                        enabled = true,
+                        onClick = onNavigateToTagBubble
+                    )
+                }
                 
                 // Achievement Card
                 val achievements = generateAchievements(uiState.achievementData)

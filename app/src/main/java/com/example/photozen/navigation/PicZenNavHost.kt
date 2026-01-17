@@ -31,6 +31,8 @@ import com.example.photozen.ui.screens.smartgallery.SimilarPhotosScreen
 import com.example.photozen.ui.screens.smartgallery.SmartGalleryScreen
 import com.example.photozen.ui.screens.smartgallery.SmartSearchScreen
 import com.example.photozen.ui.screens.smartgallery.TimelineScreen
+import com.example.photozen.ui.screens.albums.AlbumBubbleScreen
+import com.example.photozen.ui.screens.albums.AlbumPhotoListScreen
 import com.example.photozen.ui.screens.tags.TagBubbleScreen
 import com.example.photozen.ui.screens.tags.TaggedPhotosScreen
 import com.example.photozen.ui.screens.trash.TrashScreen
@@ -76,6 +78,9 @@ fun PicZenNavHost(
                 },
                 onNavigateToTagBubble = {
                     navController.navigate(Screen.TagBubble)
+                },
+                onNavigateToAlbumBubble = {
+                    navController.navigate(Screen.AlbumBubble)
                 },
                 onNavigateToAchievements = {
                     navController.navigate(Screen.Achievements)
@@ -313,6 +318,36 @@ fun PicZenNavHost(
             QuickTagScreen(
                 onNavigateBack = {
                     navController.popBackStack()
+                }
+            )
+        }
+        
+        composable<Screen.AlbumBubble> {
+            AlbumBubbleScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToAlbumPhotos = { bucketId, albumName ->
+                    navController.navigate(Screen.AlbumPhotoList(bucketId, albumName))
+                },
+                onNavigateToQuickSort = { bucketId ->
+                    // Navigate to flow sorter with album filter
+                    // The filter will be set via PreferencesRepository
+                    navController.navigate(Screen.FlowSorter())
+                }
+            )
+        }
+        
+        composable<Screen.AlbumPhotoList> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.AlbumPhotoList>()
+            AlbumPhotoListScreen(
+                bucketId = route.bucketId,
+                albumName = route.albumName,
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToEditor = { photoId ->
+                    navController.navigate(Screen.PhotoEditor(photoId))
                 }
             )
         }

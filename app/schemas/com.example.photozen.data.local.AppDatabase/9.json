@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 9,
-    "identityHash": "502785ef890170b386c57351131207de",
+    "identityHash": "7c6cbe0d5110ba1e084e638fc33a6c46",
     "entities": [
       {
         "tableName": "photos",
@@ -458,7 +458,7 @@
       },
       {
         "tableName": "photo_analysis",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`photoId` TEXT NOT NULL, `labels` TEXT NOT NULL, `embedding` BLOB, `analyzedAt` INTEGER NOT NULL, `hasGps` INTEGER NOT NULL, `latitude` REAL, `longitude` REAL, `faceCount` INTEGER NOT NULL, `primaryCategory` TEXT, `primaryCategoryConfidence` REAL NOT NULL, PRIMARY KEY(`photoId`), FOREIGN KEY(`photoId`) REFERENCES `photos`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`photoId` TEXT NOT NULL, `labels` TEXT NOT NULL, `embedding` BLOB, `analyzedAt` INTEGER NOT NULL, `hasGps` INTEGER NOT NULL, `latitude` REAL, `longitude` REAL, `faceCount` INTEGER NOT NULL, `primaryCategory` TEXT, `primaryCategoryConfidence` REAL NOT NULL, `phash` TEXT, `dominantColor` TEXT, `accentColor` TEXT, `luminance` INTEGER NOT NULL, `chroma` INTEGER NOT NULL, `quality` INTEGER NOT NULL, `sharpness` INTEGER NOT NULL, `aspectRatio` REAL NOT NULL, PRIMARY KEY(`photoId`), FOREIGN KEY(`photoId`) REFERENCES `photos`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "photoId",
@@ -513,6 +513,51 @@
           {
             "fieldPath": "primaryCategoryConfidence",
             "columnName": "primaryCategoryConfidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "phash",
+            "columnName": "phash",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dominantColor",
+            "columnName": "dominantColor",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "accentColor",
+            "columnName": "accentColor",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "luminance",
+            "columnName": "luminance",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "chroma",
+            "columnName": "chroma",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quality",
+            "columnName": "quality",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sharpness",
+            "columnName": "sharpness",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aspectRatio",
+            "columnName": "aspectRatio",
             "affinity": "REAL",
             "notNull": true
           }
@@ -825,11 +870,47 @@
             ]
           }
         ]
+      },
+      {
+        "tableName": "album_bubbles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`bucket_id` TEXT NOT NULL, `display_name` TEXT NOT NULL, `sort_order` INTEGER NOT NULL, `added_at` INTEGER NOT NULL, PRIMARY KEY(`bucket_id`))",
+        "fields": [
+          {
+            "fieldPath": "bucketId",
+            "columnName": "bucket_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "display_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sort_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addedAt",
+            "columnName": "added_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "bucket_id"
+          ]
+        }
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '502785ef890170b386c57351131207de')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7c6cbe0d5110ba1e084e638fc33a6c46')"
     ]
   }
 }

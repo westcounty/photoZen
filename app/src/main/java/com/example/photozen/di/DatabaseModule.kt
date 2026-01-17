@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.photozen.data.local.AppDatabase
+import com.example.photozen.data.local.dao.AlbumBubbleDao
 import com.example.photozen.data.local.dao.FaceDao
 import com.example.photozen.data.local.dao.PhotoAnalysisDao
 import com.example.photozen.data.local.dao.PhotoDao
@@ -172,6 +173,24 @@ private val MIGRATION_7_8 = object : Migration(7, 8) {
 }
 
 /**
+ * Migration from version 8 to 9: Add album_bubbles table for album classification mode.
+ * - album_bubbles: User's album bubble list for quick classification
+ */
+private val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Create album_bubbles table
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS album_bubbles (
+                bucket_id TEXT NOT NULL PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                added_at INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+    }
+}
+
+/**
  * Hilt module for providing Room database and DAOs.
  */
 @Module
@@ -191,7 +210,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME
         )
-            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
             .fallbackToDestructiveMigration(dropAllTables = true) // For development - use migrations in production
             .build()
     }
@@ -248,5 +267,14 @@ object DatabaseModule {
     @Singleton
     fun providePhotoLabelDao(database: AppDatabase): PhotoLabelDao {
         return database.photoLabelDao()
+    }
+    
+    /**
+     * Provides AlbumBubbleDao from the database.
+     */
+    @Provides
+    @Singleton
+    fun provideAlbumBubbleDao(database: AppDatabase): AlbumBubbleDao {
+        return database.albumBubbleDao()
     }
 }

@@ -64,7 +64,7 @@ fun ComparisonGrid(
     if (photoCount == 0) return
     
     val density = LocalDensity.current
-    val spacing = 8.dp
+    val spacing = 4.dp  // Reduced from 8.dp for more photo display area
     val spacingPx = with(density) { spacing.toPx() }
     
     // 计算照片的平均长宽比
@@ -80,7 +80,7 @@ fun ComparisonGrid(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .padding(spacing)
+            .padding(spacing)  // Reduced padding for more display area
     ) {
         val containerWidth = constraints.maxWidth.toFloat() - spacingPx
         val containerHeight = constraints.maxHeight.toFloat() - spacingPx
@@ -290,7 +290,9 @@ private fun RenderLayout(
         verticalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        layout.rowDistribution.forEach { colsInRow ->
+        layout.rowDistribution.forEachIndexed { rowIndex, colsInRow ->
+            val isFirstRow = rowIndex == 0
+            
             Row(
                 horizontalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically
@@ -306,6 +308,8 @@ private fun RenderLayout(
                             isSelected = photo.id in selectedPhotoIds,
                             onSelect = { onSelectPhoto(photo.id) },
                             onFullscreenClick = onFullscreenClick?.let { { it(currentIndex) } },
+                            // First row: place fullscreen button at bottom-right to avoid status bar
+                            fullscreenButtonPosition = if (isFirstRow) Alignment.BottomEnd else Alignment.TopEnd,
                             modifier = Modifier
                                 .width(photoWidthDp)
                                 .height(photoHeightDp)

@@ -4,12 +4,14 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.example.photozen.data.local.converter.Converters
+import com.example.photozen.data.local.dao.AlbumBubbleDao
 import com.example.photozen.data.local.dao.DailyStatsDao
 import com.example.photozen.data.local.dao.FaceDao
 import com.example.photozen.data.local.dao.PhotoAnalysisDao
 import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.dao.PhotoLabelDao
 import com.example.photozen.data.local.dao.TagDao
+import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.local.entity.DailyStats
 import com.example.photozen.data.local.entity.FaceEntity
 import com.example.photozen.data.local.entity.PersonEntity
@@ -41,9 +43,10 @@ import com.example.photozen.data.local.entity.TagEntity
         PhotoAnalysisEntity::class,
         FaceEntity::class,
         PersonEntity::class,
-        PhotoLabelEntity::class
+        PhotoLabelEntity::class,
+        AlbumBubbleEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -78,6 +81,11 @@ abstract class AppDatabase : RoomDatabase() {
      * DAO for photo-label associations.
      */
     abstract fun photoLabelDao(): PhotoLabelDao
+    
+    /**
+     * DAO for album bubble list operations.
+     */
+    abstract fun albumBubbleDao(): AlbumBubbleDao
     
     companion object {
         const val DATABASE_NAME = "piczen_database"

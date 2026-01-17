@@ -166,6 +166,9 @@ dependencies {
     // Play Services Tasks (for ML Kit async operations)
     implementation(libs.play.services.tasks)
     
+    // Reorderable for drag-to-reorder in LazyColumn
+    implementation("sh.calvin.reorderable:reorderable:2.4.3")
+    
     // TensorFlow Lite (图像/人脸嵌入)
     "exploreImplementation"(libs.tensorflow.lite)
     "exploreImplementation"(libs.tensorflow.lite.support)

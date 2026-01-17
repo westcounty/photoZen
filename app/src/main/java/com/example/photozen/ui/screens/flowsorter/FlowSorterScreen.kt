@@ -58,6 +58,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import com.example.photozen.ui.components.FloatingAlbumTags
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -447,6 +448,21 @@ fun FlowSorterContent(
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
                                     .padding(top = 32.dp)
+                            )
+                            
+                            // Floating album tags when enabled
+                            FloatingAlbumTags(
+                                albums = uiState.albumBubbleList,
+                                tagSize = uiState.albumTagSize,
+                                maxCount = uiState.maxAlbumTagCount,
+                                onAlbumClick = { album ->
+                                    hapticManager.performClick()
+                                    viewModel.keepAndAddToAlbum(album.bucketId)
+                                },
+                                visible = uiState.cardSortingAlbumEnabled && 
+                                          uiState.albumBubbleList.isNotEmpty() && 
+                                          uiState.currentPhoto != null,
+                                modifier = Modifier.align(Alignment.BottomCenter)
                             )
                         }
                     }

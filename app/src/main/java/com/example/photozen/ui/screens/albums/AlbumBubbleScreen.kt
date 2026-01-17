@@ -1,0 +1,971 @@
+package com.example.photozen.ui.screens.albums
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
+import com.example.photozen.data.source.Album
+import com.example.photozen.ui.components.bubble.BubbleGraphView
+import com.example.photozen.ui.theme.KeepGreen
+import com.example.photozen.ui.theme.MaybeAmber
+import com.example.photozen.ui.theme.TrashRed
+
+/**
+ * Album Bubble Screen - Visualizes user's album bubble list.
+ * Similar to TagBubbleScreen but for albums.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AlbumBubbleScreen(
+    onNavigateBack: () -> Unit,
+    onNavigateToAlbumPhotos: (String, String) -> Unit,
+    onNavigateToQuickSort: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: AlbumBubbleViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val haptic = LocalHapticFeedback.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    
+    // Context menu state
+    var selectedAlbumForMenu by remember { mutableStateOf<AlbumBubbleData?>(null) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    
+    // Show error/message
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let { error ->
+            snackbarHostState.showSnackbar(error)
+            viewModel.clearError()
+        }
+    }
+    
+    // Show undo snackbar for remove operation
+    LaunchedEffect(uiState.showUndoSnackbar) {
+        val removedAlbum = uiState.lastRemovedAlbum
+        if (uiState.showUndoSnackbar && removedAlbum != null) {
+            val result = snackbarHostState.showSnackbar(
+                message = "已从列表移除「${removedAlbum.displayName}」",
+                actionLabel = "撤回",
+                duration = SnackbarDuration.Short
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.undoRemoveAlbum()
+            } else {
+                viewModel.clearUndoState()
+            }
+        }
+    }
+    
+    LaunchedEffect(uiState.message) {
+        // Skip if we're showing the undo snackbar
+        if (!uiState.showUndoSnackbar) {
+            uiState.message?.let { message ->
+                snackbarHostState.showSnackbar(message)
+                viewModel.clearMessage()
+            }
+        }
+    }
+    
+    Scaffold(
+        modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(
+                            text = "我的相册",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Text(
+                            text = "${uiState.albums.size} 个相册",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回"
+                        )
+                    }
+                },
+                actions = {
+                    // View mode toggle
+                    IconButton(onClick = { viewModel.toggleViewMode() }) {
+                        Icon(
+                            imageVector = if (uiState.viewMode == AlbumViewMode.BUBBLE) 
+                                Icons.Default.FormatListBulleted else Icons.Default.BubbleChart,
+                            contentDescription = "切换视图"
+                        )
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { viewModel.showAlbumPicker() }
+            ) {
+                Icon(Icons.Default.Edit, contentDescription = "编辑相册列表")
+            }
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            when {
+                uiState.isLoading -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+                uiState.albums.isEmpty() -> {
+                    EmptyAlbumList(
+                        onAddAlbum = { viewModel.showAlbumPicker() }
+                    )
+                }
+                else -> {
+                    when (uiState.viewMode) {
+                        AlbumViewMode.BUBBLE -> {
+                            AlbumBubbleView(
+                                bubbleNodes = uiState.bubbleNodes,
+                                albums = uiState.albums,
+                                onAlbumClick = { albumId ->
+                                    val album = uiState.albums.find { it.bucketId == albumId }
+                                    album?.let {
+                                        onNavigateToAlbumPhotos(it.bucketId, it.displayName)
+                                    }
+                                },
+                                onAlbumLongClick = { albumId ->
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    val album = uiState.albums.find { it.bucketId == albumId }
+                                    selectedAlbumForMenu = album
+                                }
+                            )
+                        }
+                        AlbumViewMode.LIST -> {
+                            AlbumListView(
+                                albums = uiState.albums,
+                                onAlbumClick = { album ->
+                                    onNavigateToAlbumPhotos(album.bucketId, album.displayName)
+                                },
+                                onAlbumLongClick = { album ->
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    selectedAlbumForMenu = album
+                                },
+                                onSortAlbum = { album ->
+                                    if (album.unsortedCount > 0) {
+                                        onNavigateToQuickSort(album.bucketId)
+                                    }
+                                },
+                                onReorder = { from, to ->
+                                    viewModel.reorderAlbums(from, to)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Album context menu
+    selectedAlbumForMenu?.let { album ->
+        AlbumContextMenu(
+            album = album,
+            onRemoveFromList = {
+                viewModel.removeAlbumFromList(album.bucketId)
+                selectedAlbumForMenu = null
+            },
+            onDeleteAlbum = {
+                showDeleteConfirmDialog = true
+            },
+            onSortAlbum = {
+                selectedAlbumForMenu = null
+                if (album.unsortedCount > 0) {
+                    onNavigateToQuickSort(album.bucketId)
+                } else {
+                    // Show toast for completed albums
+                    viewModel.showMessage("该相册已完成整理哦")
+                }
+            },
+            onDismiss = { selectedAlbumForMenu = null }
+        )
+    }
+    
+    // Delete confirmation dialog
+    if (showDeleteConfirmDialog && selectedAlbumForMenu != null) {
+        AlertDialog(
+            onDismissRequest = { 
+                showDeleteConfirmDialog = false 
+            },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("删除相册") },
+            text = { 
+                Text("确定要删除「${selectedAlbumForMenu?.displayName}」吗？\n\n此操作将永久删除相册中的所有照片，无法撤销。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        selectedAlbumForMenu?.let {
+                            viewModel.deleteAlbum(it.bucketId)
+                        }
+                        showDeleteConfirmDialog = false
+                        selectedAlbumForMenu = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("删除")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { 
+                        showDeleteConfirmDialog = false 
+                    }
+                ) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+    
+    // Album picker dialog
+    if (uiState.showAlbumPicker) {
+        AlbumPickerDialog(
+            albums = uiState.availableAlbums,
+            selectedIds = uiState.selectedAlbumIds,
+            isLoading = uiState.isLoadingAlbums,
+            onToggleSelection = { viewModel.toggleAlbumSelection(it) },
+            onConfirm = { viewModel.confirmAlbumSelection() },
+            onDismiss = { viewModel.hideAlbumPicker() }
+        )
+    }
+}
+
+@Composable
+private fun EmptyAlbumList(
+    onAddAlbum: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.PhotoAlbum,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "还没有添加相册",
+            style = MaterialTheme.typography.titleMedium
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "添加相册后，可以在这里快速管理和整理照片",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        FilledTonalButton(onClick = onAddAlbum) {
+            Icon(Icons.Default.Add, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("添加相册")
+        }
+    }
+}
+
+@Composable
+private fun AlbumBubbleView(
+    bubbleNodes: List<com.example.photozen.ui.components.bubble.BubbleNode>,
+    albums: List<AlbumBubbleData>,
+    onAlbumClick: (String) -> Unit,
+    onAlbumLongClick: (String) -> Unit
+) {
+    BubbleGraphView(
+        nodes = bubbleNodes,
+        onBubbleClick = { node -> onAlbumClick(node.id) },
+        onBubbleLongClick = { node -> onAlbumLongClick(node.id) }
+    )
+}
+
+@Composable
+private fun AlbumListView(
+    albums: List<AlbumBubbleData>,
+    onAlbumClick: (AlbumBubbleData) -> Unit,
+    onAlbumLongClick: (AlbumBubbleData) -> Unit,
+    onSortAlbum: (AlbumBubbleData) -> Unit,
+    onReorder: (Int, Int) -> Unit
+) {
+    val lazyListState = rememberLazyListState()
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        onReorder(from.index, to.index)
+    }
+    val haptic = LocalHapticFeedback.current
+    
+    LazyColumn(
+        state = lazyListState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(albums, key = { it.bucketId }) { album ->
+            ReorderableItem(reorderableState, key = album.bucketId) { isDragging ->
+                AlbumListItemWithDrag(
+                    album = album,
+                    isDragging = isDragging,
+                    onClick = { onAlbumClick(album) },
+                    onLongClick = { onAlbumLongClick(album) },
+                    onSortClick = { onSortAlbum(album) },
+                    onDragStarted = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun AlbumListItem(
+    album: AlbumBubbleData,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onSortClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Cover image or placeholder
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                if (album.coverUri != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(android.net.Uri.parse(album.coverUri))
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.PhotoAlbum,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                // Progress overlay
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(2.dp)
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(
+                            when {
+                                album.sortedPercentage >= 0.8f -> KeepGreen
+                                album.sortedPercentage >= 0.5f -> MaybeAmber
+                                else -> TrashRed
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "${(album.sortedPercentage * 100).toInt()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 8.sp
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            // Album info
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = album.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${album.sortedCount}/${album.totalCount} 已整理",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            // Start sorting button (only if unsorted photos exist)
+            if (album.unsortedCount > 0) {
+                FilledTonalIconButton(
+                    onClick = onSortClick,
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "开始整理"
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Album list item with drag handle for reordering.
+ * Note: This must be called inside a ReorderableCollectionItemScope.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun sh.calvin.reorderable.ReorderableCollectionItemScope.AlbumListItemWithDrag(
+    album: AlbumBubbleData,
+    isDragging: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onSortClick: () -> Unit,
+    onDragStarted: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (isDragging) Modifier.shadow(8.dp, RoundedCornerShape(12.dp))
+                else Modifier
+            )
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDragging) 
+                MaterialTheme.colorScheme.surfaceVariant
+            else 
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 4.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Drag handle
+            IconButton(
+                onClick = {},
+                modifier = Modifier.draggableHandle(
+                    onDragStarted = { onDragStarted() },
+                    interactionSource = interactionSource
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = "拖动排序",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
+            
+            // Cover image or placeholder
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                if (album.coverUri != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(android.net.Uri.parse(album.coverUri))
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.PhotoAlbum,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                // Progress overlay
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(2.dp)
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(
+                            when {
+                                album.sortedPercentage >= 0.8f -> KeepGreen
+                                album.sortedPercentage >= 0.5f -> MaybeAmber
+                                else -> TrashRed
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "${(album.sortedPercentage * 100).toInt()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 8.sp
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            // Album info
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = album.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${album.sortedCount}/${album.totalCount} 已整理",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            // Start sorting button (only if unsorted photos exist)
+            if (album.unsortedCount > 0) {
+                FilledTonalIconButton(
+                    onClick = onSortClick,
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "开始整理"
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AlbumPickerDialog(
+    albums: List<Album>,
+    selectedIds: Set<String>,
+    isLoading: Boolean,
+    onToggleSelection: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    onCreateAlbum: (String) -> Unit = {}
+) {
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var newAlbumName by remember { mutableStateOf("") }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("编辑我的相册")
+                // Create album button
+                TextButton(onClick = { showCreateDialog = true }) {
+                    Icon(
+                        imageVector = Icons.Default.CreateNewFolder,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("新建")
+                }
+            }
+        },
+        text = {
+            if (isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(albums.sortedByDescending { it.photoCount }, key = { it.id }) { album ->
+                        val isSelected = album.id in selectedIds
+                        
+                        AlbumGridItem(
+                            album = album,
+                            isSelected = isSelected,
+                            onClick = { onToggleSelection(album.id) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = !isLoading
+            ) {
+                Text("确定")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+    
+    // Create album dialog
+    if (showCreateDialog) {
+        AlertDialog(
+            onDismissRequest = { 
+                showCreateDialog = false 
+                newAlbumName = ""
+            },
+            title = { Text("新建相册") },
+            text = {
+                OutlinedTextField(
+                    value = newAlbumName,
+                    onValueChange = { newAlbumName = it },
+                    label = { Text("相册名称") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (newAlbumName.isNotBlank()) {
+                            onCreateAlbum(newAlbumName.trim())
+                            showCreateDialog = false
+                            newAlbumName = ""
+                        }
+                    },
+                    enabled = newAlbumName.isNotBlank()
+                ) {
+                    Text("创建")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { 
+                        showCreateDialog = false 
+                        newAlbumName = ""
+                    }
+                ) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+}
+
+/**
+ * Album item for the grid picker.
+ */
+@Composable
+private fun AlbumGridItem(
+    album: Album,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .then(
+                if (isSelected) Modifier
+                    .border(
+                        width = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                else Modifier
+            )
+            .padding(4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Cover image
+        Box(
+            modifier = Modifier
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            if (album.coverUri != null) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(android.net.Uri.parse(album.coverUri))
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.PhotoAlbum,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+            
+            // Selection indicator
+            if (isSelected) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(4.dp))
+        
+        // Album name
+        Text(
+            text = album.name,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
+        )
+        
+        // Photo count
+        Text(
+            text = "${album.photoCount}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/**
+ * Context menu for album actions.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AlbumContextMenu(
+    album: AlbumBubbleData,
+    onRemoveFromList: () -> Unit,
+    onDeleteAlbum: () -> Unit,
+    onSortAlbum: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 32.dp)
+        ) {
+            // Album header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Collections,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = album.displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${album.sortedCount}/${album.totalCount} 已整理",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            
+            // Sort this album
+            ListItem(
+                headlineContent = { Text("整理该相册") },
+                supportingContent = { 
+                    Text(
+                        if (album.unsortedCount > 0) "还有 ${album.unsortedCount} 张照片待整理"
+                        else "已全部整理完成"
+                    )
+                },
+                leadingContent = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Sort,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                modifier = Modifier.clickable(onClick = onSortAlbum)
+            )
+            
+            // Remove from list
+            ListItem(
+                headlineContent = { Text("从列表移除") },
+                supportingContent = { Text("仅从气泡列表中移除，不删除相册") },
+                leadingContent = {
+                    Icon(
+                        imageVector = Icons.Default.RemoveCircleOutline,
+                        contentDescription = null,
+                        tint = MaybeAmber
+                    )
+                },
+                modifier = Modifier.clickable(onClick = onRemoveFromList)
+            )
+            
+            // Delete album
+            ListItem(
+                headlineContent = { 
+                    Text(
+                        text = "删除相册",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                },
+                supportingContent = { 
+                    Text(
+                        text = "永久删除相册及其中的所有照片",
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                    )
+                },
+                leadingContent = {
+                    Icon(
+                        imageVector = Icons.Default.DeleteForever,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                },
+                modifier = Modifier.clickable(onClick = onDeleteAlbum)
+            )
+        }
+    }
+}

@@ -257,9 +257,15 @@ private fun PhotoInfoOverlay(
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Date and Time (combined)
-            if (photo.dateTaken > 0) {
+            // Prefer dateTaken (EXIF), fallback to dateAdded (file creation time)
+            val displayTime = when {
+                photo.dateTaken > 0 -> photo.dateTaken
+                photo.dateAdded > 0 -> photo.dateAdded * 1000  // dateAdded is in seconds, convert to millis
+                else -> null
+            }
+            displayTime?.let { timestamp ->
                 Text(
-                    text = formatDateTime(photo.dateTaken),
+                    text = formatDateTime(timestamp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

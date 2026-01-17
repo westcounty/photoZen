@@ -51,6 +51,7 @@ import com.example.photozen.ui.theme.KeepGreen
  * @param isSelected Whether this photo is selected as "best"
  * @param onSelect Callback when photo is tapped to select
  * @param onFullscreenClick Callback when fullscreen button is clicked
+ * @param fullscreenButtonPosition Position of fullscreen button (default TopEnd, use BottomEnd for top row to avoid status bar)
  * @param onTransformGesture Callback when user performs zoom/pan gesture
  * @param modifier Modifier for the component
  */
@@ -61,6 +62,7 @@ fun SyncZoomImage(
     isSelected: Boolean = false,
     onSelect: () -> Unit = {},
     onFullscreenClick: (() -> Unit)? = null,
+    fullscreenButtonPosition: Alignment = Alignment.TopEnd,
     onTransformGesture: (scale: Float, offset: Offset) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
@@ -155,12 +157,12 @@ fun SyncZoomImage(
             }
         }
         
-        // Fullscreen button
+        // Fullscreen button (position configurable, use BottomEnd for top row photos to avoid status bar)
         if (onFullscreenClick != null) {
             IconButton(
                 onClick = onFullscreenClick,
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
+                    .align(fullscreenButtonPosition)
                     .padding(4.dp)
                     .size(32.dp),
                 colors = IconButtonDefaults.iconButtonColors(

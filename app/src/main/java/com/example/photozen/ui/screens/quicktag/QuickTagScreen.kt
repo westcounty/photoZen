@@ -39,6 +39,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -88,8 +89,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.local.entity.TagEntity
+import com.example.photozen.data.repository.PhotoClassificationMode
 import com.example.photozen.ui.theme.KeepGreen
 
 /**
@@ -107,6 +110,13 @@ fun QuickTagScreen(
     val haptic = LocalHapticFeedback.current
     var showAddTagDialog by remember { mutableStateOf(false) }
     
+    // Determine title based on classification mode
+    val screenTitle = if (uiState.classificationMode == PhotoClassificationMode.ALBUM) {
+        "相册分类"
+    } else {
+        "快速分类"
+    }
+    
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -114,7 +124,7 @@ fun QuickTagScreen(
                 title = {
                     Column {
                         Text(
-                            text = "快速分类",
+                            text = screenTitle,
                             style = MaterialTheme.typography.titleLarge
                         )
                         if (!uiState.isComplete && !uiState.isLoading) {
@@ -189,7 +199,8 @@ fun QuickTagScreen(
                     CompletionState(
                         taggedCount = uiState.taggedCount,
                         skippedCount = uiState.skippedCount,
-                        onFinish = onNavigateBack
+                        onFinish = onNavigateBack,
+                        isAlbumMode = uiState.classificationMode == PhotoClassificationMode.ALBUM
                     )
                 }
                 uiState.photos.isEmpty() -> {
@@ -202,7 +213,12 @@ fun QuickTagScreen(
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             viewModel.tagCurrentPhotoAndNext(tag)
                         },
-                        onCreateTag = { showAddTagDialog = true }
+                        onAlbumClick = { album ->
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.assignCurrentPhotoToAlbum(album)
+                        },
+                        onCreateTag = { showAddTagDialog = true },
+                        onAddAlbum = { /* TODO: Open album picker dialog */ }
                     )
                 }
             }
@@ -224,8 +240,12 @@ fun QuickTagScreen(
 private fun QuickTagContent(
     uiState: QuickTagUiState,
     onTagClick: (TagEntity) -> Unit,
-    onCreateTag: () -> Unit
+    onAlbumClick: (AlbumBubbleEntity) -> Unit,
+    onCreateTag: () -> Unit,
+    onAddAlbum: () -> Unit
 ) {
+    val isAlbumMode = uiState.classificationMode == PhotoClassificationMode.ALBUM
+    
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -269,13 +289,21 @@ private fun QuickTagContent(
             
         }
         
-        // Tag selection area
-        TagSelectionPanel(
-            tags = uiState.tags,
-            currentPhotoTags = uiState.currentPhotoTags,
-            onTagClick = onTagClick,
-            onCreateTag = onCreateTag
-        )
+        // Selection area - based on classification mode
+        if (isAlbumMode) {
+            AlbumSelectionPanel(
+                albums = uiState.albumBubbleList,
+                onAlbumClick = onAlbumClick,
+                onAddAlbum = onAddAlbum
+            )
+        } else {
+            TagSelectionPanel(
+                tags = uiState.tags,
+                currentPhotoTags = uiState.currentPhotoTags,
+                onTagClick = onTagClick,
+                onCreateTag = onCreateTag
+            )
+        }
     }
 }
 
@@ -472,6 +500,137 @@ private fun TagSelectionPanel(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AlbumSelectionPanel(
+    albums: List<AlbumBubbleEntity>,
+    onAlbumClick: (AlbumBubbleEntity) -> Unit,
+    onAddAlbum: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 16.dp),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 16.dp, bottomEnd = 16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            // Title
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 12.dp)
+            ) {
+                Icon(
+                    Icons.Default.Collections,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "点击相册加入并跳到下一张",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            // Albums grid
+            if (albums.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "暂无相册，请先添加相册",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        FilledTonalButton(onClick = onAddAlbum) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("添加相册")
+                        }
+                    }
+                }
+            } else {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    albums.forEach { album ->
+                        AlbumChip(
+                            album = album,
+                            onClick = { onAlbumClick(album) }
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onAddAlbum) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("添加相册")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlbumChip(
+    album: AlbumBubbleEntity,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Collections,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = album.displayName,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
 @Composable
 private fun TagChip(
     tag: TagEntity,
@@ -602,7 +761,8 @@ private fun EmptyState(onNavigateBack: () -> Unit) {
 private fun CompletionState(
     taggedCount: Int,
     skippedCount: Int,
-    onFinish: () -> Unit
+    onFinish: () -> Unit,
+    isAlbumMode: Boolean = false
 ) {
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -656,7 +816,11 @@ private fun CompletionState(
                     modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    StatRow(label = "已标记", value = taggedCount, color = KeepGreen)
+                    StatRow(
+                        label = if (isAlbumMode) "已分类" else "已标记", 
+                        value = taggedCount, 
+                        color = KeepGreen
+                    )
                     Spacer(modifier = Modifier.height(12.dp))
                     StatRow(label = "已跳过", value = skippedCount, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

@@ -1,17 +1,24 @@
 package com.example.photozen.ui.screens.flowsorter
 
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.photozen.data.local.dao.AlbumBubbleDao
+import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoSortOrder
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.data.repository.AlbumAddAction
 import com.example.photozen.data.repository.CustomFilterSession
+import com.example.photozen.data.repository.PhotoClassificationMode
 import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.MediaStoreDataSource
+import com.example.photozen.domain.usecase.AlbumOperationsUseCase
 import com.example.photozen.domain.usecase.GetDailyTaskStatusUseCase
 import com.example.photozen.domain.usecase.GetUnsortedPhotosUseCase
+import com.example.photozen.domain.usecase.MovePhotoResult
 import com.example.photozen.domain.usecase.SortPhotoUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
 import com.example.photozen.util.WidgetUpdater
@@ -105,7 +112,14 @@ data class FlowSorterUiState(
     val dailyTaskCurrent: Int = 0,
     val isDailyTaskComplete: Boolean = false,
     val cardZoomEnabled: Boolean = true,
-    val swipeSensitivity: Float = 1.0f
+    val swipeSensitivity: Float = 1.0f,
+    // Album mode support
+    val cardSortingAlbumEnabled: Boolean = false,
+    val albumBubbleList: List<AlbumBubbleEntity> = emptyList(),
+    val albumTagSize: Float = 1.0f,
+    val maxAlbumTagCount: Int = 0,
+    val albumAddAction: AlbumAddAction = AlbumAddAction.MOVE,
+    val albumMessage: String? = null
 ) {
     val currentPhoto: PhotoEntity?
         get() = photos.getOrNull(currentIndex)
@@ -151,7 +165,9 @@ class FlowSorterViewModel @Inject constructor(
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val savedStateHandle: SavedStateHandle,
     private val getDailyTaskStatusUseCase: GetDailyTaskStatusUseCase,
-    private val widgetUpdater: WidgetUpdater
+    private val widgetUpdater: WidgetUpdater,
+    private val albumBubbleDao: AlbumBubbleDao,
+    private val albumOperationsUseCase: AlbumOperationsUseCase
 ) : ViewModel() {
     
     private val isDailyTask: Boolean = savedStateHandle["isDailyTask"] ?: false
@@ -168,6 +184,14 @@ class FlowSorterViewModel @Inject constructor(
     private val _selectedPhotoIds = MutableStateFlow<Set<String>>(emptySet())
     private val _sortOrder = MutableStateFlow(PhotoSortOrder.DATE_DESC)
     private val _gridColumns = MutableStateFlow(2)
+    
+    // Album mode state
+    private val _cardSortingAlbumEnabled = MutableStateFlow(false)
+    private val _albumBubbleList = MutableStateFlow<List<AlbumBubbleEntity>>(emptyList())
+    private val _albumTagSize = MutableStateFlow(1.0f)
+    private val _maxAlbumTagCount = MutableStateFlow(0)
+    private val _albumAddAction = MutableStateFlow(AlbumAddAction.MOVE)
+    private val _albumMessage = MutableStateFlow<String?>(null)
     
     // CRITICAL FIX: Store initial total count to prevent flickering during rapid swipes
     // This ensures totalCount remains stable even when counters and photos list update at different times
@@ -503,6 +527,33 @@ class FlowSorterViewModel @Inject constructor(
     /**
      * UI State exposed to the screen.
      */
+    // Combined album mode state flow
+    private val albumStateFlow: Flow<AlbumModeState> = combine(
+        _cardSortingAlbumEnabled,
+        _albumBubbleList,
+        _albumTagSize,
+        _maxAlbumTagCount,
+        combine(_albumAddAction, _albumMessage) { action, msg -> Pair(action, msg) }
+    ) { enabled, albums, size, count, (action, msg) ->
+        AlbumModeState(enabled, albums, size, count, action, msg)
+    }
+    
+    private data class AlbumModeState(
+        val cardSortingAlbumEnabled: Boolean,
+        val albumBubbleList: List<AlbumBubbleEntity>,
+        val albumTagSize: Float,
+        val maxAlbumTagCount: Int,
+        val albumAddAction: AlbumAddAction,
+        val albumMessage: String?
+    )
+    
+    private data class SelectionAndAlbumState(
+        val selectedPhotoIds: Set<String>,
+        val sortOrder: PhotoSortOrder,
+        val gridColumns: Int,
+        val albumState: AlbumModeState
+    )
+    
     val uiState: StateFlow<FlowSorterUiState> = combine(
         getFilteredPhotosFlow(),
         getFilteredPhotosCountFlow(), // Add real count flow
@@ -511,7 +562,9 @@ class FlowSorterViewModel @Inject constructor(
         _lastAction,
         combine(_error, _counters, _combo) { e, c, co -> Triple(e, c, co) },
         _viewMode,
-        combine(_selectedPhotoIds, _sortOrder, _gridColumns) { ids, order, cols -> Triple(ids, order, cols) },
+        combine(_selectedPhotoIds, _sortOrder, _gridColumns, albumStateFlow) { ids, order, cols, album -> 
+            SelectionAndAlbumState(ids, order, cols, album) 
+        },
         combine(
             preferencesRepository.getPhotoFilterMode(), 
             _cameraAlbumsLoaded, 
@@ -534,7 +587,7 @@ class FlowSorterViewModel @Inject constructor(
         val lastAction = values[4] as SortAction?
         val combined = values[5] as Triple<String?, SortCounters, ComboState>
         val viewMode = values[6] as FlowSorterViewMode
-        val selectionAndSortAndCols = values[7] as Triple<Set<String>, PhotoSortOrder, Int>
+        val selectionAndAlbum = values[7] as SelectionAndAlbumState
         @Suppress("UNCHECKED_CAST")
         val prefsState = values[8] as Pair<Pair<PhotoFilterMode, Boolean>, Pair<Boolean, Float>>
         val dailyStatus = values[9] as com.example.photozen.domain.usecase.DailyTaskStatus?
@@ -542,9 +595,10 @@ class FlowSorterViewModel @Inject constructor(
         val error = combined.first
         val counters = combined.second
         val combo = combined.third
-        val selectedIds = selectionAndSortAndCols.first
-        val sortOrder = selectionAndSortAndCols.second
-        val gridColumns = selectionAndSortAndCols.third
+        val selectedIds = selectionAndAlbum.selectedPhotoIds
+        val sortOrder = selectionAndAlbum.sortOrder
+        val gridColumns = selectionAndAlbum.gridColumns
+        val albumState = selectionAndAlbum.albumState
         val filterMode = prefsState.first.first
         val cameraLoaded = prefsState.first.second
         val cardZoomEnabled = prefsState.second.first
@@ -616,7 +670,14 @@ class FlowSorterViewModel @Inject constructor(
             dailyTaskCurrent = dailyCurrent,
             isDailyTaskComplete = isDailyComplete,
             cardZoomEnabled = cardZoomEnabled,
-            swipeSensitivity = swipeSensitivity
+            swipeSensitivity = swipeSensitivity,
+            // Album mode
+            cardSortingAlbumEnabled = albumState.cardSortingAlbumEnabled,
+            albumBubbleList = albumState.albumBubbleList,
+            albumTagSize = albumState.albumTagSize,
+            maxAlbumTagCount = albumState.maxAlbumTagCount,
+            albumAddAction = albumState.albumAddAction,
+            albumMessage = albumState.albumMessage
         )
     }.stateIn(
         scope = viewModelScope,
@@ -648,6 +709,32 @@ class FlowSorterViewModel @Inject constructor(
         viewModelScope.launch {
             preferencesRepository.getGridColumns(PreferencesRepository.GridScreen.FLOW).collect { columns ->
                 _gridColumns.value = columns
+            }
+        }
+        // Load album mode settings
+        viewModelScope.launch {
+            preferencesRepository.getCardSortingAlbumEnabled().collect { enabled ->
+                _cardSortingAlbumEnabled.value = enabled
+            }
+        }
+        viewModelScope.launch {
+            preferencesRepository.getAlbumTagSize().collect { size ->
+                _albumTagSize.value = size
+            }
+        }
+        viewModelScope.launch {
+            preferencesRepository.getMaxAlbumTagCount().collect { count ->
+                _maxAlbumTagCount.value = count
+            }
+        }
+        viewModelScope.launch {
+            preferencesRepository.getAlbumAddAction().collect { action ->
+                _albumAddAction.value = action
+            }
+        }
+        viewModelScope.launch {
+            albumBubbleDao.getAll().collect { albums ->
+                _albumBubbleList.value = albums
             }
         }
         // Monitor filter mode changes and reload photos
@@ -857,6 +944,74 @@ class FlowSorterViewModel @Inject constructor(
      */
     fun clearError() {
         _error.value = null
+    }
+    
+    /**
+     * Clear album message.
+     */
+    fun clearAlbumMessage() {
+        _albumMessage.value = null
+    }
+    
+    /**
+     * Keep current photo and add it to an album.
+     * The action (copy or move) is determined by albumAddAction setting.
+     */
+    fun keepAndAddToAlbum(bucketId: String) {
+        val photo = uiState.value.currentPhoto ?: return
+        
+        // Mark as sorted to prevent re-display
+        markPhotoAsSorted(photo.id)
+        
+        viewModelScope.launch {
+            try {
+                // First, mark as KEEP
+                sortPhotoUseCase.keepPhoto(photo.id)
+                _lastAction.value = SortAction(photo.id, PhotoStatus.KEEP)
+                updateCombo()
+                
+                // Increment sorted count
+                _counters.value = _counters.value.copy(keep = _counters.value.keep + 1)
+                preferencesRepository.incrementSortedCount()
+                preferencesRepository.incrementKeepCount()
+                
+                // Get album info
+                val album = _albumBubbleList.value.find { it.bucketId == bucketId }
+                val targetPath = "Pictures/${album?.displayName ?: "PhotoZen"}"
+                val photoUri = Uri.parse(photo.systemUri)
+                
+                // Perform album operation based on setting
+                when (_albumAddAction.value) {
+                    AlbumAddAction.COPY -> {
+                        val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
+                        if (result.isSuccess) {
+                            _albumMessage.value = "已保留并复制到 ${album?.displayName}"
+                        } else {
+                            _error.value = "复制失败: ${result.exceptionOrNull()?.message}"
+                        }
+                    }
+                    AlbumAddAction.MOVE -> {
+                        when (val result = albumOperationsUseCase.movePhotoToAlbum(photoUri, targetPath)) {
+                            is MovePhotoResult.Success -> {
+                                _albumMessage.value = "已保留并移动到 ${album?.displayName}"
+                            }
+                            is MovePhotoResult.NeedsConfirmation -> {
+                                _error.value = "需要权限确认才能移动照片"
+                            }
+                            is MovePhotoResult.Error -> {
+                                _error.value = "移动失败: ${result.message}"
+                            }
+                        }
+                    }
+                }
+                
+                // Update widget
+                widgetUpdater.updateDailyProgressWidgets()
+                
+            } catch (e: Exception) {
+                _error.value = "操作失败: ${e.message}"
+            }
+        }
     }
     
     /**

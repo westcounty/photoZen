@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.photozen.BuildConfig
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.AchievementData
+import com.example.photozen.data.repository.PhotoClassificationMode
 import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.PhotoRepository
 import com.example.photozen.data.repository.PreferencesRepository
@@ -49,6 +50,7 @@ data class HomeUiState(
     val error: String? = null,
     val achievementData: AchievementData = AchievementData(),
     val photoFilterMode: PhotoFilterMode = PhotoFilterMode.ALL,
+    val photoClassificationMode: PhotoClassificationMode = PhotoClassificationMode.TAG,
     val dailyTaskStatus: DailyTaskStatus? = null,
     val onestopEnabled: Boolean = false,
     val experimentalEnabled: Boolean = false,
@@ -307,16 +309,26 @@ class HomeViewModel @Inject constructor(
     }
     
     /**
-     * Intermediate flow for extra data (error, achievement, filter mode, daily task, filtered counts).
+     * Intermediate flow for counts and classification mode.
+     */
+    private val countsWithClassificationFlow: Flow<Pair<FilteredCounts, PhotoClassificationMode>> = combine(
+        filteredCountsFlow,
+        preferencesRepository.getPhotoClassificationMode()
+    ) { counts, classificationMode ->
+        Pair(counts, classificationMode)
+    }
+    
+    /**
+     * Intermediate flow for extra data (error, achievement, filter mode, daily task, filtered counts, classification mode).
      */
     private val extraDataFlow: Flow<ExtraData> = combine(
         _error,
         preferencesRepository.getAllAchievementData(),
         preferencesRepository.getPhotoFilterMode(),
         getDailyTaskStatusUseCase(),
-        filteredCountsFlow
-    ) { error, achievementData, filterMode, dailyTaskStatus, counts ->
-        ExtraData(error, achievementData, filterMode, dailyTaskStatus, counts)
+        countsWithClassificationFlow
+    ) { error, achievementData, filterMode, dailyTaskStatus, (counts, classificationMode) ->
+        ExtraData(error, achievementData, filterMode, dailyTaskStatus, counts, classificationMode)
     }
     
     /**
@@ -368,6 +380,7 @@ class HomeViewModel @Inject constructor(
             error = extraData.error,
             achievementData = extraData.achievementData,
             photoFilterMode = extraData.filterMode,
+            photoClassificationMode = extraData.classificationMode,
             dailyTaskStatus = extraData.dailyTaskStatus,
             onestopEnabled = extraData.counts.onestopEnabled,
             experimentalEnabled = extraData.counts.experimentalEnabled,
@@ -399,7 +412,8 @@ class HomeViewModel @Inject constructor(
         val achievementData: AchievementData,
         val filterMode: PhotoFilterMode,
         val dailyTaskStatus: DailyTaskStatus?,
-        val counts: FilteredCounts
+        val counts: FilteredCounts,
+        val classificationMode: PhotoClassificationMode
     )
     
     private data class PhotoCounts(

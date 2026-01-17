@@ -91,6 +91,24 @@ sealed interface Screen {
     data object QuickTag : Screen
     
     /**
+     * Album Bubble screen - interactive bubble graph for album visualization.
+     * Used when PhotoClassificationMode is ALBUM.
+     */
+    @Serializable
+    data object AlbumBubble : Screen
+    
+    /**
+     * Album Photo List screen - display photos in a specific album.
+     * @param bucketId The MediaStore bucket ID of the album
+     * @param albumName The display name of the album
+     */
+    @Serializable
+    data class AlbumPhotoList(
+        val bucketId: String,
+        val albumName: String
+    ) : Screen
+    
+    /**
      * Achievements screen - displays all achievements and progress.
      */
     @Serializable

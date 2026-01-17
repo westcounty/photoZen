@@ -1,12 +1,19 @@
 package com.example.photozen.ui.screens.quicktag
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.photozen.data.local.dao.AlbumBubbleDao
 import com.example.photozen.data.local.dao.TagDao
+import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.local.entity.TagEntity
+import com.example.photozen.data.repository.AlbumAddAction
+import com.example.photozen.data.repository.PhotoClassificationMode
 import com.example.photozen.data.repository.PhotoRepository
 import com.example.photozen.data.repository.PreferencesRepository
+import com.example.photozen.domain.usecase.AlbumOperationsUseCase
+import com.example.photozen.domain.usecase.MovePhotoResult
 import com.example.photozen.domain.usecase.TagAlbumSyncUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,7 +48,12 @@ data class QuickTagUiState(
     val taggedCount: Int = 0,
     val skippedCount: Int = 0,
     val error: String? = null,
-    val sortOrder: QuickTagSortOrder = QuickTagSortOrder.DATE_DESC
+    val sortOrder: QuickTagSortOrder = QuickTagSortOrder.DATE_DESC,
+    // Album mode support
+    val classificationMode: PhotoClassificationMode = PhotoClassificationMode.TAG,
+    val albumBubbleList: List<AlbumBubbleEntity> = emptyList(),
+    val albumAddAction: AlbumAddAction = AlbumAddAction.MOVE,
+    val message: String? = null
 ) {
     val currentPhoto: PhotoEntity?
         get() = photos.getOrNull(currentIndex)
@@ -59,13 +71,16 @@ data class QuickTagUiState(
 /**
  * ViewModel for Quick Tag screen.
  * Manages the flow-style tagging experience for kept photos.
+ * Supports both tag mode and album mode based on classification settings.
  */
 @HiltViewModel
 class QuickTagViewModel @Inject constructor(
     private val photoRepository: PhotoRepository,
     private val tagDao: TagDao,
+    private val albumBubbleDao: AlbumBubbleDao,
     private val preferencesRepository: PreferencesRepository,
-    private val tagAlbumSyncUseCase: TagAlbumSyncUseCase
+    private val tagAlbumSyncUseCase: TagAlbumSyncUseCase,
+    private val albumOperationsUseCase: AlbumOperationsUseCase
 ) : ViewModel() {
     
     private val _currentIndex = MutableStateFlow(0)
@@ -73,8 +88,12 @@ class QuickTagViewModel @Inject constructor(
     private val _skippedCount = MutableStateFlow(0)
     private val _isLoading = MutableStateFlow(true)
     private val _error = MutableStateFlow<String?>(null)
+    private val _message = MutableStateFlow<String?>(null)
     private val _currentPhotoTags = MutableStateFlow<List<TagEntity>>(emptyList())
     private val _sortOrder = MutableStateFlow(QuickTagSortOrder.DATE_DESC)
+    private val _classificationMode = MutableStateFlow(PhotoClassificationMode.TAG)
+    private val _albumBubbleList = MutableStateFlow<List<AlbumBubbleEntity>>(emptyList())
+    private val _albumAddAction = MutableStateFlow(AlbumAddAction.MOVE)
     
     // Random seed for consistent random sorting until changed
     private var randomSeed = System.currentTimeMillis()
@@ -82,51 +101,76 @@ class QuickTagViewModel @Inject constructor(
     // Cache photos list to avoid reloading
     private var cachedPhotos: List<PhotoEntity> = emptyList()
     
+    // Combined flow for misc state to reduce combine parameters
+    private val miscStateFlow = combine(
+        _skippedCount, _isLoading, _error, _currentPhotoTags, _sortOrder
+    ) { s, l, e, p, o ->
+        MiscState(s, l, e, p, o)
+    }
+    
+    // Combined flow for album state
+    private val albumStateFlow = combine(
+        _classificationMode, _albumBubbleList, _albumAddAction, _message
+    ) { mode, albums, action, msg ->
+        AlbumState(mode, albums, action, msg)
+    }
+    
     val uiState: StateFlow<QuickTagUiState> = combine(
         photoRepository.getKeepPhotos(),
         tagDao.getAllTags(),
         _currentIndex,
         _taggedCount,
-        combine(_skippedCount, _isLoading, _error, _currentPhotoTags, _sortOrder) { s, l, e, p, o ->
-            listOf(s, l, e, p, o)
-        }
+        combine(miscStateFlow, albumStateFlow) { misc, album -> Pair(misc, album) }
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val photos = values[0] as List<PhotoEntity>
         val tags = values[1] as List<TagEntity>
         val currentIndex = values[2] as Int
         val taggedCount = values[3] as Int
-        val combined = values[4] as List<Any?>
-        
-        val skippedCount = combined[0] as Int
-        val isLoading = combined[1] as Boolean
-        val error = combined[2] as String?
-        val currentPhotoTags = combined[3] as List<TagEntity>
-        val sortOrder = combined[4] as QuickTagSortOrder
+        val (misc, album) = values[4] as Pair<MiscState, AlbumState>
         
         // Update cached photos with sorting applied
         if (photos.isNotEmpty()) {
-            cachedPhotos = applySortOrder(photos, sortOrder)
+            cachedPhotos = applySortOrder(photos, misc.sortOrder)
         }
         
-        val displayPhotos = if (cachedPhotos.isNotEmpty()) cachedPhotos else applySortOrder(photos, sortOrder)
+        val displayPhotos = if (cachedPhotos.isNotEmpty()) cachedPhotos else applySortOrder(photos, misc.sortOrder)
         
         QuickTagUiState(
             photos = displayPhotos,
             currentIndex = currentIndex,
             tags = tags,
-            currentPhotoTags = currentPhotoTags,
-            isLoading = isLoading && displayPhotos.isEmpty(),
+            currentPhotoTags = misc.currentPhotoTags,
+            isLoading = misc.isLoading && displayPhotos.isEmpty(),
             isComplete = currentIndex >= displayPhotos.size && displayPhotos.isNotEmpty(),
             taggedCount = taggedCount,
-            skippedCount = skippedCount,
-            error = error,
-            sortOrder = sortOrder
+            skippedCount = misc.skippedCount,
+            error = misc.error,
+            sortOrder = misc.sortOrder,
+            classificationMode = album.classificationMode,
+            albumBubbleList = album.albumBubbleList,
+            albumAddAction = album.albumAddAction,
+            message = album.message
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = QuickTagUiState()
+    )
+    
+    private data class MiscState(
+        val skippedCount: Int,
+        val isLoading: Boolean,
+        val error: String?,
+        val currentPhotoTags: List<TagEntity>,
+        val sortOrder: QuickTagSortOrder
+    )
+    
+    private data class AlbumState(
+        val classificationMode: PhotoClassificationMode,
+        val albumBubbleList: List<AlbumBubbleEntity>,
+        val albumAddAction: AlbumAddAction,
+        val message: String?
     )
     
     /**
@@ -183,6 +227,23 @@ class QuickTagViewModel @Inject constructor(
                     _currentIndex.value = 0
                     loadTagsForPhoto(null)
                 }
+            }
+        }
+        
+        // Load classification settings
+        viewModelScope.launch {
+            preferencesRepository.getPhotoClassificationMode().collect { mode ->
+                _classificationMode.value = mode
+            }
+        }
+        viewModelScope.launch {
+            preferencesRepository.getAlbumAddAction().collect { action ->
+                _albumAddAction.value = action
+            }
+        }
+        viewModelScope.launch {
+            albumBubbleDao.getAll().collect { albums ->
+                _albumBubbleList.value = albums
             }
         }
     }
@@ -275,6 +336,59 @@ class QuickTagViewModel @Inject constructor(
                 _error.value = "创建标签失败: ${e.message}"
             }
         }
+    }
+    
+    /**
+     * Assign current photo to an album and advance to next.
+     * The action (copy or move) is determined by albumAddAction setting.
+     */
+    fun assignCurrentPhotoToAlbum(album: AlbumBubbleEntity) {
+        val photo = uiState.value.currentPhoto ?: return
+        
+        viewModelScope.launch {
+            try {
+                val photoUri = Uri.parse(photo.systemUri)
+                val targetPath = "Pictures/${album.displayName}"
+                
+                when (_albumAddAction.value) {
+                    AlbumAddAction.COPY -> {
+                        val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
+                        if (result.isSuccess) {
+                            _taggedCount.value++
+                            _message.value = "已复制到 ${album.displayName}"
+                            advanceToNext()
+                        } else {
+                            _error.value = "复制失败: ${result.exceptionOrNull()?.message}"
+                        }
+                    }
+                    AlbumAddAction.MOVE -> {
+                        when (val result = albumOperationsUseCase.movePhotoToAlbum(photoUri, targetPath)) {
+                            is MovePhotoResult.Success -> {
+                                _taggedCount.value++
+                                _message.value = "已移动到 ${album.displayName}"
+                                advanceToNext()
+                            }
+                            is MovePhotoResult.NeedsConfirmation -> {
+                                // Store pending operation for UI to handle
+                                _error.value = "需要权限确认才能移动照片"
+                            }
+                            is MovePhotoResult.Error -> {
+                                _error.value = "移动失败: ${result.message}"
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                _error.value = "操作失败: ${e.message}"
+            }
+        }
+    }
+    
+    /**
+     * Clear message.
+     */
+    fun clearMessage() {
+        _message.value = null
     }
 
     private suspend fun moveToNextUntagged(startIndex: Int) {

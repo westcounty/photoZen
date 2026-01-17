@@ -24,6 +24,9 @@ import com.example.photozen.util.WidgetUpdater
 
 import com.example.photozen.data.repository.WidgetPhotoSource
 import com.example.photozen.data.repository.ThemeMode
+import com.example.photozen.data.repository.PhotoClassificationMode
+import com.example.photozen.data.repository.AlbumAddAction
+import com.example.photozen.util.StoragePermissionHelper
 
 /**
  * UI State for Settings screen.
@@ -45,6 +48,13 @@ data class SettingsUiState(
     val experimentalEnabled: Boolean = false,
     val themeMode: ThemeMode = ThemeMode.DARK,
     val swipeSensitivity: Float = 1.0f,
+    // Photo classification mode settings
+    val photoClassificationMode: PhotoClassificationMode = PhotoClassificationMode.TAG,
+    val albumAddAction: AlbumAddAction = AlbumAddAction.MOVE,
+    val cardSortingAlbumEnabled: Boolean = false,
+    val albumTagSize: Float = 1.0f,
+    val maxAlbumTagCount: Int = 0,  // 0 = unlimited
+    val hasManageStoragePermission: Boolean = false,
     val error: String? = null
 )
 
@@ -65,7 +75,8 @@ class SettingsViewModel @Inject constructor(
     private val alarmScheduler: AlarmScheduler,
     private val widgetUpdater: WidgetUpdater,
     private val mediaStoreDataSource: MediaStoreDataSource,
-    private val photoRepository: PhotoRepository
+    private val photoRepository: PhotoRepository,
+    private val storagePermissionHelper: StoragePermissionHelper
 ) : ViewModel() {
     
     private val _internalState = MutableStateFlow(InternalState())
@@ -110,6 +121,26 @@ class SettingsViewModel @Inject constructor(
         preferencesRepository.getSwipeSensitivity()
     ) { themeMode, sensitivity -> Pair(themeMode, sensitivity) }
     
+    // Combine photo classification mode settings
+    private val classificationSettingsFlow = combine(
+        preferencesRepository.getPhotoClassificationMode(),
+        preferencesRepository.getAlbumAddAction(),
+        preferencesRepository.getCardSortingAlbumEnabled(),
+        preferencesRepository.getAlbumTagSize(),
+        preferencesRepository.getMaxAlbumTagCount()
+    ) { mode, action, cardEnabled, tagSize, maxCount ->
+        ClassificationSettings(mode, action, cardEnabled, tagSize, maxCount)
+    }
+    
+    // Data class for classification settings
+    private data class ClassificationSettings(
+        val mode: PhotoClassificationMode,
+        val action: AlbumAddAction,
+        val cardSortingEnabled: Boolean,
+        val tagSize: Float,
+        val maxCount: Int
+    )
+    
     val uiState: StateFlow<SettingsUiState> = combine(
         preferencesRepository.getTotalSortedCount(),
         preferencesRepository.getPhotoFilterMode(),
@@ -120,7 +151,9 @@ class SettingsViewModel @Inject constructor(
         preferencesRepository.getDailyReminderTime(),
         widgetSettingsFlow,
         extraSettingsFlow,
-        combine(_internalState, appearanceSettingsFlow) { internal, appearance -> Pair(internal, appearance) }
+        combine(_internalState, appearanceSettingsFlow, classificationSettingsFlow) { internal, appearance, classification -> 
+            Triple(internal, appearance, classification) 
+        }
     ) { params ->
         val totalSorted = params[0] as Int
         val filterMode = params[1] as PhotoFilterMode
@@ -135,9 +168,10 @@ class SettingsViewModel @Inject constructor(
         @Suppress("UNCHECKED_CAST")
         val extraSettings = params[8] as Triple<Boolean, Boolean, Boolean>
         @Suppress("UNCHECKED_CAST")
-        val internalAndAppearance = params[9] as Pair<InternalState, Pair<ThemeMode, Float>>
-        val internal = internalAndAppearance.first
-        val appearanceSettings = internalAndAppearance.second
+        val combined = params[9] as Triple<InternalState, Pair<ThemeMode, Float>, ClassificationSettings>
+        val internal = combined.first
+        val appearanceSettings = combined.second
+        val classificationSettings = combined.third
         
         SettingsUiState(
             totalSorted = totalSorted,
@@ -156,6 +190,12 @@ class SettingsViewModel @Inject constructor(
             experimentalEnabled = extraSettings.third,
             themeMode = appearanceSettings.first,
             swipeSensitivity = appearanceSettings.second,
+            photoClassificationMode = classificationSettings.mode,
+            albumAddAction = classificationSettings.action,
+            cardSortingAlbumEnabled = classificationSettings.cardSortingEnabled,
+            albumTagSize = classificationSettings.tagSize,
+            maxAlbumTagCount = classificationSettings.maxCount,
+            hasManageStoragePermission = storagePermissionHelper.hasManageStoragePermission(),
             error = internal.error
         )
     }.stateIn(
@@ -253,5 +293,66 @@ class SettingsViewModel @Inject constructor(
     
     fun clearError() {
         _internalState.update { it.copy(error = null) }
+    }
+    
+    // ==================== PHOTO CLASSIFICATION MODE SETTINGS ====================
+    
+    /**
+     * Set photo classification mode (TAG or ALBUM).
+     */
+    fun setPhotoClassificationMode(mode: PhotoClassificationMode) {
+        viewModelScope.launch {
+            preferencesRepository.setPhotoClassificationMode(mode)
+        }
+    }
+    
+    /**
+     * Set album add action (COPY or MOVE).
+     */
+    fun setAlbumAddAction(action: AlbumAddAction) {
+        viewModelScope.launch {
+            preferencesRepository.setAlbumAddAction(action)
+        }
+    }
+    
+    /**
+     * Set whether card sorting album classification is enabled.
+     */
+    fun setCardSortingAlbumEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setCardSortingAlbumEnabled(enabled)
+        }
+    }
+    
+    /**
+     * Set album tag size for card sorting.
+     */
+    fun setAlbumTagSize(size: Float) {
+        viewModelScope.launch {
+            preferencesRepository.setAlbumTagSize(size)
+        }
+    }
+    
+    /**
+     * Set max album tag count for card sorting.
+     */
+    fun setMaxAlbumTagCount(count: Int) {
+        viewModelScope.launch {
+            preferencesRepository.setMaxAlbumTagCount(count)
+        }
+    }
+    
+    /**
+     * Check if MANAGE_EXTERNAL_STORAGE permission is needed.
+     */
+    fun isManageStoragePermissionApplicable(): Boolean {
+        return storagePermissionHelper.isManageStoragePermissionApplicable()
+    }
+    
+    /**
+     * Refresh permission status (call after returning from settings).
+     */
+    fun refreshPermissionStatus() {
+        _internalState.update { it }  // Trigger recomposition
     }
 }
