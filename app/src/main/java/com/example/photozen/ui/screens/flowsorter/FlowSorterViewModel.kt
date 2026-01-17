@@ -82,6 +82,7 @@ data class FlowSorterUiState(
     val currentIndex: Int = 0,
     val isLoading: Boolean = true,
     val isSyncing: Boolean = false,
+    val isReloading: Boolean = false,
     val totalCount: Int = 0,
     val sortedCount: Int = 0,
     val keepCount: Int = 0,
@@ -188,6 +189,9 @@ class FlowSorterViewModel @Inject constructor(
     /** Whether we're currently loading more photos */
     private val _isLoadingMore = MutableStateFlow(false)
     
+    /** Whether we're reloading photos (e.g., after sort order change) - prevents "complete" flash */
+    private val _isReloading = MutableStateFlow(false)
+    
     /** All photos loaded so far (accumulated across pages) */
     private val _pagedPhotos = MutableStateFlow<List<PhotoEntity>>(emptyList())
     
@@ -230,16 +234,28 @@ class FlowSorterViewModel @Inject constructor(
     /**
      * Load the initial batch of photos based on current filter mode and sort order.
      * Called when filter mode or sort order changes.
+     * 
+     * Uses _isReloading flag to prevent "complete" screen flash during reload.
      */
     private fun loadInitialPhotos() {
         loadPhotosJob?.cancel()
         loadPhotosJob = viewModelScope.launch {
+            // Set reloading flag BEFORE clearing data to prevent "complete" flash
+            _isReloading.value = true
+            
             // Reset pagination state
             currentPage = 0
             hasMorePages = true
             _pagedPhotos.value = emptyList()
             _sortedPhotoIds.value = emptySet()
             _isLoadingMore.value = true
+            
+            // Reset initial total count to recalculate with new filter/sort
+            // This ensures accurate total count after filter changes
+            _initialTotalCount.value = -1
+            
+            // Reset session counters (keep/trash/maybe) for the new sort session
+            _counters.value = SortCounters()
             
             try {
                 val photos = loadPhotosPage(0)
@@ -250,14 +266,20 @@ class FlowSorterViewModel @Inject constructor(
             } finally {
                 _isLoadingMore.value = false
                 _isLoading.value = false
+                _isReloading.value = false
             }
         }
     }
     
     /**
      * Load a specific page of photos based on current filter mode and sort order.
+     * 
+     * @param page Page number (0-indexed)
+     * @param offsetAdjustment Adjustment to offset for pagination accuracy.
+     *                         Pass negative value equal to number of photos sorted since last load.
+     *                         This compensates for photos that are no longer UNSORTED in DB.
      */
-    private suspend fun loadPhotosPage(page: Int): List<PhotoEntity> {
+    private suspend fun loadPhotosPage(page: Int, offsetAdjustment: Int = 0): List<PhotoEntity> {
         val filterMode = preferencesRepository.getPhotoFilterMode().stateIn(viewModelScope).value
         val sortOrder = _sortOrder.value
         val cameraIds = _cameraAlbumIds.value
@@ -265,20 +287,20 @@ class FlowSorterViewModel @Inject constructor(
         
         return when (filterMode) {
             PhotoFilterMode.ALL -> {
-                getUnsortedPhotosUseCase.getPage(page, sortOrder, randomSeed)
+                getUnsortedPhotosUseCase.getPage(page, sortOrder, randomSeed, offsetAdjustment)
             }
             PhotoFilterMode.CAMERA_ONLY -> {
                 if (cameraIds.isNotEmpty()) {
-                    getUnsortedPhotosUseCase.getPageByBuckets(cameraIds, page, sortOrder, randomSeed)
+                    getUnsortedPhotosUseCase.getPageByBuckets(cameraIds, page, sortOrder, randomSeed, offsetAdjustment)
                 } else {
                     emptyList()
                 }
             }
             PhotoFilterMode.EXCLUDE_CAMERA -> {
                 if (cameraIds.isNotEmpty()) {
-                    getUnsortedPhotosUseCase.getPageExcludingBuckets(cameraIds, page, sortOrder, randomSeed)
+                    getUnsortedPhotosUseCase.getPageExcludingBuckets(cameraIds, page, sortOrder, randomSeed, offsetAdjustment)
                 } else {
-                    getUnsortedPhotosUseCase.getPage(page, sortOrder, randomSeed)
+                    getUnsortedPhotosUseCase.getPage(page, sortOrder, randomSeed, offsetAdjustment)
                 }
             }
             PhotoFilterMode.CUSTOM -> {
@@ -289,10 +311,11 @@ class FlowSorterViewModel @Inject constructor(
                         endDate = sessionFilter.endDate,
                         page = page,
                         sortOrder = sortOrder,
-                        randomSeed = randomSeed
+                        randomSeed = randomSeed,
+                        offsetAdjustment = offsetAdjustment
                     )
                 } else {
-                    getUnsortedPhotosUseCase.getPage(page, sortOrder, randomSeed)
+                    getUnsortedPhotosUseCase.getPage(page, sortOrder, randomSeed, offsetAdjustment)
                 }
             }
         }
@@ -301,6 +324,10 @@ class FlowSorterViewModel @Inject constructor(
     /**
      * Load more photos when approaching the end of the current batch.
      * Called automatically when remaining unsorted photos drop below threshold.
+     * 
+     * IMPORTANT: Uses adjusted offset to account for photos sorted since last load.
+     * Without this adjustment, some photos would be skipped when loading next page
+     * because the database query only includes UNSORTED photos (sorted ones are excluded).
      */
     private fun loadMorePhotosIfNeeded() {
         if (_isLoadingMore.value || !hasMorePages) return
@@ -310,10 +337,22 @@ class FlowSorterViewModel @Inject constructor(
             viewModelScope.launch {
                 _isLoadingMore.value = true
                 try {
+                    // Calculate offset adjustment to account for photos sorted since initial load.
+                    // When photos are sorted, they become non-UNSORTED in DB, effectively shifting
+                    // the result set. We compensate by reducing offset by the number of sorted photos.
+                    val sortedCount = _sortedPhotoIds.value.size
+                    val offsetAdjustment = -sortedCount  // Negative to shift offset back
+                    
                     currentPage++
-                    val morePhotos = loadPhotosPage(currentPage)
+                    val morePhotos = loadPhotosPage(currentPage, offsetAdjustment)
+                    
                     if (morePhotos.isNotEmpty()) {
-                        _pagedPhotos.value = _pagedPhotos.value + morePhotos
+                        // Filter out any photos we already have (duplicates due to offset shift)
+                        val existingIds = _pagedPhotos.value.map { it.id }.toSet()
+                        val newPhotos = morePhotos.filter { it.id !in existingIds }
+                        if (newPhotos.isNotEmpty()) {
+                            _pagedPhotos.value = _pagedPhotos.value + newPhotos
+                        }
                     }
                     hasMorePages = morePhotos.size >= GetUnsortedPhotosUseCase.PAGE_SIZE
                 } catch (e: Exception) {
@@ -403,8 +442,7 @@ class FlowSorterViewModel @Inject constructor(
     val uiState: StateFlow<FlowSorterUiState> = combine(
         getFilteredPhotosFlow(),
         getFilteredPhotosCountFlow(), // Add real count flow
-        _isLoading,
-        _isSyncing,
+        combine(_isLoading, _isSyncing, _isReloading) { loading, syncing, reloading -> Triple(loading, syncing, reloading) },
         _currentIndex,
         _lastAction,
         combine(_error, _counters, _combo) { e, c, co -> Triple(e, c, co) },
@@ -416,16 +454,18 @@ class FlowSorterViewModel @Inject constructor(
         @Suppress("UNCHECKED_CAST")
         var photos = values[0] as List<PhotoEntity>
         val realUnsortedCount = values[1] as Int  // Real count from COUNT query (not limited)
-        val isLoading = values[2] as Boolean
-        val isSyncing = values[3] as Boolean
-        val currentIndex = values[4] as Int
-        val lastAction = values[5] as SortAction?
-        val combined = values[6] as Triple<String?, SortCounters, ComboState>
-        val viewMode = values[7] as FlowSorterViewMode
-        val selectionAndSortAndCols = values[8] as Triple<Set<String>, PhotoSortOrder, Int>
+        val loadingStates = values[2] as Triple<Boolean, Boolean, Boolean>
+        val isLoading = loadingStates.first
+        val isSyncing = loadingStates.second
+        val isReloading = loadingStates.third
+        val currentIndex = values[3] as Int
+        val lastAction = values[4] as SortAction?
+        val combined = values[5] as Triple<String?, SortCounters, ComboState>
+        val viewMode = values[6] as FlowSorterViewMode
+        val selectionAndSortAndCols = values[7] as Triple<Set<String>, PhotoSortOrder, Int>
         @Suppress("UNCHECKED_CAST")
-        val filterLoadedZoom = values[9] as Triple<PhotoFilterMode, Boolean, Boolean>
-        val dailyStatus = values[10] as com.example.photozen.domain.usecase.DailyTaskStatus?
+        val filterLoadedZoom = values[8] as Triple<PhotoFilterMode, Boolean, Boolean>
+        val dailyStatus = values[9] as com.example.photozen.domain.usecase.DailyTaskStatus?
         
         val error = combined.first
         val counters = combined.second
@@ -483,6 +523,7 @@ class FlowSorterViewModel @Inject constructor(
             currentIndex = 0, // Always 0 since we remove sorted photos from list
             isLoading = shouldShowLoading && sortedPhotos.isEmpty(),
             isSyncing = isSyncing,
+            isReloading = isReloading,
             totalCount = stableTotalCount,
             sortedCount = counters.total,
             keepCount = counters.keep,

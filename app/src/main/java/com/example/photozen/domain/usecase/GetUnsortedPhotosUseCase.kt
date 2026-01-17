@@ -115,14 +115,20 @@ class GetUnsortedPhotosUseCase @Inject constructor(
      * @param page Page number (0-indexed)
      * @param sortOrder How to sort the photos
      * @param randomSeed Seed for random sorting (ensures consistent order across pages)
+     * @param offsetAdjustment Adjustment to offset to account for photos sorted since last load.
+     *                         When photos are sorted, they become non-UNSORTED in DB, shifting
+     *                         the effective offset. Pass negative value to compensate.
      * @return List of photos for the requested page
      */
     suspend fun getPage(
         page: Int,
         sortOrder: PhotoSortOrder,
-        randomSeed: Long = 0
+        randomSeed: Long = 0,
+        offsetAdjustment: Int = 0
     ): List<PhotoEntity> {
-        val offset = page * PAGE_SIZE
+        // Calculate offset with adjustment for sorted photos
+        // Ensure offset doesn't go negative
+        val offset = (page * PAGE_SIZE + offsetAdjustment).coerceAtLeast(0)
         return when (sortOrder) {
             PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosPagedDesc(PAGE_SIZE, offset)
             PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosPagedAsc(PAGE_SIZE, offset)
@@ -137,9 +143,10 @@ class GetUnsortedPhotosUseCase @Inject constructor(
         bucketIds: List<String>,
         page: Int,
         sortOrder: PhotoSortOrder,
-        randomSeed: Long = 0
+        randomSeed: Long = 0,
+        offsetAdjustment: Int = 0
     ): List<PhotoEntity> {
-        val offset = page * PAGE_SIZE
+        val offset = (page * PAGE_SIZE + offsetAdjustment).coerceAtLeast(0)
         return when (sortOrder) {
             PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosByBucketsPagedDesc(bucketIds, PAGE_SIZE, offset)
             PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosByBucketsPagedAsc(bucketIds, PAGE_SIZE, offset)
@@ -154,9 +161,10 @@ class GetUnsortedPhotosUseCase @Inject constructor(
         bucketIds: List<String>,
         page: Int,
         sortOrder: PhotoSortOrder,
-        randomSeed: Long = 0
+        randomSeed: Long = 0,
+        offsetAdjustment: Int = 0
     ): List<PhotoEntity> {
-        val offset = page * PAGE_SIZE
+        val offset = (page * PAGE_SIZE + offsetAdjustment).coerceAtLeast(0)
         return when (sortOrder) {
             PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosExcludingBucketsPagedDesc(bucketIds, PAGE_SIZE, offset)
             PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosExcludingBucketsPagedAsc(bucketIds, PAGE_SIZE, offset)
@@ -166,6 +174,10 @@ class GetUnsortedPhotosUseCase @Inject constructor(
     
     /**
      * Get a page of unsorted photos filtered by bucket IDs (optional) and date range (optional).
+     * 
+     * IMPORTANT: startDate and endDate are expected in MILLISECONDS (from DatePicker),
+     * but database stores date_added in SECONDS (MediaStore format).
+     * This method handles the conversion internally.
      */
     suspend fun getPageFiltered(
         bucketIds: List<String>?,
@@ -173,21 +185,31 @@ class GetUnsortedPhotosUseCase @Inject constructor(
         endDate: Long?,
         page: Int,
         sortOrder: PhotoSortOrder,
-        randomSeed: Long = 0
+        randomSeed: Long = 0,
+        offsetAdjustment: Int = 0
     ): List<PhotoEntity> {
-        val offset = page * PAGE_SIZE
+        val offset = (page * PAGE_SIZE + offsetAdjustment).coerceAtLeast(0)
         // Room workaround: pass null for empty list to avoid SQL errors or ignoring the filter logic if intended
         val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
         
+        // Convert milliseconds to seconds for database comparison
+        // Add 86400 seconds (1 day) to endDate to include the entire end day
+        val startSeconds = startDate?.let { it / 1000 }
+        val endSeconds = endDate?.let { it / 1000 + 86400 }
+        
         return when (sortOrder) {
-            PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosFilteredPagedDesc(safeBucketIds, startDate, endDate, PAGE_SIZE, offset)
-            PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosFilteredPagedAsc(safeBucketIds, startDate, endDate, PAGE_SIZE, offset)
-            PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosFilteredPagedRandom(safeBucketIds, startDate, endDate, randomSeed, PAGE_SIZE, offset)
+            PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosFilteredPagedDesc(safeBucketIds, startSeconds, endSeconds, PAGE_SIZE, offset)
+            PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosFilteredPagedAsc(safeBucketIds, startSeconds, endSeconds, PAGE_SIZE, offset)
+            PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosFilteredPagedRandom(safeBucketIds, startSeconds, endSeconds, randomSeed, PAGE_SIZE, offset)
         }
     }
     
     /**
      * Get count of unsorted photos filtered by bucket IDs (optional) and date range (optional).
+     * 
+     * IMPORTANT: startDate and endDate are expected in MILLISECONDS (from DatePicker),
+     * but database stores date_added in SECONDS (MediaStore format).
+     * This method handles the conversion internally.
      */
     fun getCountFiltered(
         bucketIds: List<String>?,
@@ -195,6 +217,9 @@ class GetUnsortedPhotosUseCase @Inject constructor(
         endDate: Long?
     ): Flow<Int> {
         val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
-        return photoDao.getUnsortedCountFiltered(safeBucketIds, startDate, endDate)
+        // Convert milliseconds to seconds for database comparison
+        val startSeconds = startDate?.let { it / 1000 }
+        val endSeconds = endDate?.let { it / 1000 + 86400 }
+        return photoDao.getUnsortedCountFiltered(safeBucketIds, startSeconds, endSeconds)
     }
 }

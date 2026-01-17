@@ -157,11 +157,24 @@ class PhotoFilterSelectionViewModel @Inject constructor(
     /**
      * Save the current selection as the session custom filter.
      * Called when user confirms the selection.
+     * 
+     * IMPORTANT: When ALL albums are selected, we use null to indicate "no album restriction".
+     * This prevents SQL parameter overflow when there are many albums (SQLite has ~999 param limit),
+     * and also improves query performance.
      */
     fun saveSessionFilter() {
         val state = _uiState.value
+        
+        // If all albums are selected, treat it as "no album filter" (null)
+        // This prevents SQL issues with large IN clauses and improves performance
+        val albumIds = when {
+            state.selectedAlbumIds.isEmpty() -> null  // No selection = no filter
+            state.selectedAlbumIds.size == state.albums.size -> null  // All selected = no filter
+            else -> state.selectedAlbumIds.toList()  // Partial selection = specific filter
+        }
+        
         val filter = CustomFilterSession(
-            albumIds = if (state.selectedAlbumIds.isEmpty()) null else state.selectedAlbumIds.toList(),
+            albumIds = albumIds,
             startDate = state.startDate,
             endDate = state.endDate
         )

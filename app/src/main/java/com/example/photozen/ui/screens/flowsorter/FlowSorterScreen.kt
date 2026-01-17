@@ -322,8 +322,9 @@ fun FlowSorterContent(
     }
     
     // Notify workflow of completion
-    LaunchedEffect(uiState.isComplete) {
-        if (uiState.isComplete && isWorkflowMode) {
+    // Only trigger when truly complete, not during reload
+    LaunchedEffect(uiState.isComplete, uiState.isReloading) {
+        if (uiState.isComplete && !uiState.isReloading && isWorkflowMode) {
             onComplete?.invoke()
         }
     }
@@ -355,7 +356,9 @@ fun FlowSorterContent(
                     .fillMaxWidth()
             ) {
                 when {
-                    uiState.isLoading -> {
+                    uiState.isLoading || uiState.isReloading -> {
+                        // Show loading during initial load or when reloading (e.g., sort order change)
+                        // This prevents the "complete" screen from flashing during reload
                         LoadingContent()
                     }
                     uiState.isComplete || uiState.isDailyTaskComplete -> {
@@ -466,7 +469,7 @@ fun FlowSorterContent(
         }
         
         // View mode toggle button - shown in top right corner for workflow mode
-        if (isWorkflowMode && !uiState.isComplete && !uiState.isDailyTaskComplete && !uiState.isLoading) {
+        if (isWorkflowMode && !uiState.isComplete && !uiState.isDailyTaskComplete && !uiState.isLoading && !uiState.isReloading) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
