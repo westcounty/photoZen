@@ -17,18 +17,24 @@ import java.util.Locale
  * 1. Initialize in Application.onCreate(): CrashLogger.init(this)
  * 2. After crash, reopen app and check: /sdcard/Android/data/com.example.photozen/files/crash_logs/
  * 3. Or share logs from Settings -> About -> "导出崩溃日志"
+ * 
+ * Startup logging:
+ * - Call logStartupEvent() to record startup progress
+ * - Check startup_log.txt for debugging startup crashes
  */
 object CrashLogger {
     
     private const val TAG = "CrashLogger"
     private const val CRASH_LOG_DIR = "crash_logs"
+    private const val STARTUP_LOG_FILE = "startup_log.txt"
     private const val MAX_LOG_FILES = 10
+    private const val MAX_STARTUP_LOG_SIZE = 50 * 1024 // 50KB
     
     private var applicationContext: Context? = null
     private var defaultHandler: Thread.UncaughtExceptionHandler? = null
     
     /**
-     * Initialize the crash logger. Call this in Application.onCreate()
+     * Initialize the crash logger. Call this FIRST in Application.onCreate()
      */
     fun init(context: Context) {
         applicationContext = context.applicationContext
@@ -45,7 +51,71 @@ object CrashLogger {
             defaultHandler?.uncaughtException(thread, throwable)
         }
         
+        // Clear old startup log and start fresh
+        clearStartupLog(context)
+        logStartupEvent(context, "CrashLogger initialized")
+        
         Log.i(TAG, "CrashLogger initialized")
+    }
+    
+    /**
+     * Log a startup event for debugging startup crashes.
+     * This helps identify which component is causing the crash.
+     */
+    fun logStartupEvent(context: Context, event: String) {
+        try {
+            val logDir = File(context.getExternalFilesDir(null), CRASH_LOG_DIR)
+            if (!logDir.exists()) {
+                logDir.mkdirs()
+            }
+            
+            val logFile = File(logDir, STARTUP_LOG_FILE)
+            val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+            val logEntry = "[$timestamp] $event\n"
+            
+            logFile.appendText(logEntry)
+            Log.d(TAG, "Startup: $event")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to log startup event: $event", e)
+        }
+    }
+    
+    /**
+     * Clear the startup log file (called at each app start)
+     */
+    private fun clearStartupLog(context: Context) {
+        try {
+            val logDir = File(context.getExternalFilesDir(null), CRASH_LOG_DIR)
+            if (!logDir.exists()) {
+                logDir.mkdirs()
+            }
+            
+            val logFile = File(logDir, STARTUP_LOG_FILE)
+            if (logFile.exists() && logFile.length() > MAX_STARTUP_LOG_SIZE) {
+                // Keep the last part of the log if it's too large
+                val content = logFile.readText()
+                val lastPart = content.takeLast(MAX_STARTUP_LOG_SIZE / 2)
+                logFile.writeText("... (truncated)\n$lastPart")
+            }
+            
+            // Add separator for new session
+            val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+            logFile.appendText("\n========== NEW SESSION: $timestamp ==========\n")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to clear startup log", e)
+        }
+    }
+    
+    /**
+     * Get the startup log content for debugging
+     */
+    fun getStartupLog(context: Context): String? {
+        return try {
+            val logFile = File(context.getExternalFilesDir(null), "$CRASH_LOG_DIR/$STARTUP_LOG_FILE")
+            if (logFile.exists()) logFile.readText() else null
+        } catch (e: Exception) {
+            null
+        }
     }
     
     /**

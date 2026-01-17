@@ -70,6 +70,20 @@ private val MIGRATION_5_6 = object : Migration(5, 6) {
 }
 
 /**
+ * Migration from version 6 to 7: No schema changes.
+ * This is a placeholder migration to ensure the migration path is complete.
+ * 
+ * Note: If there were actual schema changes between 6 and 7, they should be added here.
+ * Currently this is an empty migration to bridge the gap.
+ */
+private val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // No schema changes in this version
+        // This placeholder ensures a valid migration path from 6 to 8
+    }
+}
+
+/**
  * Migration from version 7 to 8: Add Smart Gallery tables.
  * - photo_analysis: AI analysis results (labels, embeddings, GPS)
  * - faces: Detected faces with embeddings
@@ -177,7 +191,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME
         )
-            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_7_8)
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
             .fallbackToDestructiveMigration(dropAllTables = true) // For development - use migrations in production
             .build()
     }
