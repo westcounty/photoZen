@@ -2,19 +2,24 @@ package com.example.photozen
 
 import android.app.Application
 import android.util.Log
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
 import com.example.photozen.util.CrashLogger
 import dagger.hilt.android.HiltAndroidApp
+import javax.inject.Inject
 
 /**
  * PicZen Application class.
  * Entry point for Hilt dependency injection.
  * 
- * NOTE: WorkManager Configuration.Provider temporarily removed to diagnose startup crash.
- * MapLibre initialization also temporarily disabled.
- * These will be restored once startup stability is confirmed.
+ * Implements Configuration.Provider for WorkManager with HiltWorkerFactory.
+ * Uses lazy initialization to ensure Hilt injection is complete before accessing workerFactory.
  */
 @HiltAndroidApp
-class PicZenApplication : Application() {
+class PicZenApplication : Application(), Configuration.Provider {
+    
+    @Inject
+    lateinit var workerFactory: HiltWorkerFactory
     
     override fun onCreate() {
         super.onCreate()
@@ -24,25 +29,26 @@ class PicZenApplication : Application() {
         CrashLogger.init(this)
         CrashLogger.logStartupEvent(this, "Application.onCreate started")
         
-        // Log Hilt injection status
-        CrashLogger.logStartupEvent(this, "Hilt injection should be complete at this point")
+        // Log Hilt injection status (workerFactory should be initialized at this point)
+        val isWorkerFactoryInitialized = ::workerFactory.isInitialized
+        CrashLogger.logStartupEvent(this, "Hilt injection complete, workerFactory initialized: $isWorkerFactoryInitialized")
         
-        // MapLibre temporarily disabled for debugging
-        // TODO: Re-enable after startup crash is resolved
-        // try {
-        //     CrashLogger.logStartupEvent(this, "MapLibre initializing...")
-        //     MapLibre.getInstance(this)
-        //     CrashLogger.logStartupEvent(this, "MapLibre initialized successfully")
-        // } catch (e: Exception) {
-        //     Log.e("PicZenApp", "MapLibre init failed", e)
-        //     CrashLogger.logStartupEvent(this, "MapLibre init FAILED: ${e.message}")
-        // }
+        // Note: MapLibre initialization is now done lazily in MapLibreInitializer
+        // to avoid potential initialization issues during app startup
         
         CrashLogger.logStartupEvent(this, "Application.onCreate completed")
         Log.i("PicZenApp", "Application initialization complete")
     }
     
-    // WorkManager Configuration.Provider temporarily removed
-    // The WorkManager will use default initialization via AndroidManifest
-    // which should work without the custom HiltWorkerFactory for now
+    /**
+     * WorkManager configuration using HiltWorkerFactory.
+     * Uses lazy initialization to ensure Hilt has completed injection before accessing workerFactory.
+     */
+    override val workManagerConfiguration: Configuration by lazy {
+        CrashLogger.logStartupEvent(this, "WorkManager config requested, workerFactory initialized: ${::workerFactory.isInitialized}")
+        Configuration.Builder()
+            .setWorkerFactory(workerFactory)
+            .setMinimumLoggingLevel(Log.DEBUG)
+            .build()
+    }
 }

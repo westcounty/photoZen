@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
-import org.maplibre.android.MapLibre
+import com.example.photozen.util.MapLibreInitializer
 import org.maplibre.android.annotations.MarkerOptions
 import org.maplibre.android.annotations.PolylineOptions
 import org.maplibre.android.camera.CameraPosition
@@ -60,9 +60,10 @@ fun MapLibreScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     
-    // Initialize MapLibre
+    // Initialize MapLibre lazily when map screen is opened
+    var mapLibreInitialized by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        MapLibre.getInstance(context)
+        mapLibreInitialized = MapLibreInitializer.ensureInitialized(context)
     }
     
     // Map view reference
