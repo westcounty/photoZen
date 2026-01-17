@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.data.model.PhotoSortOrder
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.CustomFilterSession
 import com.example.photozen.data.repository.PhotoFilterMode
@@ -71,15 +72,6 @@ enum class ComboLevel {
 enum class FlowSorterViewMode {
     CARD,  // Single card swipe view
     LIST   // Grid list with batch selection
-}
-
-/**
- * Sort order for photos.
- */
-enum class PhotoSortOrder(val displayName: String) {
-    DATE_DESC("时间倒序"),  // Newest first (default)
-    DATE_ASC("时间正序"),   // Oldest first
-    RANDOM("随机排序")      // Random shuffle
 }
 
 /**
@@ -186,6 +178,28 @@ class FlowSorterViewModel @Inject constructor(
     // Job for auto-hiding combo after timeout
     private var comboTimeoutJob: Job? = null
     
+    // ==================== PAGINATION STATE ====================
+    // Pagination ensures correct sorting across ALL photos, not just the first 500.
+    // The database applies ORDER BY to all matching photos, then LIMIT/OFFSET for pagination.
+    
+    /** Current page of photos loaded (0-indexed) */
+    private var currentPage = 0
+    
+    /** Whether we're currently loading more photos */
+    private val _isLoadingMore = MutableStateFlow(false)
+    
+    /** All photos loaded so far (accumulated across pages) */
+    private val _pagedPhotos = MutableStateFlow<List<PhotoEntity>>(emptyList())
+    
+    /** Set of photo IDs that have been sorted (removed from display) */
+    private val _sortedPhotoIds = MutableStateFlow<Set<String>>(emptySet())
+    
+    /** Whether there are more pages to load */
+    private var hasMorePages = true
+    
+    /** Job for loading photos */
+    private var loadPhotosJob: Job? = null
+    
     /**
      * Counters for sorted photos by status.
      */
@@ -199,88 +213,119 @@ class FlowSorterViewModel @Inject constructor(
     
     /**
      * Get filtered photos flow based on current filter mode.
-     * IMPORTANT: Wait for camera albums to load before applying camera-based filters.
-     * Also monitors session custom filter changes for CUSTOM mode.
-     * Sorting is now done at database level to ensure correct pagination.
+     * Now uses pagination: photos are loaded in batches but sorted correctly at database level.
+     * 
+     * The flow returns photos that have been loaded so far, minus any that have been sorted.
      */
-    @OptIn(ExperimentalCoroutinesApi::class)
     private fun getFilteredPhotosFlow(): Flow<List<PhotoEntity>> {
         return combine(
-            preferencesRepository.getPhotoFilterMode(),
-            _cameraAlbumIds,
-            _cameraAlbumsLoaded,
-            preferencesRepository.getSessionCustomFilterFlow(),
-            _sortOrder
-        ) { filterMode, cameraIds, loaded, sessionFilter, sortOrder ->
-            FilterParams(filterMode, cameraIds, loaded, sessionFilter, sortOrder)
-        }.flatMapLatest { params ->
-            // For RANDOM sort, we still need to apply sorting at UI level
-            // For DATE_ASC/DATE_DESC, sorting is done at database level
-            val ascending = params.sortOrder == PhotoSortOrder.DATE_ASC
+            _pagedPhotos,
+            _sortedPhotoIds
+        ) { photos, sortedIds ->
+            // Filter out photos that have been sorted
+            photos.filter { it.id !in sortedIds }
+        }
+    }
+    
+    /**
+     * Load the initial batch of photos based on current filter mode and sort order.
+     * Called when filter mode or sort order changes.
+     */
+    private fun loadInitialPhotos() {
+        loadPhotosJob?.cancel()
+        loadPhotosJob = viewModelScope.launch {
+            // Reset pagination state
+            currentPage = 0
+            hasMorePages = true
+            _pagedPhotos.value = emptyList()
+            _sortedPhotoIds.value = emptySet()
+            _isLoadingMore.value = true
             
-            when (params.filterMode) {
-                PhotoFilterMode.ALL -> {
-                    if (params.sortOrder == PhotoSortOrder.RANDOM) {
-                        getUnsortedPhotosUseCase()
-                    } else {
-                        getUnsortedPhotosUseCase(ascending)
-                    }
+            try {
+                val photos = loadPhotosPage(0)
+                _pagedPhotos.value = photos
+                hasMorePages = photos.size >= GetUnsortedPhotosUseCase.PAGE_SIZE
+            } catch (e: Exception) {
+                _error.value = "加载照片失败: ${e.message}"
+            } finally {
+                _isLoadingMore.value = false
+                _isLoading.value = false
+            }
+        }
+    }
+    
+    /**
+     * Load a specific page of photos based on current filter mode and sort order.
+     */
+    private suspend fun loadPhotosPage(page: Int): List<PhotoEntity> {
+        val filterMode = preferencesRepository.getPhotoFilterMode().stateIn(viewModelScope).value
+        val sortOrder = _sortOrder.value
+        val cameraIds = _cameraAlbumIds.value
+        val sessionFilter = preferencesRepository.getSessionCustomFilterFlow().stateIn(viewModelScope).value
+        
+        return when (filterMode) {
+            PhotoFilterMode.ALL -> {
+                getUnsortedPhotosUseCase.getPage(page, sortOrder, randomSeed)
+            }
+            PhotoFilterMode.CAMERA_ONLY -> {
+                if (cameraIds.isNotEmpty()) {
+                    getUnsortedPhotosUseCase.getPageByBuckets(cameraIds, page, sortOrder, randomSeed)
+                } else {
+                    emptyList()
                 }
-                PhotoFilterMode.CAMERA_ONLY -> {
-                    // Must wait for camera albums to load
-                    if (!params.cameraLoaded) {
-                        // Return empty while loading
-                        flowOf(emptyList())
-                    } else if (params.cameraIds.isNotEmpty()) {
-                        if (params.sortOrder == PhotoSortOrder.RANDOM) {
-                            getUnsortedPhotosUseCase.byBuckets(params.cameraIds)
-                        } else {
-                            getUnsortedPhotosUseCase.byBuckets(params.cameraIds, ascending)
-                        }
-                    } else {
-                        // No camera albums found, show empty
-                        flowOf(emptyList())
-                    }
+            }
+            PhotoFilterMode.EXCLUDE_CAMERA -> {
+                if (cameraIds.isNotEmpty()) {
+                    getUnsortedPhotosUseCase.getPageExcludingBuckets(cameraIds, page, sortOrder, randomSeed)
+                } else {
+                    getUnsortedPhotosUseCase.getPage(page, sortOrder, randomSeed)
                 }
-                PhotoFilterMode.EXCLUDE_CAMERA -> {
-                    // Must wait for camera albums to load
-                    if (!params.cameraLoaded) {
-                        // Return empty while loading
-                        flowOf(emptyList())
-                    } else if (params.cameraIds.isNotEmpty()) {
-                        if (params.sortOrder == PhotoSortOrder.RANDOM) {
-                            getUnsortedPhotosUseCase.excludingBuckets(params.cameraIds)
-                        } else {
-                            getUnsortedPhotosUseCase.excludingBuckets(params.cameraIds, ascending)
-                        }
-                    } else {
-                        // No camera albums found, show all photos
-                        if (params.sortOrder == PhotoSortOrder.RANDOM) {
-                            getUnsortedPhotosUseCase()
-                        } else {
-                            getUnsortedPhotosUseCase(ascending)
-                        }
-                    }
-                }
-                PhotoFilterMode.CUSTOM -> {
-                    val sessionFilter = params.sessionFilter
-                    if (sessionFilter != null && !sessionFilter.albumIds.isNullOrEmpty()) {
-                        if (params.sortOrder == PhotoSortOrder.RANDOM) {
-                            getUnsortedPhotosUseCase.byBuckets(sessionFilter.albumIds)
-                        } else {
-                            getUnsortedPhotosUseCase.byBuckets(sessionFilter.albumIds, ascending)
-                        }
-                    } else {
-                        // No custom filter set, show all photos
-                        if (params.sortOrder == PhotoSortOrder.RANDOM) {
-                            getUnsortedPhotosUseCase()
-                        } else {
-                            getUnsortedPhotosUseCase(ascending)
-                        }
-                    }
+            }
+            PhotoFilterMode.CUSTOM -> {
+                if (sessionFilter != null && !sessionFilter.albumIds.isNullOrEmpty()) {
+                    getUnsortedPhotosUseCase.getPageByBuckets(sessionFilter.albumIds, page, sortOrder, randomSeed)
+                } else {
+                    getUnsortedPhotosUseCase.getPage(page, sortOrder, randomSeed)
                 }
             }
         }
+    }
+    
+    /**
+     * Load more photos when approaching the end of the current batch.
+     * Called automatically when remaining unsorted photos drop below threshold.
+     */
+    private fun loadMorePhotosIfNeeded() {
+        if (_isLoadingMore.value || !hasMorePages) return
+        
+        val unsortedRemaining = _pagedPhotos.value.count { it.id !in _sortedPhotoIds.value }
+        if (unsortedRemaining < GetUnsortedPhotosUseCase.PRELOAD_THRESHOLD) {
+            viewModelScope.launch {
+                _isLoadingMore.value = true
+                try {
+                    currentPage++
+                    val morePhotos = loadPhotosPage(currentPage)
+                    if (morePhotos.isNotEmpty()) {
+                        _pagedPhotos.value = _pagedPhotos.value + morePhotos
+                    }
+                    hasMorePages = morePhotos.size >= GetUnsortedPhotosUseCase.PAGE_SIZE
+                } catch (e: Exception) {
+                    // Log error but don't show to user
+                    currentPage-- // Revert page increment on error
+                } finally {
+                    _isLoadingMore.value = false
+                }
+            }
+        }
+    }
+    
+    /**
+     * Mark a photo as sorted (it will be filtered out from the display list).
+     */
+    private fun markPhotoAsSorted(photoId: String) {
+        _sortedPhotoIds.value = _sortedPhotoIds.value + photoId
+        // Check if we need to load more photos
+        loadMorePhotosIfNeeded()
     }
     
     /**
@@ -455,29 +500,37 @@ class FlowSorterViewModel @Inject constructor(
     
     /**
      * Apply sort order to photos list.
-     * NOTE: DATE_ASC and DATE_DESC are now handled at database level for correct pagination.
-     * This method only applies RANDOM shuffle at UI level.
+     * NOTE: All sorting (DATE_ASC, DATE_DESC, RANDOM) is now handled at database level
+     * for correct pagination across the entire dataset.
+     * This method now just returns the photos as-is since they're already sorted.
      */
     private fun applySortOrder(photos: List<PhotoEntity>, sortOrder: PhotoSortOrder): List<PhotoEntity> {
-        return when (sortOrder) {
-            // DATE_DESC and DATE_ASC are now sorted at database level
-            PhotoSortOrder.DATE_DESC -> photos
-            PhotoSortOrder.DATE_ASC -> photos
-            // RANDOM still needs UI-level shuffling
-            PhotoSortOrder.RANDOM -> photos.shuffled(kotlin.random.Random(randomSeed))
-        }
+        // All sorting is done at database level using LIMIT/OFFSET pagination
+        // This ensures correct sorting across ALL photos, not just the current batch
+        return photos
     }
     
     init {
-        // Load camera album IDs first, then sync
+        // Load camera album IDs first, then sync, then load photos
         viewModelScope.launch {
             loadCameraAlbumIds()
             syncPhotos()
+            // Load initial batch of photos after sync
+            loadInitialPhotos()
         }
         // Load grid columns preference
         viewModelScope.launch {
             preferencesRepository.getGridColumns(PreferencesRepository.GridScreen.FLOW).collect { columns ->
                 _gridColumns.value = columns
+            }
+        }
+        // Monitor filter mode changes and reload photos
+        viewModelScope.launch {
+            preferencesRepository.getPhotoFilterMode().collect { _ ->
+                // Reload photos when filter mode changes
+                if (_cameraAlbumsLoaded.value) {
+                    loadInitialPhotos()
+                }
             }
         }
     }
@@ -529,6 +582,8 @@ class FlowSorterViewModel @Inject constructor(
     fun keepPhoto(photoId: String): Int {
         if (photoId.isEmpty()) return 0
         val comboCount = updateCombo()
+        // Mark photo as sorted immediately (removes from display list)
+        markPhotoAsSorted(photoId)
         viewModelScope.launch {
             try {
                 sortPhotoUseCase.keepPhoto(photoId)
@@ -553,6 +608,8 @@ class FlowSorterViewModel @Inject constructor(
     fun trashPhoto(photoId: String): Int {
         if (photoId.isEmpty()) return 0
         val comboCount = updateCombo()
+        // Mark photo as sorted immediately (removes from display list)
+        markPhotoAsSorted(photoId)
         viewModelScope.launch {
             try {
                 sortPhotoUseCase.trashPhoto(photoId)
@@ -577,6 +634,8 @@ class FlowSorterViewModel @Inject constructor(
     fun maybePhoto(photoId: String): Int {
         if (photoId.isEmpty()) return 0
         val comboCount = updateCombo()
+        // Mark photo as sorted immediately (removes from display list)
+        markPhotoAsSorted(photoId)
         viewModelScope.launch {
             try {
                 sortPhotoUseCase.maybePhoto(photoId)
@@ -632,6 +691,8 @@ class FlowSorterViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 sortPhotoUseCase.resetPhoto(lastAction.photoId)
+                // Remove from sorted list so it reappears in the display
+                _sortedPhotoIds.value = _sortedPhotoIds.value - lastAction.photoId
                 // Update session counters only (cumulative count stays)
                 _counters.value = when (lastAction.status) {
                     PhotoStatus.KEEP -> _counters.value.copy(keep = (_counters.value.keep - 1).coerceAtLeast(0))
@@ -668,7 +729,7 @@ class FlowSorterViewModel @Inject constructor(
     
     /**
      * Set sort order for photos.
-     * Takes effect immediately.
+     * Reloads photos with new sort order applied at database level.
      */
     fun setSortOrder(order: PhotoSortOrder) {
         // If switching to random, generate new seed
@@ -676,6 +737,8 @@ class FlowSorterViewModel @Inject constructor(
             randomSeed = System.currentTimeMillis()
         }
         _sortOrder.value = order
+        // Reload photos with new sort order
+        loadInitialPhotos()
     }
     
     /**

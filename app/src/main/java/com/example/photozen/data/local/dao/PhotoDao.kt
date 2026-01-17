@@ -221,6 +221,118 @@ interface PhotoDao {
         endDate: Long?
     ): Flow<List<PhotoEntity>>
     
+    // ==================== PAGED QUERIES FOR FLOW SORTER ====================
+    // These queries apply ORDER BY to ALL matching photos, then paginate.
+    // This ensures correct sorting across the entire dataset, not just within a page.
+    
+    /**
+     * Get unsorted photos with pagination - Date Descending.
+     * ORDER BY is applied to ALL unsorted photos, then paginated via LIMIT/OFFSET.
+     */
+    @Query("""
+        SELECT * FROM photos 
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        ORDER BY date_added DESC 
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosPagedDesc(limit: Int, offset: Int): List<PhotoEntity>
+    
+    /**
+     * Get unsorted photos with pagination - Date Ascending.
+     */
+    @Query("""
+        SELECT * FROM photos 
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        ORDER BY date_added ASC 
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosPagedAsc(limit: Int, offset: Int): List<PhotoEntity>
+    
+    /**
+     * Get unsorted photos with pagination - Random order using seeded pseudo-random.
+     * Uses (CAST(SUBSTR(id, 1, 8) AS INTEGER) * seed) % prime for consistent random ordering.
+     * The seed ensures the same random order when fetching subsequent pages.
+     */
+    @Query("""
+        SELECT * FROM photos 
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        ORDER BY (ABS(CAST(SUBSTR(id, 1, 8) AS INTEGER)) * :seed) % 2147483647
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosPagedRandom(seed: Long, limit: Int, offset: Int): List<PhotoEntity>
+    
+    /**
+     * Get unsorted photos filtered by bucket IDs with pagination - Date Descending.
+     */
+    @Query("""
+        SELECT * FROM photos 
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        AND bucket_id IN (:bucketIds)
+        ORDER BY date_added DESC 
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosByBucketsPagedDesc(bucketIds: List<String>, limit: Int, offset: Int): List<PhotoEntity>
+    
+    /**
+     * Get unsorted photos filtered by bucket IDs with pagination - Date Ascending.
+     */
+    @Query("""
+        SELECT * FROM photos 
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        AND bucket_id IN (:bucketIds)
+        ORDER BY date_added ASC 
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosByBucketsPagedAsc(bucketIds: List<String>, limit: Int, offset: Int): List<PhotoEntity>
+    
+    /**
+     * Get unsorted photos filtered by bucket IDs with pagination - Random order.
+     */
+    @Query("""
+        SELECT * FROM photos 
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        AND bucket_id IN (:bucketIds)
+        ORDER BY (ABS(CAST(SUBSTR(id, 1, 8) AS INTEGER)) * :seed) % 2147483647
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosByBucketsPagedRandom(bucketIds: List<String>, seed: Long, limit: Int, offset: Int): List<PhotoEntity>
+    
+    /**
+     * Get unsorted photos excluding bucket IDs with pagination - Date Descending.
+     */
+    @Query("""
+        SELECT * FROM photos 
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL)
+        ORDER BY date_added DESC 
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosExcludingBucketsPagedDesc(bucketIds: List<String>, limit: Int, offset: Int): List<PhotoEntity>
+    
+    /**
+     * Get unsorted photos excluding bucket IDs with pagination - Date Ascending.
+     */
+    @Query("""
+        SELECT * FROM photos 
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL)
+        ORDER BY date_added ASC 
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosExcludingBucketsPagedAsc(bucketIds: List<String>, limit: Int, offset: Int): List<PhotoEntity>
+    
+    /**
+     * Get unsorted photos excluding bucket IDs with pagination - Random order.
+     */
+    @Query("""
+        SELECT * FROM photos 
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL)
+        ORDER BY (ABS(CAST(SUBSTR(id, 1, 8) AS INTEGER)) * :seed) % 2147483647
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosExcludingBucketsPagedRandom(bucketIds: List<String>, seed: Long, limit: Int, offset: Int): List<PhotoEntity>
+    
     /**
      * Get all camera bucket IDs from our database.
      */

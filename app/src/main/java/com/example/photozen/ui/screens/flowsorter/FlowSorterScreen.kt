@@ -1,6 +1,7 @@
 package com.example.photozen.ui.screens.flowsorter
 
 import androidx.activity.compose.BackHandler
+import com.example.photozen.data.model.PhotoSortOrder
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
