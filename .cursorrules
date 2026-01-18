@@ -1,102 +1,343 @@
-# Role Definition
-You are a Senior Android Architect and Expert Developer specializing in **Kotlin**, **Jetpack Compose**, and **Mobile UX Design**. You are building an app called **"PicZen" (图禅)**.
+# PhotoZen 图禅 - AI 开发助手指南
 
-Your coding style emphasizes:
-- **Clean Architecture** (MVVM + Repository Pattern).
-- **Performance** (60fps animations, efficient memory management for images).
-- **Modern Android Standards** (Material 3, Coroutines, Flow, Hilt, Room).
-- **Maintainability** (SOLID principles, clear naming, modular code).
+> 📌 版本: v1.6.0 | 最后更新: 2026-01-18
 
 ---
 
-# Project Context & PRD (MVP Scope)
+## 1. 项目概述
 
-**App Name:** PicZen
-**Goal:** A high-efficiency photo organization tool for photography enthusiasts.
-**Core Workflow:** User loads photos -> Swipes to Sort (Keep/Trash/Maybe) -> Compares "Maybe" photos -> Tags/Crops -> Finalizes.
+**PhotoZen（图禅）** 是一款专为摄影爱好者设计的照片整理 App。
 
-## Key Features (MVP)
-1.  **Gallery Sync:** Read local photos via `MediaStore`. Handle permissions for Android 13+.
-2.  **Flow Sorter (Tinder-style):**
-    - Full-screen card view.
-    - **Gestures:** Left (Trash/Recycle), Right (Keep), Up (Maybe/Review).
-    - **Feedback:** Haptic feedback and smooth spring animations.
-3.  **Light Table (Comparison):**
-    - Grid view for "Maybe" photos.
-    - **Sync Zoom (Critical):** In comparison mode (2-4 photos), zooming/panning one photo MUST verify synchronously zoom/pan all other photos to the exact same relative coordinates.
-4.  **Virtual Editing:**
-    - Non-destructive cropping (save metadata only).
-    - Virtual Copies (create multiple versions of one photo without duplicating the file).
-5.  **Smart Tagging:**
-    - Quick tag selection via chips.
-    - Local database storage for tags.
-6.  **Gamification:**
-    - "Camera Collection" achievement system based on sorted count.
+### 核心功能
+- **滑动整理**：Tinder 风格滑动筛选照片（保留/删除/待定）
+- **照片对比**：Light Table 模式，同步缩放对比 2-6 张照片
+- **时间线浏览**：按时间智能分组，支持全屏预览
+- **一站式整理**：动态多阶段工作流（筛选→对比→分类→清理→胜利）
+- **相册分类**：我的相册管理，滑动时可直接分类
+- **成就系统**：50+ 成就徽章，游戏化整理体验
+
+### 重要文档
+- `PRD.md` - 产品功能说明文档
+- `TECH_DESIGN.md` - 技术设计文档
+- `CHANGELOG.md` - 版本更新记录
 
 ---
 
-# Technical Architecture & Stack
+## 2. 技术栈
 
-## Tech Stack
-- **Language:** Kotlin
-- **UI:** Jetpack Compose (Material 3)
-- **DI:** Hilt (Dagger)
-- **Async:** Coroutines + Kotlin Flow
-- **Image Loading:** Coil (Must configure memory cache aggressively to prevent OOM)
-- **Local Data:** Room Database (SQLite) + DataStore (Preferences)
-- **Navigation:** Compose Navigation
-
-## Architecture Pattern
-**MVVM + Clean Architecture**
-1.  **UI Layer:** Composables + ViewModels (State Holders).
-2.  **Domain Layer:** UseCases (Business Logic).
-3.  **Data Layer:** Repositories + Data Sources (Room DAO / MediaStore).
-
-## Database Schema (Room)
-- **Entity `PhotoEntity`**:
-    - `id` (String, PK)
-    - `systemUri` (String)
-    - `status` (Enum: UNSORTED, KEEP, TRASH, MAYBE)
-    - `cropState` (Json/Embedded: scale, offsetX, offsetY)
-    - `isVirtualCopy` (Boolean)
-    - `parentId` (String, nullable)
-- **Entity `TagEntity`**: `id`, `name`, `parentId`.
-- **Relation**: Many-to-Many between Photos and Tags.
+| 类别 | 技术 |
+|:----:|:-----|
+| 语言 | Kotlin 2.0 |
+| UI | Jetpack Compose + Material 3 |
+| 架构 | MVVM + Clean Architecture |
+| DI | Hilt |
+| 异步 | Coroutines + Flow |
+| 数据库 | Room |
+| 偏好 | DataStore |
+| 图片 | Coil 3 |
+| 导航 | Compose Navigation (Type-Safe) |
 
 ---
 
-# Critical Implementation Guidelines
+## 3. 项目结构速查
 
-## 1. Performance & Image Handling
-- **NEVER** load full-resolution bitmaps into memory for the list/swipe view. Use Coil's `downsampling` and `memoryCachePolicy`.
-- For the **Swipe Interface**: Use `Modifier.graphicsLayer` for transformations (rotation/alpha) to avoid recomposition lag. Use `AnchoredDraggable` or `Swipeable` APIs.
-- For **Sync Zoom**: Use State Hoisting. The parent Composable holds the `TransformationState`, and child images observe this state.
+```
+app/src/main/java/com/example/photozen/
+├── data/                    # 数据层
+│   ├── local/dao/           # Room DAO
+│   ├── local/entity/        # Room Entity
+│   ├── repository/          # 数据仓库
+│   └── source/              # 数据源 (MediaStore)
+├── domain/                  # 领域层
+│   ├── usecase/             # 用例
+│   └── AchievementManager.kt
+├── ui/                      # UI 层
+│   ├── screens/             # 页面 (Screen + ViewModel)
+│   ├── components/          # 通用组件
+│   └── theme/               # 主题
+├── navigation/              # 导航
+│   ├── Screen.kt            # 所有路由定义
+│   └── PicZenNavHost.kt     # 导航图
+├── service/                 # 后台服务
+└── util/                    # 工具类
+```
 
-## 2. File Operations
-- **Non-Destructive:** "Deleting" in the app ONLY moves the record to a "Trash" status in the local Room DB.
-- **Physical Deletion:** Only occurs when the user explicitly clicks "Empty Trash" in settings. Use `PHPhotoLibrary` equivalent (Android `MediaStore.createTrashRequest` or `delete` with intent sender).
+### 快速定位文件
 
-## 3. UI/UX Polish
-- Use **Haptic Feedback** (`HapticFeedbackConstants`) for swipe actions.
-- Use **Spring Animations** (`spring()`) for gesture release snapping.
-- Dark Mode by default for better photo viewing.
+| 功能 | 文件位置 |
+|:-----|:--------|
+| 滑动整理 | `ui/screens/flowsorter/` |
+| 照片对比 | `ui/screens/lighttable/` |
+| 时间线 | `ui/screens/timeline/` |
+| 一站式整理 | `ui/screens/workflow/` |
+| 相册管理 | `ui/screens/albums/` |
+| 设置 | `ui/screens/settings/` |
+| 导航 | `navigation/Screen.kt` |
+| 偏好设置 | `data/repository/PreferencesRepository.kt` |
 
 ---
 
-# Step-by-Step Implementation Plan
+## 4. 代码规范
 
-Do not generate all code at once. I will ask you to implement specific modules. When I ask, follow this sequence:
+### 4.1 命名约定
+```kotlin
+// Screen Composable
+@Composable
+fun XxxScreen(
+    onNavigateBack: () -> Unit,
+    viewModel: XxxViewModel = hiltViewModel()
+)
 
-1.  **Setup:** Dependencies (libs.versions.toml), Hilt setup, Theme setup.
-2.  **Data Layer:** Room Entities, DAOs, and the MediaStore Repository (PagingSource).
-3.  **Domain Layer:** UseCases for fetching photos and updating status.
-4.  **UI - Flow Sorter:** The swipeable card stack.
-5.  **UI - Light Table:** The synchronized zoom grid.
-6.  **UI - Navigation & Glue:** Connecting screens.
+// ViewModel
+@HiltViewModel
+class XxxViewModel @Inject constructor(...) : ViewModel()
+
+// UI State
+data class XxxUiState(
+    val isLoading: Boolean = false,
+    val items: List<Item> = emptyList(),
+    val error: String? = null
+)
+```
+
+### 4.2 状态管理模式
+```kotlin
+// ViewModel 内部使用 MutableStateFlow
+private val _uiState = MutableStateFlow(XxxUiState())
+val uiState: StateFlow<XxxUiState> = _uiState.asStateFlow()
+
+// 更新状态
+private fun updateState(update: (XxxUiState) -> XxxUiState) {
+    _uiState.update(update)
+}
+
+// Screen 中收集状态
+val uiState by viewModel.uiState.collectAsState()
+```
+
+### 4.3 Flow 数据观察
+```kotlin
+// 使用 distinctUntilChanged 避免重复发射
+fun getSomeData(): Flow<Data> = dataStore.data.map { ... }.distinctUntilChanged()
+
+// ViewModel 中收集 Flow
+init {
+    viewModelScope.launch {
+        repository.getSomeData().collect { data ->
+            updateState { it.copy(data = data) }
+        }
+    }
+}
+```
+
+### 4.4 图片加载
+```kotlin
+// 缩略图（网格列表）
+AsyncImage(
+    model = ImageRequest.Builder(context)
+        .data(photo.systemUri)
+        .size(200, 200)  // 限制解码尺寸
+        .crossfade(true)
+        .build(),
+    contentDescription = null
+)
+
+// 全屏预览
+AsyncImage(
+    model = photo.systemUri,  // 使用原图
+    contentDescription = null
+)
+```
 
 ---
 
-# Current Task
-Please start by analyzing the requirements above.
-Then, **generate the project directory structure** (text tree format) and the **`libs.versions.toml`** file with all necessary dependencies (Compose, Hilt, Room, Coil, Accompanist if needed).
-Wait for my confirmation before writing Kotlin code.
+## 5. 关键实现要点
+
+### 5.1 照片状态
+```kotlin
+enum class PhotoStatus {
+    UNSORTED,  // 未筛选
+    KEEP,      // 保留
+    MAYBE,     // 待定
+    TRASH      // 回收站
+}
+```
+
+### 5.2 滑动手势处理
+```kotlin
+// 使用 pointerInput 处理拖拽
+Modifier.pointerInput(Unit) {
+    detectDragGestures(
+        onDragEnd = { /* 判断方向，执行操作 */ },
+        onDrag = { change, dragAmount ->
+            // 更新 offsetX, offsetY
+        }
+    )
+}
+
+// 使用 Animatable 实现 Spring 动画
+val offsetX = remember { Animatable(0f) }
+offsetX.animateTo(0f, spring(dampingRatio = 0.6f))
+```
+
+### 5.3 同步缩放（Light Table）
+```kotlin
+// 父组件持有 TransformState
+val transformState = remember { mutableStateOf(TransformState()) }
+
+// 所有子图片观察同一个 state
+photos.forEach { photo ->
+    SyncZoomImage(
+        photo = photo,
+        transformState = transformState
+    )
+}
+```
+
+### 5.4 一站式整理阶段
+```kotlin
+enum class WorkflowStage {
+    SWIPE,     // 筛选
+    COMPARE,   // 对比待定
+    CLASSIFY,  // 分类到相册（仅当未开启直接分类）
+    TRASH,     // 清理回收站
+    VICTORY    // 胜利
+}
+
+// 动态阶段列表
+val stageList = if (cardSortingAlbumEnabled) {
+    listOf(SWIPE, COMPARE, TRASH, VICTORY)
+} else {
+    listOf(SWIPE, COMPARE, CLASSIFY, TRASH, VICTORY)
+}
+```
+
+---
+
+## 6. 常见开发任务指南
+
+### 6.1 添加新页面
+1. 在 `Screen.kt` 添加新的 Screen 定义
+2. 在 `ui/screens/` 下创建目录，包含 `XxxScreen.kt` 和 `XxxViewModel.kt`
+3. 在 `PicZenNavHost.kt` 添加 composable 路由
+
+### 6.2 添加新设置项
+1. 在 `PreferencesRepository.kt` 添加 Key 定义
+2. 添加 get/set 方法
+3. 在 `SettingsScreen.kt` 添加 UI
+
+### 6.3 修改数据库
+1. 修改 `entity/` 下的 Entity
+2. 在 `AppDatabase.kt` 增加版本号
+3. 添加 Migration（如需保留数据）
+
+### 6.4 添加新成就
+1. 在 `ui/components/AchievementSystem.kt` 的 `generateAchievements()` 中添加
+2. 确保 `PreferencesRepository` 有对应的计数器
+
+---
+
+## 7. 重要约定
+
+### 7.1 版本号规则
+```
+w.x.y.z
+├── w: 大版本号（重大功能更新）
+├── x: 小版本号（功能更新，需更新 CHANGELOG）
+├── y: 修复版本号
+└── z: 构建号（每次构建自动 +1）
+```
+
+### 7.2 分支管理
+- `main`: 主分支，所有常规开发
+- `explore/smart-gallery`: 实验分支，AI 相关功能
+- **主分支变更必须合并到实验分支**
+
+### 7.3 文件操作原则
+- **非破坏性**：删除操作只修改数据库状态，不删除原文件
+- **永久删除**：仅在用户明确操作时，通过 MediaStore API 删除
+
+### 7.4 性能原则
+- 列表图片：限制解码尺寸 `size(200, 200)`
+- 分页加载：`LIMIT 500` + Flow 监听变化
+- 避免重组：使用 `remember`、`key`、`derivedStateOf`
+
+---
+
+## 8. 禁止事项
+
+❌ **不要做以下事情：**
+
+1. **不要直接删除系统照片**
+   - 必须通过 `MediaStore.createDeleteRequest()` 让用户确认
+
+2. **不要在 Composable 中创建 ViewModel**
+   - 使用 `hiltViewModel()` 或通过参数传入
+
+3. **不要在主线程执行耗时操作**
+   - 数据库、文件操作必须在 `Dispatchers.IO`
+
+4. **不要暴露 MutableStateFlow**
+   - 只暴露只读的 `StateFlow`
+
+5. **不要忽略 Flow 的 distinctUntilChanged**
+   - 防止不必要的重复发射
+
+6. **不要硬编码字符串**
+   - UI 文字放在代码中暂可接受，但数据相关的常量必须定义
+
+---
+
+## 9. 调试技巧
+
+### 日志查看
+```kotlin
+import android.util.Log
+Log.d("PhotoZen", "message")
+```
+
+### ADB 路径
+```
+D:\androidsdk\platform-tools\adb.exe
+```
+
+### 常用命令
+```bash
+# 无线调试连接
+adb connect <IP>:5555
+
+# 安装 APK
+adb install -r app-debug.apk
+
+# 查看日志
+adb logcat | grep PhotoZen
+```
+
+---
+
+## 10. 回答问题时的建议
+
+当用户询问项目相关问题时：
+
+1. **先阅读相关文档**
+   - `PRD.md` 了解功能需求
+   - `TECH_DESIGN.md` 了解技术实现
+   - `CHANGELOG.md` 了解版本历史
+
+2. **定位相关代码**
+   - 使用本文件的"快速定位文件"表格
+   - 优先查看 ViewModel 了解业务逻辑
+   - 查看 Screen 了解 UI 结构
+
+3. **遵循现有模式**
+   - 参考相似功能的实现方式
+   - 保持代码风格一致
+
+4. **考虑影响范围**
+   - 修改 Entity 需要考虑数据库迁移
+   - 修改 Navigation 需要检查所有导航入口
+   - 修改公共组件需要检查所有使用处
+
+---
+
+*此文件用于指导 AI 助手高效、高质量地参与 PhotoZen 项目开发。*
