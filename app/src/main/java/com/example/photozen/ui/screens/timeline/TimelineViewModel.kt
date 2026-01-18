@@ -26,6 +26,7 @@ data class YearMonth(
     val year: Int,
     val month: Int,
     val eventCount: Int,
+    val photoCount: Int,  // Total photos in this month
     val firstEventIndex: Int  // Index in the events list for scrolling
 )
 
@@ -129,22 +130,27 @@ class TimelineViewModel @Inject constructor(
      */
     private fun extractYearMonths(events: List<PhotoEvent>): List<YearMonth> {
         val calendar = Calendar.getInstance()
-        val yearMonthMap = mutableMapOf<Pair<Int, Int>, MutableList<Int>>()
+        // Store both event indices and photo counts for each year-month
+        data class YearMonthData(val indices: MutableList<Int> = mutableListOf(), var photoCount: Int = 0)
+        val yearMonthMap = mutableMapOf<Pair<Int, Int>, YearMonthData>()
         
         events.forEachIndexed { index, event ->
             calendar.timeInMillis = event.startTime
             val year = calendar.get(Calendar.YEAR)
             val month = calendar.get(Calendar.MONTH) + 1  // Calendar.MONTH is 0-based
             val key = year to month
-            yearMonthMap.getOrPut(key) { mutableListOf() }.add(index)
+            val data = yearMonthMap.getOrPut(key) { YearMonthData() }
+            data.indices.add(index)
+            data.photoCount += event.photoCount
         }
         
-        return yearMonthMap.map { (key, indices) ->
+        return yearMonthMap.map { (key, data) ->
             YearMonth(
                 year = key.first,
                 month = key.second,
-                eventCount = indices.size,
-                firstEventIndex = indices.first()
+                eventCount = data.indices.size,
+                photoCount = data.photoCount,
+                firstEventIndex = data.indices.first()
             )
         }.sortedWith(compareByDescending<YearMonth> { it.year }.thenByDescending { it.month })
     }

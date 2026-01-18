@@ -102,6 +102,7 @@ fun TimelineScreen(
                     year = calendar.get(java.util.Calendar.YEAR),
                     month = calendar.get(java.util.Calendar.MONTH) + 1,
                     eventCount = 0,
+                    photoCount = 0,
                     firstEventIndex = firstVisibleIndex
                 )
             } else null
@@ -153,6 +154,14 @@ fun TimelineScreen(
                     }
                 },
                 actions = {
+                    // Sort order toggle button
+                    IconButton(onClick = viewModel::toggleSortOrder) {
+                        Icon(
+                            imageVector = if (uiState.isDescending) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
+                            contentDescription = if (uiState.isDescending) "最新优先" else "最早优先"
+                        )
+                    }
+                    
                     // Expand/Collapse all button
                     if (uiState.hasEvents) {
                         val allExpanded = uiState.expandedEventIds.size == uiState.events.size
@@ -180,12 +189,10 @@ fun TimelineScreen(
                 .padding(paddingValues)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Grouping mode selector with sort button
+                // Grouping mode selector
                 GroupingModeSelector(
                     currentMode = uiState.groupingMode,
-                    isDescending = uiState.isDescending,
-                    onModeSelected = viewModel::setGroupingMode,
-                    onToggleSortOrder = viewModel::toggleSortOrder
+                    onModeSelected = viewModel::setGroupingMode
                 )
                 
                 if (uiState.isLoading) {
@@ -257,76 +264,55 @@ fun TimelineScreen(
 }
 
 /**
- * Grouping mode selector chips with sort order toggle.
+ * Grouping mode selector chips.
  */
 @Composable
 private fun GroupingModeSelector(
     currentMode: GroupingMode,
-    isDescending: Boolean,
-    onModeSelected: (GroupingMode) -> Unit,
-    onToggleSortOrder: () -> Unit
+    onModeSelected: (GroupingMode) -> Unit
 ) {
-    Row(
+    LazyRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        LazyRow(
-            modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(GroupingMode.entries) { mode ->
-                FilterChip(
-                    selected = mode == currentMode,
-                    onClick = { onModeSelected(mode) },
-                    label = {
-                        Text(
-                            when (mode) {
-                                GroupingMode.AUTO -> "智能分组"
-                                GroupingMode.DAY -> "按天"
-                                GroupingMode.MONTH -> "按月"
-                                GroupingMode.YEAR -> "按年"
-                            }
+        items(GroupingMode.entries) { mode ->
+            FilterChip(
+                selected = mode == currentMode,
+                onClick = { onModeSelected(mode) },
+                label = {
+                    Text(
+                        when (mode) {
+                            GroupingMode.AUTO -> "智能分组"
+                            GroupingMode.DAY -> "按天"
+                            GroupingMode.MONTH -> "按月"
+                            GroupingMode.YEAR -> "按年"
+                        }
+                    )
+                },
+                leadingIcon = if (mode == currentMode) {
+                    {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
                         )
-                    },
-                    leadingIcon = if (mode == currentMode) {
-                        {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    } else {
-                        {
-                            Icon(
-                                imageVector = when (mode) {
-                                    GroupingMode.AUTO -> Icons.Default.AutoAwesome
-                                    GroupingMode.DAY -> Icons.Default.Today
-                                    GroupingMode.MONTH -> Icons.Default.CalendarMonth
-                                    GroupingMode.YEAR -> Icons.Default.CalendarToday
-                                },
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
                     }
-                )
-            }
-        }
-        
-        Spacer(modifier = Modifier.width(8.dp))
-        
-        // Sort order toggle button
-        FilledTonalIconButton(
-            onClick = onToggleSortOrder,
-            modifier = Modifier.size(36.dp)
-        ) {
-            Icon(
-                imageVector = if (isDescending) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
-                contentDescription = if (isDescending) "最新优先" else "最早优先",
-                modifier = Modifier.size(18.dp)
+                } else {
+                    {
+                        Icon(
+                            imageVector = when (mode) {
+                                GroupingMode.AUTO -> Icons.Default.AutoAwesome
+                                GroupingMode.DAY -> Icons.Default.Today
+                                GroupingMode.MONTH -> Icons.Default.CalendarMonth
+                                GroupingMode.YEAR -> Icons.Default.CalendarToday
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
             )
         }
     }
@@ -566,7 +552,7 @@ private fun TimelineNavigator(
     
     Card(
         modifier = Modifier
-            .width(72.dp)
+            .width(80.dp)
             .fillMaxHeight()
             .padding(vertical = 48.dp, horizontal = 8.dp),
         shape = RoundedCornerShape(16.dp),
@@ -654,12 +640,11 @@ private fun TimelineNavigator(
                                         Color.Transparent,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 8.dp, vertical = 1.dp)
+                                        .padding(horizontal = 4.dp, vertical = 2.dp)
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(vertical = 4.dp, horizontal = 4.dp),
-                                        horizontalArrangement = Arrangement.Center,
-                                        verticalAlignment = Alignment.CenterVertically
+                                    Column(
+                                        modifier = Modifier.padding(vertical = 4.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
                                         Text(
                                             text = "${ym.month}月",
@@ -669,9 +654,8 @@ private fun TimelineNavigator(
                                             else 
                                                 MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        Spacer(modifier = Modifier.width(2.dp))
                                         Text(
-                                            text = "(${ym.eventCount})",
+                                            text = "${ym.photoCount}",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                         )
