@@ -6,6 +6,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -103,7 +104,7 @@ import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun PhotoListScreen(
     onNavigateBack: () -> Unit,
@@ -640,6 +641,7 @@ private fun ClassifyToAlbumCard(
  * Phase 6.1: Album classify mode content.
  * Shows one photo at a time with album selection at the bottom.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AlbumClassifyModeContent(
     photo: PhotoEntity,
@@ -745,7 +747,7 @@ private fun AlbumClassifyModeContent(
             }
         } else {
             // Album buttons in a flow layout
-            androidx.compose.foundation.layout.FlowRow(
+            FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
