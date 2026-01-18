@@ -15,6 +15,14 @@
     <!-- 前台服务权限 (Android 14+) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    
+    <!-- 通知权限 (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    
+    <!-- 闹钟/提醒权限 -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".PicZenApplication"
@@ -72,6 +80,21 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/daily_progress_widget_info" />
+        </receiver>
+        
+        <!-- Daily Reminder Receiver for scheduled notifications -->
+        <receiver
+            android:name=".receiver.DailyReminderReceiver"
+            android:exported="false" />
+        
+        <!-- Boot Receiver to reschedule alarms after device restart -->
+        <receiver
+            android:name=".receiver.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
         </receiver>
     </application>
 
