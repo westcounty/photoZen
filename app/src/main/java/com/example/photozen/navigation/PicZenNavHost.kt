@@ -331,9 +331,8 @@ fun PicZenNavHost(
                     navController.navigate(Screen.AlbumPhotoList(bucketId, albumName))
                 },
                 onNavigateToQuickSort = { bucketId ->
-                    // Navigate to flow sorter with album filter
-                    // The filter will be set via PreferencesRepository
-                    navController.navigate(Screen.FlowSorter())
+                    // Navigate to flow sorter filtered by this album
+                    navController.navigate(Screen.FlowSorter(albumBucketId = bucketId))
                 }
             )
         }
@@ -348,6 +347,9 @@ fun PicZenNavHost(
                 },
                 onNavigateToEditor = { photoId ->
                     navController.navigate(Screen.PhotoEditor(photoId))
+                },
+                onNavigateToQuickSort = { bucketId ->
+                    navController.navigate(Screen.FlowSorter(albumBucketId = bucketId))
                 }
             )
         }

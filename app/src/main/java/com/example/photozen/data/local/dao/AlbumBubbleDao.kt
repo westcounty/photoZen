@@ -51,6 +51,14 @@ interface AlbumBubbleDao {
     @Query("UPDATE album_bubbles SET display_name = :displayName WHERE bucket_id = :bucketId")
     suspend fun updateDisplayName(bucketId: String, displayName: String)
     
+    /**
+     * Update bucket ID when the real MediaStore bucket ID is discovered.
+     * This is needed because newly created albums get a placeholder bucket ID
+     * until photos are actually added to them.
+     */
+    @Query("UPDATE album_bubbles SET bucket_id = :newBucketId WHERE bucket_id = :oldBucketId")
+    suspend fun updateBucketId(oldBucketId: String, newBucketId: String)
+    
     // ==================== DELETE ====================
     
     /**

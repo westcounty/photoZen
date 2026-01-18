@@ -448,6 +448,8 @@ class MediaStoreDataSource @Inject constructor(
     
     /**
      * Convert cursor row to PhotoEntity.
+     * GPS coordinates are NOT read here for performance - they should be loaded lazily
+     * when needed (e.g., when displaying photo details).
      */
     private fun cursorToPhotoEntity(
         cursor: Cursor,
@@ -468,6 +470,10 @@ class MediaStoreDataSource @Inject constructor(
             mediaStoreId
         )
         
+        // GPS coordinates are NOT loaded here for performance reasons.
+        // Reading EXIF for every photo during scan would be extremely slow.
+        // GPS data should be loaded lazily when displaying photo details.
+        
         return PhotoEntity(
             id = "ms_$mediaStoreId", // Prefix to distinguish from virtual copies
             systemUri = contentUri.toString(),
@@ -486,8 +492,91 @@ class MediaStoreDataSource @Inject constructor(
             cameraMake = null, // Would need to read EXIF for this
             cameraModel = null,
             bucketId = bucketIdColumn?.let { cursor.getString(it) },
+            latitude = null,      // Loaded lazily when needed
+            longitude = null,     // Loaded lazily when needed
+            gpsScanned = false,   // Not scanned yet - will be done lazily
             isSynced = true
         )
+    }
+    
+    /**
+     * Extract GPS coordinates from EXIF data.
+     * Returns a pair of (latitude, longitude), both can be null if not available.
+     * 
+     * This handles various GPS formats in EXIF:
+     * - Standard GPS tags (TAG_GPS_LATITUDE, TAG_GPS_LONGITUDE)
+     * - Reference tags (N/S for lat, E/W for lon)
+     */
+    private fun extractGpsFromExif(contentUri: Uri): Pair<Double?, Double?> {
+        return try {
+            contentResolver.openInputStream(contentUri)?.use { inputStream ->
+                val exif = android.media.ExifInterface(inputStream)
+                
+                // Method 1: Use getLatLong (most reliable)
+                val latLong = FloatArray(2)
+                if (exif.getLatLong(latLong)) {
+                    return Pair(latLong[0].toDouble(), latLong[1].toDouble())
+                }
+                
+                // Method 2: Parse manually if getLatLong fails
+                val latString = exif.getAttribute(android.media.ExifInterface.TAG_GPS_LATITUDE)
+                val latRef = exif.getAttribute(android.media.ExifInterface.TAG_GPS_LATITUDE_REF)
+                val lonString = exif.getAttribute(android.media.ExifInterface.TAG_GPS_LONGITUDE)
+                val lonRef = exif.getAttribute(android.media.ExifInterface.TAG_GPS_LONGITUDE_REF)
+                
+                if (latString != null && lonString != null) {
+                    val lat = convertDmsToDecimal(latString, latRef)
+                    val lon = convertDmsToDecimal(lonString, lonRef)
+                    if (lat != null && lon != null) {
+                        return Pair(lat, lon)
+                    }
+                }
+                
+                Pair(null, null)
+            } ?: Pair(null, null)
+        } catch (e: Exception) {
+            // Silently fail - not all photos have GPS data
+            Pair(null, null)
+        }
+    }
+    
+    /**
+     * Convert DMS (Degrees/Minutes/Seconds) string to decimal degrees.
+     * Format: "deg/1,min/1,sec/1" or "deg,min,sec"
+     * 
+     * @param dms The DMS string from EXIF
+     * @param ref The reference (N/S for latitude, E/W for longitude)
+     * @return Decimal degrees, or null if parsing fails
+     */
+    private fun convertDmsToDecimal(dms: String, ref: String?): Double? {
+        return try {
+            val parts = dms.split(",")
+            if (parts.size != 3) return null
+            
+            fun parsePart(part: String): Double {
+                val fraction = part.trim().split("/")
+                return if (fraction.size == 2) {
+                    fraction[0].toDouble() / fraction[1].toDouble()
+                } else {
+                    part.trim().toDouble()
+                }
+            }
+            
+            val degrees = parsePart(parts[0])
+            val minutes = parsePart(parts[1])
+            val seconds = parsePart(parts[2])
+            
+            var decimal = degrees + minutes / 60.0 + seconds / 3600.0
+            
+            // Apply reference direction
+            if (ref == "S" || ref == "W") {
+                decimal = -decimal
+            }
+            
+            decimal
+        } catch (e: Exception) {
+            null
+        }
     }
     
     /**

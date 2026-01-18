@@ -29,6 +29,7 @@ import javax.inject.Inject
  * View mode for album photo list.
  */
 enum class AlbumPhotoListViewMode {
+    GRID_1,  // 1-column grid (single column, waterfall style)
     GRID_2,  // 2-column grid
     GRID_3,  // 3-column grid
     GRID_4   // 4-column grid
@@ -102,10 +103,17 @@ class AlbumPhotoListViewModel @Inject constructor(
     private fun loadPhotos() {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            val bucketId = _uiState.value.bucketId
+            
+            // Guard: Don't load if bucketId is empty (not initialized yet)
+            if (bucketId.isEmpty()) {
+                _uiState.update { it.copy(isLoading = false) }
+                return@launch
+            }
+            
+            _uiState.update { it.copy(isLoading = true, error = null) }
             
             try {
-                val bucketId = _uiState.value.bucketId
                 photoDao.getPhotosByBucketId(bucketId).collect { photos ->
                     val sortedCount = photos.count { it.status != PhotoStatus.UNSORTED }
                     _uiState.update {
@@ -113,7 +121,8 @@ class AlbumPhotoListViewModel @Inject constructor(
                             isLoading = false,
                             photos = photos,
                             totalCount = photos.size,
-                            sortedCount = sortedCount
+                            sortedCount = sortedCount,
+                            error = null
                         )
                     }
                 }
@@ -162,15 +171,16 @@ class AlbumPhotoListViewModel @Inject constructor(
     }
     
     /**
-     * Toggle view mode.
+     * Toggle view mode (1 -> 2 -> 3 -> 4 -> 1).
      */
     fun cycleViewMode() {
         _uiState.update {
             it.copy(
                 viewMode = when (it.viewMode) {
+                    AlbumPhotoListViewMode.GRID_1 -> AlbumPhotoListViewMode.GRID_2
                     AlbumPhotoListViewMode.GRID_2 -> AlbumPhotoListViewMode.GRID_3
                     AlbumPhotoListViewMode.GRID_3 -> AlbumPhotoListViewMode.GRID_4
-                    AlbumPhotoListViewMode.GRID_4 -> AlbumPhotoListViewMode.GRID_2
+                    AlbumPhotoListViewMode.GRID_4 -> AlbumPhotoListViewMode.GRID_1
                 }
             )
         }
@@ -239,11 +249,14 @@ class AlbumPhotoListViewModel @Inject constructor(
             var successCount = 0
             var needsConfirmation = false
             
+            // Get target album path once before loop
+            val targetAlbum = _uiState.value.albumBubbleList.find { it.bucketId == targetBucketId }
+            // Use getAlbumPath to get the actual album path (e.g., "DCIM/Camera" for system Camera album)
+            val targetPath = mediaStoreDataSource.getAlbumPath(targetBucketId)
+                ?: "Pictures/${targetAlbum?.displayName ?: "PhotoZen"}"
+            
             for (photo in selectedPhotos) {
                 val photoUri = Uri.parse(photo.systemUri)
-                // Get target album path
-                val targetAlbum = _uiState.value.albumBubbleList.find { it.bucketId == targetBucketId }
-                val targetPath = "Pictures/${targetAlbum?.displayName ?: "PhotoZen"}"
                 
                 when (val result = albumOperationsUseCase.movePhotoToAlbum(photoUri, targetPath)) {
                     is MovePhotoResult.Success -> successCount++
@@ -283,10 +296,14 @@ class AlbumPhotoListViewModel @Inject constructor(
             val selectedPhotos = _uiState.value.photos.filter { it.id in _uiState.value.selectedIds }
             var successCount = 0
             
+            // Get target album path once before loop
+            val targetAlbum = _uiState.value.albumBubbleList.find { it.bucketId == targetBucketId }
+            // Use getAlbumPath to get the actual album path (e.g., "DCIM/Camera" for system Camera album)
+            val targetPath = mediaStoreDataSource.getAlbumPath(targetBucketId)
+                ?: "Pictures/${targetAlbum?.displayName ?: "PhotoZen"}"
+            
             for (photo in selectedPhotos) {
                 val photoUri = Uri.parse(photo.systemUri)
-                val targetAlbum = _uiState.value.albumBubbleList.find { it.bucketId == targetBucketId }
-                val targetPath = "Pictures/${targetAlbum?.displayName ?: "PhotoZen"}"
                 
                 val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
                 if (result.isSuccess) {

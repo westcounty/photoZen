@@ -1,6 +1,7 @@
 package com.example.photozen.ui.screens.flowsorter
 
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -21,6 +22,7 @@ import com.example.photozen.domain.usecase.GetUnsortedPhotosUseCase
 import com.example.photozen.domain.usecase.MovePhotoResult
 import com.example.photozen.domain.usecase.SortPhotoUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
+import com.example.photozen.util.StoragePermissionHelper
 import com.example.photozen.util.WidgetUpdater
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -28,6 +30,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -39,6 +42,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+private const val TAG = "FlowSorterVM"
 
 /**
  * Combo state for tracking rapid sorting streaks.
@@ -119,7 +124,11 @@ data class FlowSorterUiState(
     val albumTagSize: Float = 1.0f,
     val maxAlbumTagCount: Int = 0,
     val albumAddAction: AlbumAddAction = AlbumAddAction.MOVE,
-    val albumMessage: String? = null
+    val albumMessage: String? = null,
+    // Permission dialog state
+    val showPermissionDialog: Boolean = false,
+    val permissionRetryError: Boolean = false,
+    val pendingAlbumBucketId: String? = null
 ) {
     val currentPhoto: PhotoEntity?
         get() = photos.getOrNull(currentIndex)
@@ -167,11 +176,13 @@ class FlowSorterViewModel @Inject constructor(
     private val getDailyTaskStatusUseCase: GetDailyTaskStatusUseCase,
     private val widgetUpdater: WidgetUpdater,
     private val albumBubbleDao: AlbumBubbleDao,
-    private val albumOperationsUseCase: AlbumOperationsUseCase
+    private val albumOperationsUseCase: AlbumOperationsUseCase,
+    private val storagePermissionHelper: StoragePermissionHelper
 ) : ViewModel() {
     
     private val isDailyTask: Boolean = savedStateHandle["isDailyTask"] ?: false
     private val targetCount: Int = savedStateHandle["targetCount"] ?: -1
+    private val albumBucketId: String? = savedStateHandle["albumBucketId"]
     
     private val _isLoading = MutableStateFlow(true)
     private val _isSyncing = MutableStateFlow(false)
@@ -180,6 +191,11 @@ class FlowSorterViewModel @Inject constructor(
     private val _error = MutableStateFlow<String?>(null)
     private val _counters = MutableStateFlow(SortCounters())
     private val _combo = MutableStateFlow(ComboState())
+    
+    // Immediate sorted count - updated SYNCHRONOUSLY on swipe for instant UI feedback
+    // This bypasses the combine flow delay that can cause first-swipe counter issues
+    private val _sortedCountImmediate = MutableStateFlow(0)
+    val sortedCountImmediate: StateFlow<Int> = _sortedCountImmediate.asStateFlow()
     private val _viewMode = MutableStateFlow(FlowSorterViewMode.CARD)
     private val _selectedPhotoIds = MutableStateFlow<Set<String>>(emptySet())
     private val _sortOrder = MutableStateFlow(PhotoSortOrder.DATE_DESC)
@@ -192,6 +208,16 @@ class FlowSorterViewModel @Inject constructor(
     private val _maxAlbumTagCount = MutableStateFlow(0)
     private val _albumAddAction = MutableStateFlow(AlbumAddAction.MOVE)
     private val _albumMessage = MutableStateFlow<String?>(null)
+    
+    // Permission dialog state
+    private val _showPermissionDialog = MutableStateFlow(false)
+    private val _permissionRetryError = MutableStateFlow(false)
+    private val _pendingAlbumBucketId = MutableStateFlow<String?>(null)
+    private var _pendingPhotoId: String? = null  // Photo waiting for permission
+    
+    // System albums state (for album picker)
+    private val _availableAlbums = MutableStateFlow<List<com.example.photozen.data.source.Album>>(emptyList())
+    val availableAlbums: StateFlow<List<com.example.photozen.data.source.Album>> = _availableAlbums.asStateFlow()
     
     // CRITICAL FIX: Store initial total count to prevent flickering during rapid swipes
     // This ensures totalCount remains stable even when counters and photos list update at different times
@@ -296,6 +322,7 @@ class FlowSorterViewModel @Inject constructor(
             
             // Reset session counters (keep/trash/maybe) for the new sort session
             _counters.value = SortCounters()
+            _sortedCountImmediate.value = 0  // Reset immediate counter too
             
             try {
                 // Get CURRENT values using first() to ensure correct parameters
@@ -307,12 +334,22 @@ class FlowSorterViewModel @Inject constructor(
                 
                 // Initialize the ID snapshot for ALL sort modes
                 // This guarantees global sorting and stability
-                val allIds = getUnsortedPhotosUseCase.getAllIds(
-                    filterMode, 
-                    cameraIds, 
-                    sessionFilter,
-                    sortOrder
-                )
+                // If albumBucketId is set, override filter to only show photos from that album
+                val allIds = if (albumBucketId != null) {
+                    getUnsortedPhotosUseCase.getAllIds(
+                        com.example.photozen.data.repository.PhotoFilterMode.CAMERA_ONLY,
+                        listOf(albumBucketId),
+                        null,
+                        sortOrder
+                    )
+                } else {
+                    getUnsortedPhotosUseCase.getAllIds(
+                        filterMode, 
+                        cameraIds, 
+                        sessionFilter,
+                        sortOrder
+                    )
+                }
                 
                 // For RANDOM, shuffle the list
                 currentSessionIds = if (sortOrder == PhotoSortOrder.RANDOM) {
@@ -476,9 +513,15 @@ class FlowSorterViewModel @Inject constructor(
     /**
      * Get the REAL count of unsorted photos (not limited by LIMIT 500).
      * Used to display accurate total count in the UI.
+     * If albumBucketId is set, only count photos from that album.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun getFilteredPhotosCountFlow(): Flow<Int> {
+        // If filtering by specific album, only count photos from that album
+        if (albumBucketId != null) {
+            return getUnsortedPhotosUseCase.getCountByBuckets(listOf(albumBucketId))
+        }
+        
         return combine(
             preferencesRepository.getPhotoFilterMode(),
             _cameraAlbumIds,
@@ -533,10 +576,21 @@ class FlowSorterViewModel @Inject constructor(
         _albumBubbleList,
         _albumTagSize,
         _maxAlbumTagCount,
-        combine(_albumAddAction, _albumMessage) { action, msg -> Pair(action, msg) }
-    ) { enabled, albums, size, count, (action, msg) ->
-        AlbumModeState(enabled, albums, size, count, action, msg)
+        combine(_albumAddAction, _albumMessage, _showPermissionDialog, _permissionRetryError, _pendingAlbumBucketId) { action, msg, showDialog, retryError, pendingBucket -> 
+            AlbumExtendedState(action, msg, showDialog, retryError, pendingBucket) 
+        }
+    ) { enabled, albums, size, count, extState ->
+        AlbumModeState(enabled, albums, size, count, extState.albumAddAction, extState.albumMessage, 
+            extState.showPermissionDialog, extState.permissionRetryError, extState.pendingAlbumBucketId)
     }
+    
+    private data class AlbumExtendedState(
+        val albumAddAction: AlbumAddAction,
+        val albumMessage: String?,
+        val showPermissionDialog: Boolean,
+        val permissionRetryError: Boolean,
+        val pendingAlbumBucketId: String?
+    )
     
     private data class AlbumModeState(
         val cardSortingAlbumEnabled: Boolean,
@@ -544,7 +598,10 @@ class FlowSorterViewModel @Inject constructor(
         val albumTagSize: Float,
         val maxAlbumTagCount: Int,
         val albumAddAction: AlbumAddAction,
-        val albumMessage: String?
+        val albumMessage: String?,
+        val showPermissionDialog: Boolean,
+        val permissionRetryError: Boolean,
+        val pendingAlbumBucketId: String?
     )
     
     private data class SelectionAndAlbumState(
@@ -677,7 +734,11 @@ class FlowSorterViewModel @Inject constructor(
             albumTagSize = albumState.albumTagSize,
             maxAlbumTagCount = albumState.maxAlbumTagCount,
             albumAddAction = albumState.albumAddAction,
-            albumMessage = albumState.albumMessage
+            albumMessage = albumState.albumMessage,
+            // Permission dialog
+            showPermissionDialog = albumState.showPermissionDialog,
+            permissionRetryError = albumState.permissionRetryError,
+            pendingAlbumBucketId = albumState.pendingAlbumBucketId
         )
     }.stateIn(
         scope = viewModelScope,
@@ -792,6 +853,7 @@ class FlowSorterViewModel @Inject constructor(
                 if (result.isInitialSync) {
                     // Reset counters on initial sync
                     _counters.value = SortCounters()
+                    _sortedCountImmediate.value = 0  // Reset immediate counter too
                     // Reset initial total count to recalculate on next photos load
                     _initialTotalCount.value = -1
                 }
@@ -813,19 +875,27 @@ class FlowSorterViewModel @Inject constructor(
      */
     fun keepPhoto(photoId: String): Int {
         if (photoId.isEmpty()) return 0
+        Log.d(TAG, "keepPhoto: photoId=$photoId, sortedCountImmediate before=${_sortedCountImmediate.value}")
         val comboCount = updateCombo()
         // Mark photo as sorted immediately (removes from display list)
         markPhotoAsSorted(photoId)
+        // Update counters SYNCHRONOUSLY to ensure UI reflects change immediately
+        _counters.value = _counters.value.copy(keep = _counters.value.keep + 1)
+        _sortedCountImmediate.value++  // Immediate counter for UI
+        Log.d(TAG, "keepPhoto: sortedCountImmediate after=${_sortedCountImmediate.value}")
+        
         viewModelScope.launch {
             try {
                 sortPhotoUseCase.keepPhoto(photoId)
                 _lastAction.value = SortAction(photoId, PhotoStatus.KEEP)
-                _counters.value = _counters.value.copy(keep = _counters.value.keep + 1)
                 preferencesRepository.incrementSortedCount()
                 preferencesRepository.incrementKeepCount()
                 // Update widget immediately after sorting
                 widgetUpdater.updateDailyProgressWidgets()
             } catch (e: Exception) {
+                // Rollback counters on error
+                _counters.value = _counters.value.copy(keep = (_counters.value.keep - 1).coerceAtLeast(0))
+                _sortedCountImmediate.value = (_sortedCountImmediate.value - 1).coerceAtLeast(0)
                 _error.value = "操作失败: ${e.message}"
             }
         }
@@ -842,16 +912,22 @@ class FlowSorterViewModel @Inject constructor(
         val comboCount = updateCombo()
         // Mark photo as sorted immediately (removes from display list)
         markPhotoAsSorted(photoId)
+        // Update counters SYNCHRONOUSLY to ensure UI reflects change immediately
+        _counters.value = _counters.value.copy(trash = _counters.value.trash + 1)
+        _sortedCountImmediate.value++  // Immediate counter for UI
+        
         viewModelScope.launch {
             try {
                 sortPhotoUseCase.trashPhoto(photoId)
                 _lastAction.value = SortAction(photoId, PhotoStatus.TRASH)
-                _counters.value = _counters.value.copy(trash = _counters.value.trash + 1)
                 preferencesRepository.incrementSortedCount()
                 preferencesRepository.incrementTrashCount()
                 // Update widget immediately after sorting
                 widgetUpdater.updateDailyProgressWidgets()
             } catch (e: Exception) {
+                // Rollback counters on error
+                _counters.value = _counters.value.copy(trash = (_counters.value.trash - 1).coerceAtLeast(0))
+                _sortedCountImmediate.value = (_sortedCountImmediate.value - 1).coerceAtLeast(0)
                 _error.value = "操作失败: ${e.message}"
             }
         }
@@ -868,16 +944,22 @@ class FlowSorterViewModel @Inject constructor(
         val comboCount = updateCombo()
         // Mark photo as sorted immediately (removes from display list)
         markPhotoAsSorted(photoId)
+        // Update counters SYNCHRONOUSLY to ensure UI reflects change immediately
+        _counters.value = _counters.value.copy(maybe = _counters.value.maybe + 1)
+        _sortedCountImmediate.value++  // Immediate counter for UI
+        
         viewModelScope.launch {
             try {
                 sortPhotoUseCase.maybePhoto(photoId)
                 _lastAction.value = SortAction(photoId, PhotoStatus.MAYBE)
-                _counters.value = _counters.value.copy(maybe = _counters.value.maybe + 1)
                 preferencesRepository.incrementSortedCount()
                 preferencesRepository.incrementMaybeCount()
                 // Update widget immediately after sorting
                 widgetUpdater.updateDailyProgressWidgets()
             } catch (e: Exception) {
+                // Rollback counters on error
+                _counters.value = _counters.value.copy(maybe = (_counters.value.maybe - 1).coerceAtLeast(0))
+                _sortedCountImmediate.value = (_sortedCountImmediate.value - 1).coerceAtLeast(0)
                 _error.value = "操作失败: ${e.message}"
             }
         }
@@ -956,9 +1038,35 @@ class FlowSorterViewModel @Inject constructor(
     /**
      * Keep current photo and add it to an album.
      * The action (copy or move) is determined by albumAddAction setting.
+     * 
+     * For MOVE action on Android 11+, checks if MANAGE_EXTERNAL_STORAGE permission is granted.
+     * If not, shows a dialog prompting the user to grant permission.
      */
     fun keepAndAddToAlbum(bucketId: String) {
         val photo = uiState.value.currentPhoto ?: return
+        
+        // For MOVE action, check permission first
+        if (_albumAddAction.value == AlbumAddAction.MOVE && 
+            storagePermissionHelper.isManageStoragePermissionApplicable() &&
+            !storagePermissionHelper.hasManageStoragePermission()) {
+            // Save pending operation and show permission dialog
+            _pendingPhotoId = photo.id
+            _pendingAlbumBucketId.value = bucketId
+            _permissionRetryError.value = false
+            _showPermissionDialog.value = true
+            return
+        }
+        
+        // Execute the operation
+        executeKeepAndAddToAlbum(photo.id, bucketId)
+    }
+    
+    /**
+     * Execute the keep and add to album operation.
+     * Called directly or after permission is granted.
+     */
+    private fun executeKeepAndAddToAlbum(photoId: String, bucketId: String) {
+        val photo = uiState.value.photos.find { it.id == photoId } ?: return
         
         // Mark as sorted to prevent re-display
         markPhotoAsSorted(photo.id)
@@ -975,9 +1083,12 @@ class FlowSorterViewModel @Inject constructor(
                 preferencesRepository.incrementSortedCount()
                 preferencesRepository.incrementKeepCount()
                 
-                // Get album info
+                // Get album info and actual path
                 val album = _albumBubbleList.value.find { it.bucketId == bucketId }
-                val targetPath = "Pictures/${album?.displayName ?: "PhotoZen"}"
+                // Use getAlbumPath to get the actual album path (e.g., "DCIM/Camera" for system Camera album)
+                // Fall back to Pictures/ only for newly created albums
+                val targetPath = mediaStoreDataSource.getAlbumPath(bucketId)
+                    ?: "Pictures/${album?.displayName ?: "PhotoZen"}"
                 val photoUri = Uri.parse(photo.systemUri)
                 
                 // Perform album operation based on setting
@@ -996,6 +1107,7 @@ class FlowSorterViewModel @Inject constructor(
                                 _albumMessage.value = "已保留并移动到 ${album?.displayName}"
                             }
                             is MovePhotoResult.NeedsConfirmation -> {
+                                // This shouldn't happen after permission check, but handle it
                                 _error.value = "需要权限确认才能移动照片"
                             }
                             is MovePhotoResult.Error -> {
@@ -1010,6 +1122,147 @@ class FlowSorterViewModel @Inject constructor(
                 
             } catch (e: Exception) {
                 _error.value = "操作失败: ${e.message}"
+            }
+        }
+    }
+    
+    /**
+     * Called when user clicks "前往设置授权" in the permission dialog.
+     * The dialog will navigate to settings; this is just for any state updates needed.
+     */
+    fun onOpenPermissionSettings() {
+        // No state changes needed - the dialog handles navigation
+    }
+    
+    /**
+     * Called when user clicks "已授予权限" in the permission dialog.
+     * Checks if permission is actually granted and either retries the operation or shows error.
+     */
+    fun onPermissionGranted() {
+        if (storagePermissionHelper.hasManageStoragePermission()) {
+            // Permission granted, execute pending operation
+            val photoId = _pendingPhotoId
+            val bucketId = _pendingAlbumBucketId.value
+            
+            // Close dialog and clear pending state
+            _showPermissionDialog.value = false
+            _permissionRetryError.value = false
+            _pendingPhotoId = null
+            _pendingAlbumBucketId.value = null
+            
+            // Execute the pending operation
+            if (photoId != null && bucketId != null) {
+                executeKeepAndAddToAlbum(photoId, bucketId)
+            }
+        } else {
+            // Permission still not granted, show error
+            _permissionRetryError.value = true
+        }
+    }
+    
+    /**
+     * Called when user dismisses the permission dialog without granting permission.
+     */
+    fun dismissPermissionDialog() {
+        _showPermissionDialog.value = false
+        _permissionRetryError.value = false
+        _pendingPhotoId = null
+        _pendingAlbumBucketId.value = null
+    }
+    
+    /**
+     * Load all system albums for the album picker.
+     */
+    fun loadSystemAlbums() {
+        viewModelScope.launch {
+            try {
+                val albums = mediaStoreDataSource.getAllAlbums()
+                _availableAlbums.value = albums
+            } catch (e: Exception) {
+                _error.value = "加载相册列表失败: ${e.message}"
+            }
+        }
+    }
+    
+    /**
+     * Add a system album to the quick album list (bubble list).
+     * This allows the user to quickly access this album during card sorting.
+     */
+    fun addAlbumToQuickList(bucketId: String) {
+        viewModelScope.launch {
+            try {
+                // Check if album is already in the list
+                val existingIds = albumBubbleDao.getAllBucketIds().toSet()
+                if (bucketId in existingIds) {
+                    _albumMessage.value = "相册已在快捷列表中"
+                    return@launch
+                }
+                
+                // Get album info from loaded albums or fetch from MediaStore
+                val albums = _availableAlbums.value.ifEmpty { mediaStoreDataSource.getAllAlbums() }
+                val album = albums.find { it.id == bucketId }
+                
+                if (album != null) {
+                    albumOperationsUseCase.addAlbumsToBubbleList(listOf(album))
+                    _albumMessage.value = "已添加「${album.name}」到快捷列表"
+                } else {
+                    _error.value = "找不到该相册"
+                }
+            } catch (e: Exception) {
+                _error.value = "添加相册失败: ${e.message}"
+            }
+        }
+    }
+    
+    /**
+     * Remove an album from the quick album list (bubble list).
+     */
+    fun removeAlbumFromQuickList(bucketId: String) {
+        viewModelScope.launch {
+            try {
+                albumBubbleDao.deleteByBucketId(bucketId)
+            } catch (e: Exception) {
+                _error.value = "移除相册失败: ${e.message}"
+            }
+        }
+    }
+    
+    /**
+     * Create a new album in the system and add it to the quick album list.
+     * The newly created album will be selected.
+     */
+    fun createAlbumAndAdd(albumName: String) {
+        viewModelScope.launch {
+            try {
+                // Create album in system storage
+                val result = mediaStoreDataSource.createAlbum(albumName)
+                
+                if (result != null) {
+                    val (bucketId, displayName) = result
+                    
+                    // Add to bubble list
+                    val newAlbum = AlbumBubbleEntity(
+                        bucketId = bucketId,
+                        displayName = displayName,
+                        sortOrder = 0
+                    )
+                    
+                    // Shift existing albums down
+                    val existingAlbums = albumBubbleDao.getAllSync()
+                    existingAlbums.forEachIndexed { index, album ->
+                        albumBubbleDao.updateSortOrder(album.bucketId, index + 1)
+                    }
+                    
+                    albumBubbleDao.insert(newAlbum)
+                    _albumMessage.value = "已创建相册「$displayName」"
+                    
+                    // Refresh the available albums list
+                    _availableAlbums.value = mediaStoreDataSource.getAllAlbums()
+                } else {
+                    _error.value = "创建相册失败"
+                }
+            } catch (e: Exception) {
+                _error.value = "创建相册失败: ${e.message}"
             }
         }
     }

@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -14,23 +13,46 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.photozen.BuildConfig
+import com.example.photozen.util.ChangelogEntry
+import com.example.photozen.util.ChangelogParser
 
 /**
  * Changelog dialog showing version history.
+ * Dynamically loads and parses CHANGELOG.md from assets.
  * Can be used from SettingsScreen (manual) and HomeScreen (auto-popup).
  */
 @Composable
 fun ChangelogDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var changelog by remember { mutableStateOf<ChangelogEntry?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    
+    // Load changelog from assets
+    LaunchedEffect(Unit) {
+        // Get version without flavor suffix (e.g., "1.4.1.001-explore" -> "1.4.1.001")
+        val version = BuildConfig.VERSION_NAME.substringBefore("-")
+        changelog = ChangelogParser.parseCurrentVersion(context, version)
+        isLoading = false
+    }
+    
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -46,147 +68,14 @@ fun ChangelogDialog(onDismiss: () -> Unit) {
             }
         },
         text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // v1.3.1 Version header (Latest)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "v1.3.1.046",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "2026-01-17",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
+            if (isLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            } else if (changelog != null) {
+                ChangelogContent(changelog!!)
+            } else {
                 Text(
-                    text = "🎨 体验优化",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                
-                Text(
-                    text = "外观设置和滑动体验全面优化",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                // v1.3.1 features
-                ChangelogItem("🎨 外观设置", "新增主题模式切换（深色/浅色/跟随系统）")
-                ChangelogItem("👆 滑动灵敏度", "新增滑动灵敏度调节，不同方向不同阈值")
-                ChangelogItem("✨ 阈值反馈", "到达阈值震动反馈，图标空心变实心")
-                ChangelogItem("🔧 排序修复", "修复筛选状态下排序只在500张内生效的问题")
-                
-                HorizontalDivider()
-                
-                // v1.2 Version header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "v1.2.0.020",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "2026-01-17",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                Text(
-                    text = "🎛️ 自定义首页版本",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                Text(
-                    text = "首页布局可自定义，更灵活的整理体验",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                // v1.2 features
-                ChangelogItem("🎛️ 一站式整理开关", "设置中可开关首页一站式整理模块显示")
-                ChangelogItem("📊 顶部统计", "关闭一站式整理后，首页顶部显示待整理/已整理数量")
-                ChangelogItem("🔄 任务模式改名", "心流模式更名为一条龙整理，更直观")
-                ChangelogItem("💬 意见反馈", "设置页面新增意见反馈与功能许愿入口")
-                
-                HorizontalDivider()
-                
-                // v1.1 Version header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "v1.1.0.018",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "2026-01-17",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                Text(
-                    text = "体验优化：快速滑动、进度显示、小组件",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                HorizontalDivider()
-                
-                // v1.0 Version header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "v1.0.0.001",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "2026-01-16",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                Text(
-                    text = "🎉 第一个正式版本！",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                // Core features list (abbreviated)
-                Text(
-                    text = "包含核心功能：滑动整理、照片对比、标签气泡、无损编辑、心流模式、成就系统、照片管理等",
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "暂无更新日志",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -197,6 +86,76 @@ fun ChangelogDialog(onDismiss: () -> Unit) {
             }
         }
     )
+}
+
+/**
+ * Display changelog content parsed from CHANGELOG.md.
+ */
+@Composable
+private fun ChangelogContent(entry: ChangelogEntry) {
+    Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Version header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "v${entry.version}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = entry.date,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        
+        // Title
+        if (entry.title.isNotEmpty()) {
+            Text(
+                text = entry.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        
+        // Summary
+        if (entry.summary.isNotEmpty()) {
+            Text(
+                text = entry.summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        
+        // Sections
+        entry.sections.forEachIndexed { index, section ->
+            if (index > 0) {
+                HorizontalDivider()
+            }
+            
+            Text(
+                text = section.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            
+            section.items.forEach { item ->
+                ChangelogItem(
+                    title = item.title,
+                    description = item.description
+                )
+            }
+        }
+    }
 }
 
 /**
@@ -211,10 +170,12 @@ private fun ChangelogItem(title: String, description: String) {
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface
         )
-        Text(
-            text = description,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        if (description.isNotEmpty()) {
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }

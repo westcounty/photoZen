@@ -41,10 +41,12 @@ import com.example.photozen.data.local.entity.PhotoEntity
  * Staggered (waterfall) photo grid that preserves original aspect ratios.
  * 
  * Features:
- * - 2-column staggered layout
+ * - Supports 1-4 column layouts
  * - Photos displayed in their original aspect ratio
  * - Optional selection mode with checkmarks
  * - Long press and click callbacks
+ * 
+ * @param columns Number of columns (1-4), defaults to 2
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -53,11 +55,12 @@ fun StaggeredPhotoGrid(
     onPhotoClick: (String, Int) -> Unit,
     onPhotoLongPress: (String, String) -> Unit, // photoId, photoUri
     modifier: Modifier = Modifier,
+    columns: Int = 2,
     selectedIds: Set<String> = emptySet(),
     selectionMode: Boolean = false
 ) {
     LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Fixed(2),
+        columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 4)),
         contentPadding = PaddingValues(8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalItemSpacing = 8.dp,
@@ -169,6 +172,7 @@ private fun StaggeredPhotoItem(
 
 /**
  * Staggered photo grid with selection support for batch operations.
+ * Supports 1-4 column layouts.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -183,7 +187,7 @@ fun SelectableStaggeredPhotoGrid(
     val haptic = LocalHapticFeedback.current
     
     LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 3)),
+        columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 4)),
         contentPadding = PaddingValues(8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalItemSpacing = 8.dp,

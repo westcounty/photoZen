@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -127,6 +128,7 @@ class PreferencesRepository @Inject constructor(
         val KEY_CARD_SORTING_ALBUM_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("card_sorting_album_enabled")
         val KEY_ALBUM_TAG_SIZE = androidx.datastore.preferences.core.floatPreferencesKey("album_tag_size")
         val KEY_MAX_ALBUM_TAG_COUNT = intPreferencesKey("max_album_tag_count")
+        val KEY_ALBUM_VIEW_MODE = stringPreferencesKey("album_view_mode")
         
         // Changelog and Quick Start version tracking
         val KEY_LAST_SEEN_CHANGELOG_VERSION = stringPreferencesKey("last_seen_changelog_version")
@@ -154,6 +156,7 @@ class PreferencesRepository @Inject constructor(
     
     /**
      * Get current photo filter mode.
+     * Uses distinctUntilChanged to prevent re-emissions when other preferences change.
      */
     fun getPhotoFilterMode(): Flow<PhotoFilterMode> = dataStore.data.map { preferences ->
         val modeStr = preferences[KEY_PHOTO_FILTER_MODE] ?: PhotoFilterMode.ALL.name
@@ -162,7 +165,7 @@ class PreferencesRepository @Inject constructor(
         } catch (e: IllegalArgumentException) {
             PhotoFilterMode.ALL
         }
-    }
+    }.distinctUntilChanged()
     
     /**
      * Get current photo filter mode synchronously.
@@ -417,14 +420,14 @@ class PreferencesRepository @Inject constructor(
     
     /**
      * Get photo classification mode (TAG or ALBUM).
-     * Default is TAG.
+     * Default is ALBUM.
      */
     fun getPhotoClassificationMode(): Flow<PhotoClassificationMode> = dataStore.data.map { preferences ->
-        val modeStr = preferences[KEY_PHOTO_CLASSIFICATION_MODE] ?: PhotoClassificationMode.TAG.name
+        val modeStr = preferences[KEY_PHOTO_CLASSIFICATION_MODE] ?: PhotoClassificationMode.ALBUM.name
         try {
             PhotoClassificationMode.valueOf(modeStr)
         } catch (e: IllegalArgumentException) {
-            PhotoClassificationMode.TAG
+            PhotoClassificationMode.ALBUM
         }
     }
     
@@ -456,6 +459,23 @@ class PreferencesRepository @Inject constructor(
     suspend fun setAlbumAddAction(action: AlbumAddAction) {
         dataStore.edit { preferences ->
             preferences[KEY_ALBUM_ADD_ACTION] = action.name
+        }
+    }
+    
+    /**
+     * Get album view mode (BUBBLE or LIST).
+     * Default is BUBBLE.
+     */
+    fun getAlbumViewMode(): Flow<String> = dataStore.data.map { preferences ->
+        preferences[KEY_ALBUM_VIEW_MODE] ?: "BUBBLE"
+    }
+    
+    /**
+     * Set album view mode.
+     */
+    suspend fun setAlbumViewMode(mode: String) {
+        dataStore.edit { preferences ->
+            preferences[KEY_ALBUM_VIEW_MODE] = mode
         }
     }
     
@@ -939,18 +959,19 @@ class PreferencesRepository @Inject constructor(
             GridScreen.FLOW -> KEY_GRID_COLUMNS_FLOW
         }
         dataStore.edit { preferences ->
-            preferences[key] = columns.coerceIn(1, 3) // 1-3 columns
+            preferences[key] = columns.coerceIn(1, 4) // 1-4 columns
         }
     }
     
     /**
-     * Cycle grid columns: 2 -> 3 -> 1 -> 2
+     * Cycle grid columns: 1 -> 2 -> 3 -> 4 -> 1
      */
     suspend fun cycleGridColumns(screen: GridScreen): Int {
         val current = getGridColumnsSync(screen)
         val next = when (current) {
             1 -> 2
             2 -> 3
+            3 -> 4
             else -> 1
         }
         setGridColumns(screen, next)

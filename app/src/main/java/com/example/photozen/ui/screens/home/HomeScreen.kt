@@ -401,12 +401,12 @@ fun HomeScreen(
     // Quick Start Sheet - Higher priority than Changelog
     if (uiState.shouldShowQuickStart) {
         QuickStartSheet(
-            onComplete = { dailyTaskEnabled, dailyTaskTarget, swipeSensitivity, classificationMode ->
+            onComplete = { dailyTaskEnabled, dailyTaskTarget, swipeSensitivity, cardSortingAlbumEnabled ->
                 viewModel.completeQuickStartWithSettings(
                     dailyTaskEnabled = dailyTaskEnabled,
                     dailyTaskTarget = dailyTaskTarget,
                     swipeSensitivity = swipeSensitivity,
-                    classificationMode = classificationMode
+                    cardSortingAlbumEnabled = cardSortingAlbumEnabled
                 )
             },
             onDismiss = {

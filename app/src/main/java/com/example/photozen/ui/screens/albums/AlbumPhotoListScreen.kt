@@ -159,6 +159,7 @@ fun AlbumPhotoListScreen(
                         IconButton(onClick = { viewModel.cycleViewMode() }) {
                             Icon(
                                 imageVector = when (uiState.viewMode) {
+                                    AlbumPhotoListViewMode.GRID_1 -> Icons.Default.ViewColumn
                                     AlbumPhotoListViewMode.GRID_2 -> Icons.Default.GridView
                                     AlbumPhotoListViewMode.GRID_3 -> Icons.Default.ViewModule
                                     AlbumPhotoListViewMode.GRID_4 -> Icons.Default.ViewComfy
@@ -204,6 +205,7 @@ fun AlbumPhotoListScreen(
                         PhotoGrid(
                             photos = uiState.photos,
                             columnCount = when (uiState.viewMode) {
+                                AlbumPhotoListViewMode.GRID_1 -> 1
                                 AlbumPhotoListViewMode.GRID_2 -> 2
                                 AlbumPhotoListViewMode.GRID_3 -> 3
                                 AlbumPhotoListViewMode.GRID_4 -> 4
@@ -316,41 +318,11 @@ private fun AlbumStatsCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "整理进度",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "$sortedCount / $totalCount",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            
-            // Start sorting button
-            if (onStartSorting != null && unsortedCount > 0) {
-                FilledTonalButton(
-                    onClick = onStartSorting,
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    ),
-                    modifier = Modifier.padding(end = 12.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("开始整理")
-                }
-            }
-            
-            // Circular progress
-            Box(contentAlignment = Alignment.Center) {
+            // Circular progress (moved to left)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.padding(end = 12.dp)
+            ) {
                 CircularProgressIndicator(
                     progress = { sortedPercentage },
                     modifier = Modifier.size(56.dp),
@@ -367,6 +339,38 @@ private fun AlbumStatsCard(
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold
                 )
+            }
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "整理进度",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "$sortedCount / $totalCount",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            
+            // Start sorting button (moved to right)
+            if (onStartSorting != null && unsortedCount > 0) {
+                FilledTonalButton(
+                    onClick = onStartSorting,
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("开始整理")
+                }
             }
         }
     }

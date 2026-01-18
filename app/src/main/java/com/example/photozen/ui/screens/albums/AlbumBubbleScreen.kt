@@ -1,7 +1,9 @@
 package com.example.photozen.ui.screens.albums
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -31,6 +33,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -49,6 +52,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.source.Album
+import com.example.photozen.ui.components.SystemAlbumPickerDialog
 import com.example.photozen.ui.components.bubble.BubbleGraphView
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
@@ -206,8 +210,8 @@ fun AlbumBubbleScreen(
                                         onNavigateToQuickSort(album.bucketId)
                                     }
                                 },
-                                onReorder = { from, to ->
-                                    viewModel.reorderAlbums(from, to)
+                                onApplyNewOrder = { newOrder ->
+                                    viewModel.applyNewAlbumOrder(newOrder)
                                 }
                             )
                         }
@@ -286,15 +290,18 @@ fun AlbumBubbleScreen(
         )
     }
     
-    // Album picker dialog
+    // Album picker dialog (using unified component)
     if (uiState.showAlbumPicker) {
-        AlbumPickerDialog(
+        SystemAlbumPickerDialog(
             albums = uiState.availableAlbums,
             selectedIds = uiState.selectedAlbumIds,
             isLoading = uiState.isLoadingAlbums,
             onToggleSelection = { viewModel.toggleAlbumSelection(it) },
             onConfirm = { viewModel.confirmAlbumSelection() },
-            onDismiss = { viewModel.hideAlbumPicker() }
+            onDismiss = { viewModel.hideAlbumPicker() },
+            onCreateAlbum = { albumName ->
+                viewModel.createAlbum(albumName)
+            }
         )
     }
 }
@@ -356,11 +363,52 @@ private fun AlbumListView(
     onAlbumClick: (AlbumBubbleData) -> Unit,
     onAlbumLongClick: (AlbumBubbleData) -> Unit,
     onSortAlbum: (AlbumBubbleData) -> Unit,
-    onReorder: (Int, Int) -> Unit
+    onApplyNewOrder: (List<String>) -> Unit
 ) {
+    // Use local mutable state list for smooth dragging
+    // This allows immediate visual feedback without waiting for ViewModel updates
+    val localAlbums = remember { mutableStateListOf<AlbumBubbleData>() }
+    
+    // Track if we're currently dragging to prevent sync during drag
+    var isDraggingAny by remember { mutableStateOf(false) }
+    
+    // Sync from external albums when they change (but not during drag)
+    LaunchedEffect(albums, isDraggingAny) {
+        if (isDraggingAny) return@LaunchedEffect  // Don't sync during drag
+        
+        // Filter and deduplicate
+        val seen = mutableSetOf<String>()
+        val filtered = albums.filter { album ->
+            album.bucketId.isNotBlank() && seen.add(album.bucketId)
+        }
+        // Only update if content actually changed
+        if (localAlbums.map { it.bucketId } != filtered.map { it.bucketId }) {
+            localAlbums.clear()
+            localAlbums.addAll(filtered)
+        }
+    }
+    
+    // Guard against empty list
+    if (localAlbums.isEmpty() && albums.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "暂无相册",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        return
+    }
+    
     val lazyListState = rememberLazyListState()
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        onReorder(from.index, to.index)
+        // Move item in local list immediately for smooth visual feedback
+        localAlbums.apply {
+            add(to.index, removeAt(from.index))
+        }
     }
     val haptic = LocalHapticFeedback.current
     
@@ -370,8 +418,19 @@ private fun AlbumListView(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(albums, key = { it.bucketId }) { album ->
+        items(localAlbums.toList(), key = { it.bucketId }) { album ->
             ReorderableItem(reorderableState, key = album.bucketId) { isDragging ->
+                // Track dragging state and persist order when drag ends
+                LaunchedEffect(isDragging) {
+                    if (isDragging) {
+                        isDraggingAny = true
+                    } else if (isDraggingAny) {
+                        // Drag ended - persist new order
+                        isDraggingAny = false
+                        onApplyNewOrder(localAlbums.map { it.bucketId })
+                    }
+                }
+                
                 AlbumListItemWithDrag(
                     album = album,
                     isDragging = isDragging,
@@ -438,30 +497,6 @@ private fun AlbumListItem(
                         modifier = Modifier.size(24.dp)
                     )
                 }
-                // Progress overlay
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(2.dp)
-                        .size(20.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                album.sortedPercentage >= 0.8f -> KeepGreen
-                                album.sortedPercentage >= 0.5f -> MaybeAmber
-                                else -> TrashRed
-                            }
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "${(album.sortedPercentage * 100).toInt()}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 8.sp
-                    )
-                }
             }
             
             Spacer(modifier = Modifier.width(12.dp))
@@ -515,9 +550,20 @@ private fun sh.calvin.reorderable.ReorderableCollectionItemScope.AlbumListItemWi
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     
+    // Animate scale when dragging for visual feedback
+    val scale by animateFloatAsState(
+        targetValue = if (isDragging) 1.02f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "drag_scale"
+    )
+    
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .then(
                 if (isDragging) Modifier.shadow(8.dp, RoundedCornerShape(12.dp))
                 else Modifier
@@ -580,30 +626,6 @@ private fun sh.calvin.reorderable.ReorderableCollectionItemScope.AlbumListItemWi
                         modifier = Modifier.size(24.dp)
                     )
                 }
-                // Progress overlay
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(2.dp)
-                        .size(20.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                album.sortedPercentage >= 0.8f -> KeepGreen
-                                album.sortedPercentage >= 0.5f -> MaybeAmber
-                                else -> TrashRed
-                            }
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "${(album.sortedPercentage * 100).toInt()}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 8.sp
-                    )
-                }
             }
             
             Spacer(modifier = Modifier.width(12.dp))
@@ -638,225 +660,6 @@ private fun sh.calvin.reorderable.ReorderableCollectionItemScope.AlbumListItemWi
                 }
             }
         }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AlbumPickerDialog(
-    albums: List<Album>,
-    selectedIds: Set<String>,
-    isLoading: Boolean,
-    onToggleSelection: (String) -> Unit,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-    onCreateAlbum: (String) -> Unit = {}
-) {
-    var showCreateDialog by remember { mutableStateOf(false) }
-    var newAlbumName by remember { mutableStateOf("") }
-    
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("编辑我的相册")
-                // Create album button
-                TextButton(onClick = { showCreateDialog = true }) {
-                    Icon(
-                        imageVector = Icons.Default.CreateNewFolder,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("新建")
-                }
-            }
-        },
-        text = {
-            if (isLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 400.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(albums.sortedByDescending { it.photoCount }, key = { it.id }) { album ->
-                        val isSelected = album.id in selectedIds
-                        
-                        AlbumGridItem(
-                            album = album,
-                            isSelected = isSelected,
-                            onClick = { onToggleSelection(album.id) }
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                enabled = !isLoading
-            ) {
-                Text("确定")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
-    )
-    
-    // Create album dialog
-    if (showCreateDialog) {
-        AlertDialog(
-            onDismissRequest = { 
-                showCreateDialog = false 
-                newAlbumName = ""
-            },
-            title = { Text("新建相册") },
-            text = {
-                OutlinedTextField(
-                    value = newAlbumName,
-                    onValueChange = { newAlbumName = it },
-                    label = { Text("相册名称") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (newAlbumName.isNotBlank()) {
-                            onCreateAlbum(newAlbumName.trim())
-                            showCreateDialog = false
-                            newAlbumName = ""
-                        }
-                    },
-                    enabled = newAlbumName.isNotBlank()
-                ) {
-                    Text("创建")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { 
-                        showCreateDialog = false 
-                        newAlbumName = ""
-                    }
-                ) {
-                    Text("取消")
-                }
-            }
-        )
-    }
-}
-
-/**
- * Album item for the grid picker.
- */
-@Composable
-private fun AlbumGridItem(
-    album: Album,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .then(
-                if (isSelected) Modifier
-                    .border(
-                        width = 2.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                else Modifier
-            )
-            .padding(4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Cover image
-        Box(
-            modifier = Modifier
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
-        ) {
-            if (album.coverUri != null) {
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(android.net.Uri.parse(album.coverUri))
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.PhotoAlbum,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-            
-            // Selection indicator
-            if (isSelected) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .size(20.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(4.dp))
-        
-        // Album name
-        Text(
-            text = album.name,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center
-        )
-        
-        // Photo count
-        Text(
-            text = "${album.photoCount}",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 

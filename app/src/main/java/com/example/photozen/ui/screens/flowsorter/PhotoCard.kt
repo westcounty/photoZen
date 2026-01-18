@@ -52,9 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import coil3.compose.AsyncImagePainter
-import coil3.compose.SubcomposeAsyncImage
-import coil3.compose.SubcomposeAsyncImageContent
+import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.ui.theme.KeepGreen
@@ -76,6 +74,8 @@ import java.util.Locale
  * @param swipeDirection Current swipe direction based on gesture
  * @param hasReachedThreshold Whether the swipe has reached the action threshold
  * @param onPhotoClick Called when photo is clicked (for fullscreen view)
+ * @param showInfoOnImage When true, photo info is shown on the image itself (bottom-left corner)
+ *                        instead of at the card bottom. Used when album tags are displayed at bottom.
  * @param modifier Modifier for the card
  */
 @Composable
@@ -86,6 +86,7 @@ fun PhotoCard(
     swipeDirection: SwipeDirection = SwipeDirection.NONE,
     hasReachedThreshold: Boolean = false,
     onPhotoClick: (() -> Unit)? = null,
+    showInfoOnImage: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     // Calculate aspect ratio from photo dimensions
@@ -124,13 +125,17 @@ fun PhotoCard(
                     )
             ) {
                 // Photo with preserved aspect ratio
-                // Use SubcomposeAsyncImage to show a placeholder background while loading
-                // This prevents the "flash to black" issue when transitioning between cards
-                SubcomposeAsyncImage(
+                // Use AsyncImage WITHOUT conditional rendering to prevent flash on recomposition
+                // The background is always visible, and the image renders on top when ready
+                // This eliminates the flash when switching cards
+                AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
                         .data(Uri.parse(photo.systemUri))
                         .memoryCacheKey(photo.id) // Use photo.id for better cache hits
                         .diskCacheKey(photo.id) // Also use for disk cache
+                        .memoryCachePolicy(CachePolicy.ENABLED) // Prioritize memory cache
+                        .diskCachePolicy(CachePolicy.ENABLED) // Use disk cache as fallback
+                        .placeholderMemoryCacheKey(photo.id) // Use preloaded image as placeholder
                         .build(),
                     contentDescription = photo.displayName,
                     contentScale = ContentScale.Fit,
@@ -138,31 +143,38 @@ fun PhotoCard(
                         .fillMaxWidth()
                         .aspectRatio(aspectRatio.coerceIn(0.3f, 3f))
                         .clip(RoundedCornerShape(16.dp))
-                        // Add a subtle background so there's no "black flash" while loading
+                        // Background is ALWAYS visible - prevents flash during state transitions
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    when (painter.state) {
-                        is AsyncImagePainter.State.Loading -> {
-                            // Show a subtle loading placeholder
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                )
+                
+                // When showInfoOnImage is true, display info on the IMAGE itself (not card)
+                // This ensures info is positioned relative to the photo, not the entire card
+                if (showInfoOnImage) {
+                    // Gradient overlay at the bottom of the IMAGE
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp)
+                            .align(Alignment.BottomCenter)
+                            .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.6f)
+                                    )
+                                )
                             )
-                        }
-                        is AsyncImagePainter.State.Error -> {
-                            // Show error state
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(MaterialTheme.colorScheme.errorContainer)
-                            )
-                        }
-                        else -> {
-                            // Show the actual image
-                            SubcomposeAsyncImageContent()
-                        }
-                    }
+                    )
+                    
+                    // Info text at the bottom-left of the IMAGE
+                    PhotoInfoOverlay(
+                        photo = photo,
+                        compact = true,
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(start = 12.dp, bottom = 8.dp, end = 12.dp)
+                    )
                 }
                 
                 // Tap hint badge - Only shown when zoom is enabled
@@ -186,29 +198,32 @@ fun PhotoCard(
                 }
             }
             
-            // Gradient overlay at bottom for text readability
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(120.dp)
-                    .align(Alignment.BottomCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+            // Photo info display - default position (when showInfoOnImage is false)
+            if (!showInfoOnImage) {
+                // Default: info at card bottom with surface-colored gradient
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+                                )
                             )
                         )
-                    )
-            )
-            
-            // Photo info at bottom
-            PhotoInfoOverlay(
-                photo = photo,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(20.dp)
-            )
+                )
+                
+                PhotoInfoOverlay(
+                    photo = photo,
+                    compact = false,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(20.dp)
+                )
+            }
             
             // Swipe indicator overlays
             SwipeIndicatorOverlay(
@@ -224,10 +239,12 @@ fun PhotoCard(
 
 /**
  * Displays photo metadata at the bottom of the card.
+ * @param compact When true, uses smaller text and white color (for overlay on image)
  */
 @Composable
 private fun PhotoInfoOverlay(
     photo: PhotoEntity,
+    compact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -235,26 +252,43 @@ private fun PhotoInfoOverlay(
     var locationText by remember { mutableStateOf<String?>(null) }
     
     // Load location text asynchronously
-    LaunchedEffect(photo.latitude, photo.longitude) {
-        locationText = offlineGeocoder.getLocationText(photo.latitude, photo.longitude)
+    // If photo has GPS coordinates, use them directly
+    // Otherwise, if GPS hasn't been scanned yet, try to read from EXIF lazily
+    LaunchedEffect(photo.id, photo.latitude, photo.longitude, photo.gpsScanned) {
+        locationText = when {
+            // Photo already has GPS coordinates
+            photo.latitude != null && photo.longitude != null -> {
+                offlineGeocoder.getLocationText(photo.latitude, photo.longitude)
+            }
+            // GPS not yet scanned - try to read from EXIF lazily
+            !photo.gpsScanned -> {
+                offlineGeocoder.getLocationTextFromUri(photo.systemUri)
+            }
+            // GPS was scanned but no data found
+            else -> null
+        }
     }
+    
+    // Text colors based on compact mode
+    val primaryTextColor = if (compact) Color.White else MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = if (compact) Color.White.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
     
     Column(modifier = modifier) {
         // File name
         Text(
             text = photo.displayName,
-            style = MaterialTheme.typography.titleMedium,
+            style = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = primaryTextColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
         
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(if (compact) 2.dp else 4.dp))
         
         // Date/Time and Location row
         Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 16.dp)
         ) {
             // Date and Time (combined)
             // Prefer dateTaken (EXIF), fallback to dateAdded (file creation time)
@@ -266,45 +300,76 @@ private fun PhotoInfoOverlay(
             displayTime?.let { timestamp ->
                 Text(
                     text = formatDateTime(timestamp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodySmall,
+                    color = secondaryTextColor
                 )
             }
             
-            // Location
+            // Dimensions (compact: show here instead of separate row)
+            if (compact && photo.width > 0 && photo.height > 0) {
+                Text(
+                    text = "${photo.width}×${photo.height}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = secondaryTextColor
+                )
+            }
+            
+            // File size (in MB, one decimal place) - compact mode
+            if (compact && photo.size > 0) {
+                val sizeMB = photo.size / (1024.0 * 1024.0)
+                Text(
+                    text = String.format("%.1fMB", sizeMB),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = secondaryTextColor
+                )
+            }
+            
+            // Location - show in both compact and non-compact modes
             locationText?.let { location ->
                 Text(
                     text = location,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodySmall,
+                    color = secondaryTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
         }
         
-        Spacer(modifier = Modifier.height(2.dp))
-        
-        // Dimensions and Camera row
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Dimensions
-            if (photo.width > 0 && photo.height > 0) {
-                Text(
-                    text = "${photo.width} × ${photo.height}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        // Dimensions, File size, and Camera row (only in non-compact mode)
+        if (!compact) {
+            Spacer(modifier = Modifier.height(2.dp))
             
-            // Camera model
-            photo.cameraModel?.let { model ->
-                Text(
-                    text = model,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Dimensions
+                if (photo.width > 0 && photo.height > 0) {
+                    Text(
+                        text = "${photo.width} × ${photo.height}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = secondaryTextColor
+                    )
+                }
+                
+                // File size (in MB, one decimal place)
+                if (photo.size > 0) {
+                    val sizeMB = photo.size / (1024.0 * 1024.0)
+                    Text(
+                        text = String.format("%.1f MB", sizeMB),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = secondaryTextColor
+                    )
+                }
+                
+                // Camera model
+                photo.cameraModel?.let { model ->
+                    Text(
+                        text = model,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = secondaryTextColor
+                    )
+                }
             }
         }
     }

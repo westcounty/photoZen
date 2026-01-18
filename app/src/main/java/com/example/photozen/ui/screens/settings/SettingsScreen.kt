@@ -1328,7 +1328,7 @@ private fun AboutCard(
             
             TextButton(onClick = onVersionClick) {
                 Text(
-                    text = "v1.3.1.046",
+                    text = "v${com.example.photozen.BuildConfig.VERSION_NAME}",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -1737,6 +1737,81 @@ private fun ClassificationModeDialog(
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     
+                    // Card sorting album enabled (moved before album add action)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "滑动筛选照片时可分类到相册",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "筛选界面底部将显示快捷添加到相册的入口",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = cardSortingAlbumEnabled,
+                            onCheckedChange = onCardSortingAlbumEnabledChanged
+                        )
+                    }
+                    
+                    // Album tag settings (only if enabled)
+                    if (cardSortingAlbumEnabled) {
+                        // Album tag size
+                        Text(
+                            text = "相册标签大小",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "小",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Slider(
+                                value = albumTagSize,
+                                onValueChange = onAlbumTagSizeChanged,
+                                valueRange = 0.6f..1.5f,
+                                steps = 8,  // Add steps to make slider stop at discrete positions
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(horizontal = 8.dp)
+                            )
+                            Text(
+                                text = "大",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        
+                        // Max album tag count
+                        Text(
+                            text = "最大显示数量: ${if (maxAlbumTagCount == 0) "不限" else maxAlbumTagCount.toString()}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                        )
+                        Slider(
+                            value = maxAlbumTagCount.toFloat(),
+                            onValueChange = { onMaxAlbumTagCountChanged(it.toInt()) },
+                            valueRange = 0f..20f,
+                            steps = 19,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+                    
                     // Album add action
                     Text(
                         text = "添加到相册时默认操作",
@@ -1789,7 +1864,7 @@ private fun ClassificationModeDialog(
                         }
                     }
                     
-                    // Permission warning
+                    // Permission warning - only show when permission is needed and not granted
                     if (albumAddAction == com.example.photozen.data.repository.AlbumAddAction.MOVE &&
                         !hasManageStoragePermission && isPermissionApplicable) {
                         Row(
@@ -1829,86 +1904,12 @@ private fun ClassificationModeDialog(
                             )
                         }
                     }
-                    
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
-                    
-                    // Card sorting album enabled
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "卡片筛选时显示相册标签",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                text = "在筛选界面底部显示快捷相册入口",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = cardSortingAlbumEnabled,
-                            onCheckedChange = onCardSortingAlbumEnabledChanged
-                        )
-                    }
-                    
-                    // Album tag settings (only if enabled)
-                    if (cardSortingAlbumEnabled) {
-                        // Album tag size
-                        Text(
-                            text = "相册标签大小",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "小",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Slider(
-                                value = albumTagSize,
-                                onValueChange = onAlbumTagSizeChanged,
-                                valueRange = 0.6f..1.5f,  // Extended range for more noticeable size change
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(horizontal = 8.dp)
-                            )
-                            Text(
-                                text = "大",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        
-                        // Max album tag count
-                        Text(
-                            text = "最大显示数量: ${if (maxAlbumTagCount == 0) "不限" else maxAlbumTagCount.toString()}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-                        )
-                        Slider(
-                            value = maxAlbumTagCount.toFloat(),
-                            onValueChange = { onMaxAlbumTagCountChanged(it.toInt()) },
-                            valueRange = 0f..20f,
-                            steps = 19,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("关闭")
+                Text("保存")
             }
         }
     )

@@ -1,7 +1,7 @@
 # PhotoZen 图禅 📷
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-1.3.1.046-blue" alt="Version">
+  <img src="https://img.shields.io/badge/Version-1.4.0.001-blue" alt="Version">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?logo=android" alt="Platform">
   <img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF?logo=kotlin" alt="Kotlin">
   <img src="https://img.shields.io/badge/Min%20SDK-26-brightgreen" alt="Min SDK">
@@ -53,7 +53,8 @@
 
 - **智能筛选**：按相册、日期范围筛选待整理照片
 - **批量管理**：多选后一键操作
-- **列数切换**：所有瀑布流支持 1/2/3 列切换
+- **列数切换**：所有瀑布流支持 1-4 列切换
+- **相册分类**：筛选时可直接将照片分类到相册
 - **回收站**：删除可恢复，彻底删除需确认
 - **外部删除同步**：自动检测系统相册中已删除的照片
 

@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.PhotoAlbum
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material3.AlertDialog
@@ -104,6 +105,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.data.repository.PhotoClassificationMode
 import com.example.photozen.ui.components.PhotoListActionSheet
 import com.example.photozen.ui.components.openImageWithApp
 import com.example.photozen.ui.theme.KeepGreen
@@ -295,10 +297,11 @@ fun PhotoListScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Prominent Quick Tag Banner for KEEP status - show untagged count (only when not in selection mode)
+            // Prominent Quick Classify Banner for KEEP status - show untagged count (only when not in selection mode)
             if (!uiState.isSelectionMode && uiState.status == PhotoStatus.KEEP && uiState.untaggedCount > 0) {
-                QuickTagBanner(
+                QuickClassifyBanner(
                     photoCount = uiState.untaggedCount,
+                    isAlbumMode = uiState.classificationMode == PhotoClassificationMode.ALBUM,
                     onClick = onNavigateToQuickTag
                 )
             }
@@ -675,11 +678,12 @@ private fun SelectionBottomBar(
 }
 
 /**
- * Prominent Quick Tag Banner - highly visible call-to-action.
+ * Prominent Quick Classify Banner - adapts to classification mode (Tag or Album).
  */
 @Composable
-private fun QuickTagBanner(
+private fun QuickClassifyBanner(
     photoCount: Int,
+    isAlbumMode: Boolean,
     onClick: () -> Unit
 ) {
     Card(
@@ -711,7 +715,7 @@ private fun QuickTagBanner(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Label,
+                        imageVector = if (isAlbumMode) Icons.Default.PhotoAlbum else Icons.AutoMirrored.Filled.Label,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(24.dp)
@@ -728,7 +732,11 @@ private fun QuickTagBanner(
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                     Text(
-                        text = "为 $photoCount 张照片添加标签",
+                        text = if (isAlbumMode) {
+                            "将 $photoCount 张照片分类到不同相册"
+                        } else {
+                            "为 $photoCount 张照片添加标签"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                     )
@@ -766,7 +774,7 @@ private fun PhotoGrid(
 ) {
     // Use sortOrder and columns in key to force recomposition when they change
     LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 3)),
+        columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 4)),
         contentPadding = PaddingValues(8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalItemSpacing = 8.dp,

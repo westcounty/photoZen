@@ -639,7 +639,9 @@ class PhotoListViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val album = _albumState.value.albumBubbleList.find { it.bucketId == bucketId }
-                val targetPath = "Pictures/${album?.displayName ?: "PhotoZen"}"
+                // Use getAlbumPath to get the actual album path (e.g., "DCIM/Camera" for system Camera album)
+                val targetPath = mediaStoreDataSource.getAlbumPath(bucketId)
+                    ?: "Pictures/${album?.displayName ?: "PhotoZen"}"
                 var successCount = 0
                 
                 for (photoId in selectedIds) {
@@ -681,7 +683,9 @@ class PhotoListViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val album = _albumState.value.albumBubbleList.find { it.bucketId == bucketId }
-                val targetPath = "Pictures/${album?.displayName ?: "PhotoZen"}"
+                // Use getAlbumPath to get the actual album path (e.g., "DCIM/Camera" for system Camera album)
+                val targetPath = mediaStoreDataSource.getAlbumPath(bucketId)
+                    ?: "Pictures/${album?.displayName ?: "PhotoZen"}"
                 var successCount = 0
                 
                 for (photoId in selectedIds) {
@@ -716,7 +720,9 @@ class PhotoListViewModel @Inject constructor(
             try {
                 val photo = uiState.value.photos.find { it.id == photoId } ?: return@launch
                 val album = _albumState.value.albumBubbleList.find { it.bucketId == bucketId }
-                val targetPath = "Pictures/${album?.displayName ?: "PhotoZen"}"
+                // Use getAlbumPath to get the actual album path (e.g., "DCIM/Camera" for system Camera album)
+                val targetPath = mediaStoreDataSource.getAlbumPath(bucketId)
+                    ?: "Pictures/${album?.displayName ?: "PhotoZen"}"
                 val photoUri = Uri.parse(photo.systemUri)
                 
                 if (copy) {

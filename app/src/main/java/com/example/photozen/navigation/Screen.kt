@@ -19,11 +19,13 @@ sealed interface Screen {
      * Flow Sorter screen - Tinder-style swipe to sort photos
      * @param isDailyTask Whether this is a daily task session
      * @param targetCount Target number of photos to sort (if isDailyTask)
+     * @param albumBucketId Optional bucket ID to filter photos to a specific album
      */
     @Serializable
     data class FlowSorter(
         val isDailyTask: Boolean = false,
-        val targetCount: Int = -1
+        val targetCount: Int = -1,
+        val albumBucketId: String? = null
     ) : Screen
     
     /**

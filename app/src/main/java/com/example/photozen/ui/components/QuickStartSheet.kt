@@ -76,12 +76,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import com.example.photozen.data.repository.PhotoClassificationMode
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
@@ -107,13 +108,13 @@ fun QuickStartSheet(
         dailyTaskEnabled: Boolean,
         dailyTaskTarget: Int,
         swipeSensitivity: Float,
-        classificationMode: PhotoClassificationMode
+        cardSortingAlbumEnabled: Boolean
     ) -> Unit,
     onDismiss: () -> Unit,
     initialDailyTaskEnabled: Boolean = true,
     initialDailyTaskTarget: Int = 100,
     initialSwipeSensitivity: Float = 1.0f,
-    initialClassificationMode: PhotoClassificationMode = PhotoClassificationMode.ALBUM,
+    initialCardSortingAlbumEnabled: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -126,7 +127,7 @@ fun QuickStartSheet(
     var dailyTaskEnabled by remember { mutableStateOf(initialDailyTaskEnabled) }
     var dailyTaskTarget by remember { mutableIntStateOf(initialDailyTaskTarget) }
     var swipeSensitivity by remember { mutableFloatStateOf(initialSwipeSensitivity) }
-    var classificationMode by remember { mutableStateOf(initialClassificationMode) }
+    var cardSortingAlbumEnabled by remember { mutableStateOf(initialCardSortingAlbumEnabled) }
     
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -193,9 +194,9 @@ fun QuickStartSheet(
                         sensitivity = swipeSensitivity,
                         onSensitivityChange = { swipeSensitivity = it }
                     )
-                    2 -> ClassificationModeStep(
-                        mode = classificationMode,
-                        onModeChange = { classificationMode = it }
+                    2 -> AlbumQuickSortStep(
+                        enabled = cardSortingAlbumEnabled,
+                        onEnabledChange = { cardSortingAlbumEnabled = it }
                     )
                 }
             }
@@ -228,7 +229,7 @@ fun QuickStartSheet(
                                     dailyTaskEnabled,
                                     dailyTaskTarget,
                                     swipeSensitivity,
-                                    classificationMode
+                                    cardSortingAlbumEnabled
                                 )
                             }
                         }
@@ -524,20 +525,44 @@ private fun SwipeSensitivityStep(
 }
 
 /**
+ * Base threshold for triggering a swipe action (as fraction of screen width/height)
+ * Same as SwipeablePhotoCard to ensure consistent feel
+ */
+private const val BASE_SWIPE_THRESHOLD = 0.25f
+private const val THRESHOLD_MULTIPLIER_RIGHT = 1.0f
+private const val THRESHOLD_MULTIPLIER_LEFT = 0.9f
+private const val THRESHOLD_MULTIPLIER_UP = 0.8f
+private const val THRESHOLD_MULTIPLIER_DOWN = 0.7f
+
+/**
  * Virtual swipe card for testing sensitivity.
+ * Uses the same threshold calculation as the actual SwipeablePhotoCard
+ * to ensure users feel the exact same sensitivity.
+ * 
+ * Gesture mapping (same as actual card sorting):
+ * - LEFT/RIGHT → Keep (Green) - Heart icons
+ * - UP → Trash (Red) - Delete icons
+ * - DOWN → Maybe (Amber) - Help icons
  */
 @Composable
 private fun VirtualSwipeCard(
     sensitivity: Float
 ) {
     val haptic = LocalHapticFeedback.current
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
     
-    // Calculate thresholds based on sensitivity
-    val baseThreshold = 120.dp
-    val rightThreshold = baseThreshold * sensitivity
-    val leftThreshold = baseThreshold * sensitivity * 0.9f
-    val upThreshold = baseThreshold * sensitivity * 0.8f
-    val downThreshold = baseThreshold * sensitivity * 0.7f
+    // Calculate screen dimensions in pixels (same as SwipeablePhotoCard)
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
+    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
+    
+    // Calculate direction-specific thresholds based on sensitivity (same formula as SwipeablePhotoCard)
+    // Higher sensitivity value = larger threshold = harder to trigger
+    val baseThreshold = BASE_SWIPE_THRESHOLD * sensitivity
+    val thresholdRight = screenWidthPx * baseThreshold * THRESHOLD_MULTIPLIER_RIGHT
+    val thresholdLeft = screenWidthPx * baseThreshold * THRESHOLD_MULTIPLIER_LEFT
+    val thresholdUp = screenHeightPx * baseThreshold * THRESHOLD_MULTIPLIER_UP
+    val thresholdDown = screenHeightPx * baseThreshold * THRESHOLD_MULTIPLIER_DOWN
     
     var cardIndex by remember { mutableIntStateOf(0) }
     var offsetX by remember { mutableFloatStateOf(0f) }
@@ -545,28 +570,29 @@ private fun VirtualSwipeCard(
     var hasTriggeredFeedback by remember { mutableStateOf(false) }
     
     // Determine current swipe direction and if threshold is met
+    // Uses SAME logic as SwipeablePhotoCard for consistent feel:
+    // - 50f dead zone before direction is detected
+    // - UP/DOWN have priority when vertical offset > horizontal offset
     val swipeDirection = remember(offsetX, offsetY) {
         when {
-            offsetX.absoluteValue > offsetY.absoluteValue -> {
-                if (offsetX > 0) SwipeDirection.RIGHT else SwipeDirection.LEFT
-            }
-            offsetY < 0 -> SwipeDirection.UP
-            offsetY > 0 -> SwipeDirection.DOWN
+            // UP has priority (same as SwipeablePhotoCard)
+            offsetY < -50f && offsetY.absoluteValue > offsetX.absoluteValue -> SwipeDirection.UP
+            // DOWN has priority
+            offsetY > 50f && offsetY.absoluteValue > offsetX.absoluteValue -> SwipeDirection.DOWN
+            // RIGHT (only needs horizontal threshold)
+            offsetX > 50f -> SwipeDirection.RIGHT
+            // LEFT (only needs horizontal threshold)
+            offsetX < -50f -> SwipeDirection.LEFT
             else -> null
         }
     }
     
-    val thresholdMet = remember(offsetX, offsetY, sensitivity) {
-        val rightThresholdPx = rightThreshold.value
-        val leftThresholdPx = leftThreshold.value
-        val upThresholdPx = upThreshold.value
-        val downThresholdPx = downThreshold.value
-        
+    val thresholdMet = remember(offsetX, offsetY, thresholdRight, thresholdLeft, thresholdUp, thresholdDown) {
         when (swipeDirection) {
-            SwipeDirection.RIGHT -> offsetX >= rightThresholdPx
-            SwipeDirection.LEFT -> offsetX <= -leftThresholdPx
-            SwipeDirection.UP -> offsetY <= -upThresholdPx
-            SwipeDirection.DOWN -> offsetY >= downThresholdPx
+            SwipeDirection.RIGHT -> offsetX >= thresholdRight
+            SwipeDirection.LEFT -> offsetX <= -thresholdLeft
+            SwipeDirection.UP -> offsetY <= -thresholdUp && offsetY.absoluteValue > offsetX.absoluteValue
+            SwipeDirection.DOWN -> offsetY >= thresholdDown && offsetY.absoluteValue > offsetX.absoluteValue
             null -> false
         }
     }
@@ -641,26 +667,31 @@ private fun VirtualSwipeCard(
                 },
             contentAlignment = Alignment.Center
         ) {
-            // Direction indicator
+            // Direction indicator - corrected mapping:
+            // LEFT/RIGHT → Keep (Green), UP → Trash (Red), DOWN → Maybe (Amber)
             val icon: ImageVector?
             val iconTint: Color
             
             when {
                 swipeDirection == SwipeDirection.RIGHT -> {
+                    // RIGHT → Keep (Green)
                     icon = if (thresholdMet) Icons.Default.Favorite else Icons.Default.FavoriteBorder
                     iconTint = KeepGreen
                 }
                 swipeDirection == SwipeDirection.LEFT -> {
-                    icon = if (thresholdMet) Icons.Default.QuestionMark else Icons.Default.HelpOutline
-                    iconTint = MaybeAmber
+                    // LEFT → Keep (Green) - same as RIGHT
+                    icon = if (thresholdMet) Icons.Default.Favorite else Icons.Default.FavoriteBorder
+                    iconTint = KeepGreen
                 }
                 swipeDirection == SwipeDirection.UP -> {
+                    // UP → Trash (Red)
                     icon = if (thresholdMet) Icons.Default.Delete else Icons.Default.DeleteOutline
                     iconTint = TrashRed
                 }
                 swipeDirection == SwipeDirection.DOWN -> {
-                    icon = if (thresholdMet) Icons.Default.Delete else Icons.Default.DeleteOutline
-                    iconTint = TrashRed
+                    // DOWN → Maybe (Amber)
+                    icon = if (thresholdMet) Icons.Default.QuestionMark else Icons.Default.HelpOutline
+                    iconTint = MaybeAmber
                 }
                 else -> {
                     icon = null
@@ -695,7 +726,7 @@ private fun VirtualSwipeCard(
             }
         }
         
-        // Direction hints
+        // Direction hints - corrected labels
         Text(
             text = "👉 保留",
             style = MaterialTheme.typography.labelSmall,
@@ -705,7 +736,7 @@ private fun VirtualSwipeCard(
                 .padding(end = 8.dp)
         )
         Text(
-            text = "待定 👈",
+            text = "保留 👈",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
@@ -721,7 +752,7 @@ private fun VirtualSwipeCard(
                 .padding(top = 8.dp)
         )
         Text(
-            text = "⬇️ 删除",
+            text = "⬇️ 待定",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
@@ -736,12 +767,13 @@ private enum class SwipeDirection {
 }
 
 /**
- * Step 3: Classification Mode Selection
+ * Step 3: Album Quick Sort Option
+ * Let users choose whether to enable album classification during card sorting
  */
 @Composable
-private fun ClassificationModeStep(
-    mode: PhotoClassificationMode,
-    onModeChange: (PhotoClassificationMode) -> Unit
+private fun AlbumQuickSortStep(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -768,44 +800,44 @@ private fun ClassificationModeStep(
             Spacer(modifier = Modifier.width(12.dp))
             Column {
                 Text(
-                    text = "分类方式",
+                    text = "筛选时分类到相册",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "选择适合你的照片整理方式",
+                    text = "选择你希望的筛选方式",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
         
-        // Mode cards
+        // Option cards
         ModeSelectionCard(
-            title = "标签模式",
-            description = "使用标签灵活分类照片，一张照片可以有多个标签",
-            icon = Icons.Default.Sell,
-            iconTint = Color(0xFFA78BFA),
-            isSelected = mode == PhotoClassificationMode.TAG,
-            onClick = { onModeChange(PhotoClassificationMode.TAG) },
+            title = "专注筛选",
+            description = "滑动筛选时专注于区分保留、待定和删除",
+            icon = Icons.Default.SwipeRight,
+            iconTint = Color(0xFF4CAF50),
+            isSelected = !enabled,
+            onClick = { onEnabledChange(false) },
             features = listOf(
-                "适合需要多维度分类的场景",
-                "照片可以同时属于多个分类",
-                "标签可以随时编辑和管理"
+                "操作更简洁，专注于照片去留",
+                "适合快速整理大量照片",
+                "减少操作选项，提高效率"
             )
         )
         
         ModeSelectionCard(
-            title = "相册模式",
-            description = "直接将照片分类到系统相册，整理后即可在相册应用查看",
+            title = "边筛选边分类",
+            description = "滑动筛选照片时可快捷分类到相册",
             icon = Icons.Default.Collections,
             iconTint = Color(0xFF4FC3F7),
-            isSelected = mode == PhotoClassificationMode.ALBUM,
-            onClick = { onModeChange(PhotoClassificationMode.ALBUM) },
+            isSelected = enabled,
+            onClick = { onEnabledChange(true) },
             features = listOf(
-                "与系统相册无缝衔接",
-                "整理后直接可用，无需导出",
-                "支持移动或复制到相册"
+                "筛选界面底部显示快捷相册入口",
+                "保留照片时可一键分类到相册",
+                "适合边整理边归档的场景"
             )
         )
     }

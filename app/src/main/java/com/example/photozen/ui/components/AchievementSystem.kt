@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Assignment
@@ -37,6 +38,8 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FilterVintage
 import androidx.compose.material.icons.filled.FlashOn
@@ -65,6 +68,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -83,19 +87,19 @@ import com.example.photozen.data.repository.AchievementData
 
 /**
  * Achievement category enumeration.
+ * Order: Daily Task → Sorting → Dedicated → Combo → Tagging → Selector → Cleaner → Creative → Explorer → Master
  */
 enum class AchievementCategory(val displayName: String, val icon: ImageVector) {
+    DAILY_TASK("每日挑战", Icons.Default.Assignment),
     SORTING("整理大师", Icons.Default.PhotoLibrary),
-    COMBO("连击高手", Icons.Default.Bolt),
-    TAGGING("标签达人", Icons.Default.Label),
-    COLLECTOR("收藏专家", Icons.Default.Favorite),
-    CLEANER("清理专家", Icons.Default.Delete),
-    CREATIVE("创意大师", Icons.Default.ContentCopy),
-    EXPORTER("导出达人", Icons.Default.Save),
-    EXPLORER("探索者", Icons.Default.Visibility),
     DEDICATED("坚持不懈", Icons.Default.Today),
-    MASTER("大师之路", Icons.Default.WorkspacePremium),
-    DAILY_TASK("每日挑战", Icons.Default.Assignment)
+    COMBO("连击高手", Icons.Default.Bolt),
+    TAGGING("分类达人", Icons.Default.Label),  // Renamed: supports both tags and albums
+    SELECTOR("精选达人", Icons.Default.Favorite),  // Renamed from "收藏专家"
+    CLEANER("清理专家", Icons.Default.Delete),
+    CREATIVE("创意大师", Icons.Default.ContentCopy),  // Merged with EXPORTER
+    EXPLORER("探索者", Icons.Default.Visibility),
+    MASTER("大师之路", Icons.Default.WorkspacePremium)
 }
 
 /**
@@ -208,27 +212,28 @@ fun generateAchievements(data: AchievementData): List<Achievement> {
             color = Color(0xFFFFD700), rarity = AchievementRarity.LEGENDARY
         ),
         
-        // ==================== 标签达人 (Tagging Expert) ====================
+        // ==================== 分类达人 (Classification Expert) ====================
+        // Supports both tagging and album classification
         Achievement(
-            id = "tag_10", name = "标签入门", description = "为 10 张照片添加标签",
+            id = "tag_10", name = "分类入门", description = "为 10 张照片添加标签或分到相册",
             icon = Icons.Default.Label, category = AchievementCategory.TAGGING,
             targetValue = 10, currentValue = data.totalTagged,
             color = Color(0xFFA78BFA), rarity = AchievementRarity.COMMON
         ),
         Achievement(
-            id = "tag_50", name = "标签爱好者", description = "为 50 张照片添加标签",
+            id = "tag_50", name = "分类爱好者", description = "为 50 张照片添加标签或分到相册",
             icon = Icons.Default.Label, category = AchievementCategory.TAGGING,
             targetValue = 50, currentValue = data.totalTagged,
             color = Color(0xFFA78BFA), rarity = AchievementRarity.UNCOMMON
         ),
         Achievement(
-            id = "tag_100", name = "分类专家", description = "为 100 张照片添加标签",
+            id = "tag_100", name = "分类专家", description = "为 100 张照片添加标签或分到相册",
             icon = Icons.Default.Label, category = AchievementCategory.TAGGING,
             targetValue = 100, currentValue = data.totalTagged,
             color = Color(0xFFA78BFA), rarity = AchievementRarity.RARE
         ),
         Achievement(
-            id = "tag_500", name = "标签大师", description = "为 500 张照片添加标签",
+            id = "tag_500", name = "分类大师", description = "为 500 张照片添加标签或分到相册",
             icon = Icons.Default.AutoAwesome, category = AchievementCategory.TAGGING,
             targetValue = 500, currentValue = data.totalTagged,
             color = Color(0xFFA78BFA), rarity = AchievementRarity.EPIC
@@ -246,28 +251,29 @@ fun generateAchievements(data: AchievementData): List<Achievement> {
             color = Color(0xFFA78BFA), rarity = AchievementRarity.RARE
         ),
         
-        // ==================== 收藏专家 (Collector) ====================
+        // ==================== 精选达人 (Selector) ====================
+        // Renamed from "收藏专家" - more direct for "keep" action
         Achievement(
-            id = "keep_10", name = "初次收藏", description = "保留 10 张照片",
-            icon = Icons.Default.Favorite, category = AchievementCategory.COLLECTOR,
+            id = "keep_10", name = "初次精选", description = "保留 10 张照片",
+            icon = Icons.Default.Favorite, category = AchievementCategory.SELECTOR,
             targetValue = 10, currentValue = data.keepCount,
             color = Color(0xFFE91E63), rarity = AchievementRarity.COMMON
         ),
         Achievement(
-            id = "keep_50", name = "收藏爱好者", description = "保留 50 张照片",
-            icon = Icons.Default.Favorite, category = AchievementCategory.COLLECTOR,
+            id = "keep_50", name = "精选爱好者", description = "保留 50 张照片",
+            icon = Icons.Default.Favorite, category = AchievementCategory.SELECTOR,
             targetValue = 50, currentValue = data.keepCount,
             color = Color(0xFFE91E63), rarity = AchievementRarity.UNCOMMON
         ),
         Achievement(
-            id = "keep_200", name = "精品收藏家", description = "保留 200 张照片",
-            icon = Icons.Default.Favorite, category = AchievementCategory.COLLECTOR,
+            id = "keep_200", name = "精选专家", description = "保留 200 张照片",
+            icon = Icons.Default.Favorite, category = AchievementCategory.SELECTOR,
             targetValue = 200, currentValue = data.keepCount,
             color = Color(0xFFE91E63), rarity = AchievementRarity.RARE
         ),
         Achievement(
-            id = "keep_500", name = "收藏大师", description = "保留 500 张照片",
-            icon = Icons.Default.Verified, category = AchievementCategory.COLLECTOR,
+            id = "keep_500", name = "精选大师", description = "保留 500 张照片",
+            icon = Icons.Default.Verified, category = AchievementCategory.SELECTOR,
             targetValue = 500, currentValue = data.keepCount,
             color = Color(0xFFE91E63), rarity = AchievementRarity.EPIC
         ),
@@ -305,6 +311,7 @@ fun generateAchievements(data: AchievementData): List<Achievement> {
         ),
         
         // ==================== 创意大师 (Creative Master) ====================
+        // Merged with Export achievements
         Achievement(
             id = "virtual_copy_1", name = "创意初体验", description = "创建 1 个虚拟副本",
             icon = Icons.Default.ContentCopy, category = AchievementCategory.CREATIVE,
@@ -323,25 +330,24 @@ fun generateAchievements(data: AchievementData): List<Achievement> {
             targetValue = 50, currentValue = data.virtualCopiesCreated,
             color = Color(0xFF00BCD4), rarity = AchievementRarity.EPIC
         ),
-        
-        // ==================== 导出达人 (Export Master) ====================
+        // Export achievements (merged into Creative category)
         Achievement(
             id = "export_1", name = "首次导出", description = "导出 1 张照片",
-            icon = Icons.Default.Save, category = AchievementCategory.EXPORTER,
+            icon = Icons.Default.Save, category = AchievementCategory.CREATIVE,
             targetValue = 1, currentValue = data.photosExported,
-            color = Color(0xFF8BC34A), rarity = AchievementRarity.COMMON
+            color = Color(0xFF00BCD4), rarity = AchievementRarity.COMMON
         ),
         Achievement(
             id = "export_10", name = "导出能手", description = "导出 10 张照片",
-            icon = Icons.Default.Save, category = AchievementCategory.EXPORTER,
+            icon = Icons.Default.Save, category = AchievementCategory.CREATIVE,
             targetValue = 10, currentValue = data.photosExported,
-            color = Color(0xFF8BC34A), rarity = AchievementRarity.UNCOMMON
+            color = Color(0xFF00BCD4), rarity = AchievementRarity.UNCOMMON
         ),
         Achievement(
             id = "export_50", name = "导出专家", description = "导出 50 张照片",
-            icon = Icons.Default.Save, category = AchievementCategory.EXPORTER,
+            icon = Icons.Default.Save, category = AchievementCategory.CREATIVE,
             targetValue = 50, currentValue = data.photosExported,
-            color = Color(0xFF8BC34A), rarity = AchievementRarity.RARE
+            color = Color(0xFF00BCD4), rarity = AchievementRarity.RARE
         ),
         
         // ==================== 探索者 (Explorer) ====================
@@ -654,13 +660,13 @@ fun AchievementBadge(
     ) {
         Column(
             modifier = Modifier
-                .padding(12.dp)
-                .width(100.dp),
+                .padding(10.dp)
+                .width(90.dp),  // Reduced from 100dp to fit 3 per row
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(
                 modifier = Modifier
-                    .size(56.dp)
+                    .size(52.dp)  // Slightly smaller icon
                     .clip(CircleShape)
                     .background(
                         if (achievement.isUnlocked) {
@@ -749,6 +755,7 @@ fun AchievementBadge(
 
 /**
  * Achievement list grouped by category.
+ * Categories are collapsed by default and can be expanded by clicking.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -756,17 +763,32 @@ fun AchievementGrid(
     achievements: List<Achievement>,
     modifier: Modifier = Modifier
 ) {
+    // Sort by category enum ordinal to ensure correct display order (DAILY_TASK first, etc.)
     val groupedAchievements = achievements.groupBy { it.category }
+        .toSortedMap(compareBy { it.ordinal })
     var selectedAchievement by remember { mutableStateOf<Achievement?>(null) }
+    
+    // Track expanded state for each category - all collapsed by default
+    val expandedCategories = remember { mutableStateListOf<AchievementCategory>() }
     
     Column(modifier = modifier) {
         groupedAchievements.forEach { (category, categoryAchievements) ->
             val unlockedCount = categoryAchievements.count { it.isUnlocked }
+            val isExpanded = category in expandedCategories
             
+            // Clickable category header
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        if (isExpanded) {
+                            expandedCategories.remove(category)
+                        } else {
+                            expandedCategories.add(category)
+                        }
+                    }
+                    .padding(vertical = 12.dp, horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
@@ -787,21 +809,34 @@ fun AchievementGrid(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.width(8.dp))
+                // Expand/collapse indicator
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (isExpanded) "收起" else "展开",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
+                )
             }
             
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                categoryAchievements.forEach { achievement ->
-                    AchievementBadge(
-                        achievement = achievement,
-                        onClick = { selectedAchievement = achievement }
-                    )
+            // Collapsible content
+            AnimatedVisibility(visible = isExpanded) {
+                Column {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    ) {
+                        categoryAchievements.forEach { achievement ->
+                            AchievementBadge(
+                                achievement = achievement,
+                                onClick = { selectedAchievement = achievement }
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
-            
-            Spacer(modifier = Modifier.height(16.dp))
         }
     }
     

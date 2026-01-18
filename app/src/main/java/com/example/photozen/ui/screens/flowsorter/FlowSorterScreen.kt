@@ -58,6 +58,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import com.example.photozen.ui.components.StoragePermissionDialog
+import com.example.photozen.ui.components.SystemAlbumPickerDialog
 import com.example.photozen.ui.components.FloatingAlbumTags
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -111,6 +113,8 @@ fun FlowSorterScreen(
     viewModel: FlowSorterViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    // Use immediate counter for instant UI feedback (bypasses combine flow delay)
+    val sortedCountImmediate by viewModel.sortedCountImmediate.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val hapticManager = rememberHapticFeedbackManager()
@@ -158,8 +162,9 @@ fun FlowSorterScreen(
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                 } else if (uiState.totalCount > 0) {
+                                    // Use sortedCountImmediate for instant feedback on first swipe
                                     Text(
-                                        text = "${uiState.sortedCount} / ${uiState.totalCount} 已整理",
+                                        text = "$sortedCountImmediate / ${uiState.totalCount} 已整理",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -315,6 +320,11 @@ fun FlowSorterContent(
     
     var fullscreenPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
     
+    // Album picker state
+    var showAlbumPicker by remember { mutableStateOf(false) }
+    val availableAlbums by viewModel.availableAlbums.collectAsState()
+    var selectedAlbumIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    
     // Local view mode state for workflow mode (since we don't have TopAppBar)
     var localViewMode by remember { mutableStateOf(FlowSorterViewMode.CARD) }
     val effectiveViewMode = if (isWorkflowMode) localViewMode else uiState.viewMode
@@ -444,7 +454,9 @@ fun FlowSorterContent(
                                     val combo = viewModel.maybePhoto(photoId)
                                     hapticManager.performSwipeFeedback(combo, uiState.combo.level)
                                     onPhotoSorted?.invoke(photoId, PhotoStatus.MAYBE, combo)
-                                }
+                                },
+                                // When album tags are shown, move photo info to the image itself
+                                showInfoOnImage = uiState.cardSortingAlbumEnabled
                             )
                             
                             // Combo overlay
@@ -466,12 +478,10 @@ fun FlowSorterContent(
                                 },
                                 onAddAlbumClick = {
                                     hapticManager.performClick()
-                                    // Show snackbar with hint to go to Album Bubble
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            message = "请在首页「相册气泡」中管理相册列表"
-                                        )
-                                    }
+                                    // Load system albums and set existing bubble list as selected
+                                    viewModel.loadSystemAlbums()
+                                    selectedAlbumIds = uiState.albumBubbleList.map { it.bucketId }.toSet()
+                                    showAlbumPicker = true
                                 },
                                 visible = uiState.cardSortingAlbumEnabled && 
                                           uiState.currentPhoto != null,
@@ -638,6 +648,51 @@ fun FlowSorterContent(
             modifier = Modifier.align(Alignment.BottomCenter)
         )
     }
+    
+    // Album picker dialog for managing quick album list (using unified component)
+    if (showAlbumPicker) {
+        SystemAlbumPickerDialog(
+            title = "管理快捷相册列表",
+            albums = availableAlbums,
+            selectedIds = selectedAlbumIds,
+            isLoading = availableAlbums.isEmpty(),
+            onToggleSelection = { albumId ->
+                selectedAlbumIds = if (albumId in selectedAlbumIds) {
+                    selectedAlbumIds - albumId
+                } else {
+                    selectedAlbumIds + albumId
+                }
+            },
+            onConfirm = {
+                // Add newly selected albums to quick list
+                val existingIds = uiState.albumBubbleList.map { it.bucketId }.toSet()
+                val toAdd = selectedAlbumIds - existingIds
+                toAdd.forEach { bucketId ->
+                    viewModel.addAlbumToQuickList(bucketId)
+                }
+                // Remove deselected albums
+                val toRemove = existingIds - selectedAlbumIds
+                toRemove.forEach { bucketId ->
+                    viewModel.removeAlbumFromQuickList(bucketId)
+                }
+                showAlbumPicker = false
+            },
+            onDismiss = { showAlbumPicker = false },
+            onCreateAlbum = { albumName ->
+                viewModel.createAlbumAndAdd(albumName)
+            }
+        )
+    }
+    
+    // Storage permission dialog for move operations
+    if (uiState.showPermissionDialog) {
+        StoragePermissionDialog(
+            onOpenSettings = { viewModel.onOpenPermissionSettings() },
+            onPermissionGranted = { viewModel.onPermissionGranted() },
+            onDismiss = { viewModel.dismissPermissionDialog() },
+            showRetryError = uiState.permissionRetryError
+        )
+    }
 }
 
 /**
@@ -652,7 +707,8 @@ private fun CardStack(
     onSwipeLeft: (String) -> Unit,
     onSwipeRight: (String) -> Unit,
     onSwipeUp: (String) -> Unit,
-    onSwipeDown: (String) -> Unit
+    onSwipeDown: (String) -> Unit,
+    showInfoOnImage: Boolean = false
 ) {
     SwipeableCardStack(
         photos = uiState.photos,
@@ -660,7 +716,8 @@ private fun CardStack(
         onSwipeLeft = onSwipeLeft,
         onSwipeRight = onSwipeRight,
         onSwipeUp = onSwipeUp,
-        onSwipeDown = onSwipeDown
+        onSwipeDown = onSwipeDown,
+        showInfoOnImage = showInfoOnImage
     )
 }
 

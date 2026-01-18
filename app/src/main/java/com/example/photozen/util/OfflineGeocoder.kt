@@ -1,6 +1,8 @@
 package com.example.photozen.util
 
 import android.content.Context
+import android.media.ExifInterface
+import android.net.Uri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -156,4 +158,41 @@ class OfflineGeocoder @Inject constructor(
      * Format double to specified decimal places.
      */
     private fun Double.format(decimals: Int): String = "%.${decimals}f".format(this)
+    
+    /**
+     * Get location text by reading GPS coordinates from photo EXIF data.
+     * This is for lazy loading GPS data when the photo entity doesn't have coordinates.
+     * 
+     * @param photoUri Content URI of the photo
+     * @return Location text or null if no GPS data available
+     */
+    suspend fun getLocationTextFromUri(photoUri: String?): String? {
+        if (photoUri.isNullOrEmpty()) return null
+        
+        return withContext(Dispatchers.IO) {
+            try {
+                val uri = Uri.parse(photoUri)
+                val contentResolver = context.contentResolver
+                
+                contentResolver.openInputStream(uri)?.use { inputStream ->
+                    val exif = ExifInterface(inputStream)
+                    
+                    // Try to get GPS coordinates
+                    val latLong = FloatArray(2)
+                    if (exif.getLatLong(latLong)) {
+                        val lat = latLong[0].toDouble()
+                        val lng = latLong[1].toDouble()
+                        
+                        // Convert to location text using existing method
+                        return@withContext getLocationText(lat, lng)
+                    }
+                }
+                
+                null
+            } catch (e: Exception) {
+                // Silently fail - not all photos have GPS data
+                null
+            }
+        }
+    }
 }

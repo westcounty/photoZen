@@ -258,7 +258,7 @@ private fun TrashPhotoGrid(
     onPhotoLongPress: (String) -> Unit
 ) {
     LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 3)),
+        columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 4)),
         contentPadding = PaddingValues(8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalItemSpacing = 8.dp

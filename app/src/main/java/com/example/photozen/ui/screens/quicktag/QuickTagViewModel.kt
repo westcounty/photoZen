@@ -12,6 +12,7 @@ import com.example.photozen.data.repository.AlbumAddAction
 import com.example.photozen.data.repository.PhotoClassificationMode
 import com.example.photozen.data.repository.PhotoRepository
 import com.example.photozen.data.repository.PreferencesRepository
+import com.example.photozen.data.source.MediaStoreDataSource
 import com.example.photozen.domain.usecase.AlbumOperationsUseCase
 import com.example.photozen.domain.usecase.MovePhotoResult
 import com.example.photozen.domain.usecase.TagAlbumSyncUseCase
@@ -80,7 +81,8 @@ class QuickTagViewModel @Inject constructor(
     private val albumBubbleDao: AlbumBubbleDao,
     private val preferencesRepository: PreferencesRepository,
     private val tagAlbumSyncUseCase: TagAlbumSyncUseCase,
-    private val albumOperationsUseCase: AlbumOperationsUseCase
+    private val albumOperationsUseCase: AlbumOperationsUseCase,
+    private val mediaStoreDataSource: MediaStoreDataSource
 ) : ViewModel() {
     
     private val _currentIndex = MutableStateFlow(0)
@@ -348,7 +350,10 @@ class QuickTagViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val photoUri = Uri.parse(photo.systemUri)
-                val targetPath = "Pictures/${album.displayName}"
+                // Use getAlbumPath to get the actual album path (e.g., "DCIM/Camera" for system Camera album)
+                // Fall back to Pictures/ only for newly created albums
+                val targetPath = mediaStoreDataSource.getAlbumPath(album.bucketId)
+                    ?: "Pictures/${album.displayName}"
                 
                 when (_albumAddAction.value) {
                     AlbumAddAction.COPY -> {

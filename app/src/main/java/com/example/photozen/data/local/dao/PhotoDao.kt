@@ -150,55 +150,55 @@ interface PhotoDao {
     /**
      * Get all photos ordered by date added (newest first).
      */
-    @Query("SELECT * FROM photos WHERE is_virtual_copy = 0 ORDER BY date_added DESC")
+    @Query("SELECT * FROM photos WHERE is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     fun getAllPhotos(): Flow<List<PhotoEntity>>
     
     /**
      * Get all photos with specific status.
      */
-    @Query("SELECT * FROM photos WHERE status = :status AND is_virtual_copy = 0 ORDER BY date_added DESC")
+    @Query("SELECT * FROM photos WHERE status = :status AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     fun getPhotosByStatus(status: PhotoStatus): Flow<List<PhotoEntity>>
     
     /**
      * Get all unsorted photos for Flow Sorter.
      * LIMITED to 500 to prevent CursorWindow overflow on devices with many photos.
      */
-    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY date_added DESC LIMIT 500")
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC LIMIT 500")
     fun getUnsortedPhotos(): Flow<List<PhotoEntity>>
     
     /**
      * Get all unsorted photos sorted by date ascending.
      * LIMITED to 500 to prevent CursorWindow overflow on devices with many photos.
      */
-    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY date_added ASC LIMIT 500")
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) ASC LIMIT 500")
     fun getUnsortedPhotosAsc(): Flow<List<PhotoEntity>>
     
     /**
      * Get unsorted photos filtered by bucket IDs (for camera only / exclude camera).
      * LIMITED to 500 to prevent CursorWindow overflow.
      */
-    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) ORDER BY date_added DESC LIMIT 500")
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC LIMIT 500")
     fun getUnsortedPhotosByBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>>
     
     /**
      * Get unsorted photos filtered by bucket IDs, sorted by date ascending.
      * LIMITED to 500 to prevent CursorWindow overflow.
      */
-    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) ORDER BY date_added ASC LIMIT 500")
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) ASC LIMIT 500")
     fun getUnsortedPhotosByBucketsAsc(bucketIds: List<String>): Flow<List<PhotoEntity>>
     
     /**
      * Get unsorted photos excluding specific bucket IDs.
      * LIMITED to 500 to prevent CursorWindow overflow.
      */
-    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL) ORDER BY date_added DESC LIMIT 500")
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL) ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC LIMIT 500")
     fun getUnsortedPhotosExcludingBuckets(bucketIds: List<String>): Flow<List<PhotoEntity>>
     
     /**
      * Get unsorted photos excluding specific bucket IDs, sorted by date ascending.
      * LIMITED to 500 to prevent CursorWindow overflow.
      */
-    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL) ORDER BY date_added ASC LIMIT 500")
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL) ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) ASC LIMIT 500")
     fun getUnsortedPhotosExcludingBucketsAsc(bucketIds: List<String>): Flow<List<PhotoEntity>>
     
     /**
@@ -212,7 +212,7 @@ interface PhotoDao {
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
         AND (:startDate IS NULL OR date_added >= :startDate)
         AND (:endDate IS NULL OR date_added <= :endDate)
-        ORDER BY date_added DESC
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
         LIMIT 500
     """)
     fun getUnsortedPhotosFiltered(
@@ -227,21 +227,21 @@ interface PhotoDao {
      * Get all unsorted photo IDs.
      * Ordered by date_added DESC for consistent snapshot pagination.
      */
-    @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY date_added DESC")
+    @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     suspend fun getUnsortedPhotoIds(): List<String>
     
     /**
      * Get unsorted photo IDs filtered by buckets.
      * Ordered by date_added DESC.
      */
-    @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) ORDER BY date_added DESC")
+    @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     suspend fun getUnsortedPhotoIdsByBuckets(bucketIds: List<String>): List<String>
     
     /**
      * Get unsorted photo IDs excluding buckets.
      * Ordered by date_added DESC.
      */
-    @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL) ORDER BY date_added DESC")
+    @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL) ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     suspend fun getUnsortedPhotoIdsExcludingBuckets(bucketIds: List<String>): List<String>
     
     /**
@@ -255,7 +255,7 @@ interface PhotoDao {
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
         AND (:startDate IS NULL OR date_added >= :startDate)
         AND (:endDate IS NULL OR date_added <= :endDate)
-        ORDER BY date_added DESC
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
     """)
     suspend fun getUnsortedPhotoIdsFiltered(
         bucketIds: List<String>?,
@@ -281,7 +281,7 @@ interface PhotoDao {
     @Query("""
         SELECT * FROM photos 
         WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
-        ORDER BY date_added DESC 
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC 
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosPagedDesc(limit: Int, offset: Int): List<PhotoEntity>
@@ -292,7 +292,7 @@ interface PhotoDao {
     @Query("""
         SELECT * FROM photos 
         WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
-        ORDER BY date_added ASC 
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) ASC 
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosPagedAsc(limit: Int, offset: Int): List<PhotoEntity>
@@ -317,7 +317,7 @@ interface PhotoDao {
         SELECT * FROM photos 
         WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
         AND bucket_id IN (:bucketIds)
-        ORDER BY date_added DESC 
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC 
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosByBucketsPagedDesc(bucketIds: List<String>, limit: Int, offset: Int): List<PhotoEntity>
@@ -329,7 +329,7 @@ interface PhotoDao {
         SELECT * FROM photos 
         WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
         AND bucket_id IN (:bucketIds)
-        ORDER BY date_added ASC 
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) ASC 
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosByBucketsPagedAsc(bucketIds: List<String>, limit: Int, offset: Int): List<PhotoEntity>
@@ -353,7 +353,7 @@ interface PhotoDao {
         SELECT * FROM photos 
         WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
         AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL)
-        ORDER BY date_added DESC 
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC 
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosExcludingBucketsPagedDesc(bucketIds: List<String>, limit: Int, offset: Int): List<PhotoEntity>
@@ -365,7 +365,7 @@ interface PhotoDao {
         SELECT * FROM photos 
         WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
         AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL)
-        ORDER BY date_added ASC 
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) ASC 
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosExcludingBucketsPagedAsc(bucketIds: List<String>, limit: Int, offset: Int): List<PhotoEntity>
@@ -391,7 +391,7 @@ interface PhotoDao {
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
         AND (:startDate IS NULL OR date_added >= :startDate)
         AND (:endDate IS NULL OR date_added <= :endDate)
-        ORDER BY date_added DESC 
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC 
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosFilteredPagedDesc(
@@ -411,7 +411,7 @@ interface PhotoDao {
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
         AND (:startDate IS NULL OR date_added >= :startDate)
         AND (:endDate IS NULL OR date_added <= :endDate)
-        ORDER BY date_added ASC 
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) ASC 
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosFilteredPagedAsc(
@@ -497,19 +497,19 @@ interface PhotoDao {
     /**
      * Get all "MAYBE" photos for Light Table comparison.
      */
-    @Query("SELECT * FROM photos WHERE status = 'MAYBE' AND is_virtual_copy = 0 ORDER BY date_added DESC")
+    @Query("SELECT * FROM photos WHERE status = 'MAYBE' AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     fun getMaybePhotos(): Flow<List<PhotoEntity>>
     
     /**
      * Get all "KEEP" photos.
      */
-    @Query("SELECT * FROM photos WHERE status = 'KEEP' AND is_virtual_copy = 0 ORDER BY date_added DESC")
+    @Query("SELECT * FROM photos WHERE status = 'KEEP' AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     fun getKeepPhotos(): Flow<List<PhotoEntity>>
     
     /**
      * Get all "TRASH" photos.
      */
-    @Query("SELECT * FROM photos WHERE status = 'TRASH' AND is_virtual_copy = 0 ORDER BY date_added DESC")
+    @Query("SELECT * FROM photos WHERE status = 'TRASH' AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     fun getTrashPhotos(): Flow<List<PhotoEntity>>
     
     /**
@@ -523,19 +523,19 @@ interface PhotoDao {
     /**
      * Get all photos as PagingSource for efficient large list loading.
      */
-    @Query("SELECT * FROM photos WHERE is_virtual_copy = 0 ORDER BY date_added DESC")
+    @Query("SELECT * FROM photos WHERE is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     fun getAllPhotosPaged(): PagingSource<Int, PhotoEntity>
     
     /**
      * Get unsorted photos as PagingSource.
      */
-    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY date_added DESC")
+    @Query("SELECT * FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     fun getUnsortedPhotosPaged(): PagingSource<Int, PhotoEntity>
     
     /**
      * Get photos by status as PagingSource.
      */
-    @Query("SELECT * FROM photos WHERE status = :status AND is_virtual_copy = 0 ORDER BY date_added DESC")
+    @Query("SELECT * FROM photos WHERE status = :status AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     fun getPhotosByStatusPaged(status: PhotoStatus): PagingSource<Int, PhotoEntity>
     
     // ==================== QUERY - Counts ====================
@@ -591,13 +591,13 @@ interface PhotoDao {
     /**
      * Get all photos in a specific album (bucket).
      */
-    @Query("SELECT * FROM photos WHERE bucket_id = :bucketId AND is_virtual_copy = 0 ORDER BY date_added DESC")
+    @Query("SELECT * FROM photos WHERE bucket_id = :bucketId AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     fun getPhotosByBucketId(bucketId: String): Flow<List<PhotoEntity>>
     
     /**
      * Get all photos in a specific album (bucket) - synchronous version.
      */
-    @Query("SELECT * FROM photos WHERE bucket_id = :bucketId AND is_virtual_copy = 0 ORDER BY date_added DESC")
+    @Query("SELECT * FROM photos WHERE bucket_id = :bucketId AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     suspend fun getPhotosByBucketIdSync(bucketId: String): List<PhotoEntity>
     
     /**
@@ -617,13 +617,13 @@ interface PhotoDao {
     /**
      * Search photos by display name.
      */
-    @Query("SELECT * FROM photos WHERE display_name LIKE '%' || :query || '%' AND is_virtual_copy = 0 ORDER BY date_added DESC")
+    @Query("SELECT * FROM photos WHERE display_name LIKE '%' || :query || '%' AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     fun searchByName(query: String): Flow<List<PhotoEntity>>
     
     /**
      * Get photos by camera model (for Camera Collection feature).
      */
-    @Query("SELECT * FROM photos WHERE camera_model = :cameraModel AND is_virtual_copy = 0 ORDER BY date_added DESC")
+    @Query("SELECT * FROM photos WHERE camera_model = :cameraModel AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     fun getPhotosByCameraModel(cameraModel: String): Flow<List<PhotoEntity>>
     
     /**

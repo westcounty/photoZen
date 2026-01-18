@@ -68,6 +68,7 @@ private const val ROTATION_MULTIPLIER = 15f
  * @param onSwipeUp Called when swiped up (Trash)
  * @param onSwipeDown Called when swiped down (Maybe)
  * @param onPhotoClick Called when photo is clicked
+ * @param showInfoOnImage When true, photo info is displayed on the image itself
  * @param modifier Modifier for the card
  */
 @Composable
@@ -80,6 +81,7 @@ fun SwipeablePhotoCard(
     onSwipeUp: () -> Unit,
     onSwipeDown: () -> Unit = {},
     onPhotoClick: (() -> Unit)? = null,
+    showInfoOnImage: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
@@ -219,39 +221,40 @@ fun SwipeablePhotoCard(
                         
                         when {
                             // Swipe up → Trash
+                            // CRITICAL: Call callback AFTER animation completes to prevent flash
                             reachedUp -> {
                                 hasTriggeredSwipe = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onSwipeUp()
                                 scope.launch {
                                     offsetY.animateTo(-screenHeightPx * 1.5f, tween(150))
+                                    onSwipeUp()  // Callback after animation
                                 }
                             }
                             // Swipe down → Maybe
                             reachedDown -> {
                                 hasTriggeredSwipe = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onSwipeDown()
                                 scope.launch {
                                     offsetY.animateTo(screenHeightPx * 0.6f, tween(200))
+                                    onSwipeDown()  // Callback after animation
                                 }
                             }
                             // Swipe right → Keep
                             reachedRight -> {
                                 hasTriggeredSwipe = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onSwipeRight()
                                 scope.launch {
                                     offsetX.animateTo(screenWidthPx * 1.5f, tween(150))
+                                    onSwipeRight()  // Callback after animation
                                 }
                             }
                             // Swipe left → Keep
                             reachedLeft -> {
                                 hasTriggeredSwipe = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onSwipeLeft()
                                 scope.launch {
                                     offsetX.animateTo(-screenWidthPx * 1.5f, tween(150))
+                                    onSwipeLeft()  // Callback after animation
                                 }
                             }
                             // Snap back to center
@@ -333,7 +336,8 @@ fun SwipeablePhotoCard(
             swipeProgressY = progressY,
             swipeDirection = currentDirection,
             hasReachedThreshold = hasReachedThreshold,
-            onPhotoClick = onPhotoClick
+            onPhotoClick = onPhotoClick,
+            showInfoOnImage = showInfoOnImage
         )
     }
 }

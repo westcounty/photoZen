@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
@@ -354,6 +355,12 @@ class HomeViewModel @Inject constructor(
     
     /**
      * Intermediate flow for UI state flags.
+     * 
+     * NOTE: isLoading logic is carefully designed to prevent UI flashing:
+     * - Only show loading when actively syncing (not for initial permission wait state)
+     * - _isLoading = true means waiting for permission (don't show loading, show permission prompt)
+     * - _isSyncing = true means actively syncing data (show loading with permission)
+     * - Use distinctUntilChanged to avoid redundant emissions
      */
     private val uiStateFlags: Flow<UiStateFlags> = combine(
         _hasPermission,
@@ -361,8 +368,13 @@ class HomeViewModel @Inject constructor(
         _isSyncing,
         _syncResult
     ) { hasPermission, isLoading, isSyncing, syncResult ->
-        UiStateFlags(hasPermission, isLoading, isSyncing, syncResult)
-    }
+        // Only show loading when:
+        // 1. We have permission AND
+        // 2. We are actively syncing (_isSyncing = true)
+        // Don't show loading for initial state (_isLoading = true but not syncing)
+        val effectiveLoading = hasPermission && isSyncing
+        UiStateFlags(hasPermission, effectiveLoading, isSyncing, syncResult)
+    }.distinctUntilChanged()
     
     /**
      * Intermediate flow for dialog states.
@@ -529,14 +541,14 @@ class HomeViewModel @Inject constructor(
         dailyTaskEnabled: Boolean,
         dailyTaskTarget: Int,
         swipeSensitivity: Float,
-        classificationMode: PhotoClassificationMode
+        cardSortingAlbumEnabled: Boolean
     ) {
         viewModelScope.launch {
             // Save all the settings
             preferencesRepository.setDailyTaskEnabled(dailyTaskEnabled)
             preferencesRepository.setDailyTaskTarget(dailyTaskTarget)
             preferencesRepository.setSwipeSensitivity(swipeSensitivity)
-            preferencesRepository.setPhotoClassificationMode(classificationMode)
+            preferencesRepository.setCardSortingAlbumEnabled(cardSortingAlbumEnabled)
             
             // Mark quick start as completed
             preferencesRepository.setCompletedQuickStartVersion(
@@ -574,12 +586,22 @@ class HomeViewModel @Inject constructor(
         }
     }
     
+    // Track if initial sync has been done to prevent re-syncing on screen return
+    private var hasCompletedInitialSync = false
+    
     /**
      * Called when permission is granted.
+     * Only syncs on first grant, not on subsequent returns to home screen.
      */
     fun onPermissionGranted() {
+        val wasAlreadyGranted = _hasPermission.value
         _hasPermission.value = true
-        syncPhotos()
+        
+        // Only sync if this is the first time permission is granted in this session
+        // This prevents re-syncing every time user returns to home screen
+        if (!wasAlreadyGranted || !hasCompletedInitialSync) {
+            syncPhotos()
+        }
     }
     
     /**
@@ -596,11 +618,14 @@ class HomeViewModel @Inject constructor(
      */
     fun syncPhotos() {
         if (!_hasPermission.value) return
+        // Prevent multiple simultaneous syncs
+        if (_isSyncing.value) return
         
         viewModelScope.launch {
             _isSyncing.value = true
             try {
                 val result = syncPhotosUseCase()
+                hasCompletedInitialSync = true  // Mark sync as completed
                 _syncResult.value = if (result.isInitialSync) {
                     "已导入 ${result.newPhotosCount} 张照片"
                 } else if (result.newPhotosCount > 0) {

@@ -91,14 +91,16 @@ fun BubbleGraphView(
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     
     // Bubble states with animatable positions
-    val bubbleAnimatables = remember(nodes.map { it.id }.sorted().joinToString()) {
+    // Use nodes key to recreate when list changes (including on edit)
+    val nodesKey = nodes.map { it.id }.sorted().joinToString()
+    val bubbleAnimatables = remember(nodesKey) {
         nodes.map { node ->
             node to Animatable(Offset.Zero, Offset.VectorConverter)
         }
     }
     
-    // Track initialization
-    var initialized by remember { mutableStateOf(false) }
+    // Track initialization - reset when nodes change
+    var initialized by remember(nodesKey) { mutableStateOf(false) }
     
     // Track dragging state
     var draggedNodeId by remember { mutableStateOf<String?>(null) }
