@@ -352,20 +352,13 @@ private fun TimelineActionBar(
     onDelete: () -> Unit,
     onToggleStatus: () -> Unit
 ) {
-    Surface(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
-        shape = RoundedCornerShape(24.dp),
-        color = Color.Black.copy(alpha = 0.7f)
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
             // Add to Album
             ActionButton(
                 icon = Icons.Default.PhotoAlbum,
@@ -390,7 +383,6 @@ private fun TimelineActionBar(
                 color = if (isMaybe) KeepGreen else MaybeAmber,
                 onClick = onToggleStatus
             )
-        }
     }
 }
 

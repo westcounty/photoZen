@@ -101,9 +101,14 @@ fun DragSelectPhotoGrid(
     var dragStartIndex by remember { mutableStateOf(-1) }
     var dragCurrentIndex by remember { mutableStateOf(-1) }
     var initialSelection by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var dragStartPosition by remember { mutableStateOf(Offset.Zero) }
+    var totalDragDistance by remember { mutableStateOf(0f) }
     
     // Auto-scroll state
     var autoScrollDirection by remember { mutableStateOf(0) } // -1: up, 0: none, 1: down
+    
+    // Threshold for distinguishing "long press without move" vs "drag select"
+    val dragThreshold = with(density) { 10.dp.toPx() }
     
     // Auto-scroll threshold in pixels
     val scrollThreshold = with(density) { 80.dp.toPx() }
@@ -166,6 +171,8 @@ fun DragSelectPhotoGrid(
                                     dragStartIndex = index
                                     dragCurrentIndex = index
                                     initialSelection = selectedIds
+                                    dragStartPosition = offset
+                                    totalDragDistance = 0f
                                     
                                     // Add initial item to selection
                                     val photoId = photos[index].id
@@ -180,11 +187,16 @@ fun DragSelectPhotoGrid(
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 }
                             },
-                            onDrag = { change, _ ->
+                            onDrag = { change, dragAmount ->
                                 if (!isDragging) return@detectDragGesturesAfterLongPress
                                 
                                 change.consume()
                                 val position = change.position
+                                
+                                // Accumulate total drag distance
+                                totalDragDistance += kotlin.math.sqrt(
+                                    dragAmount.x * dragAmount.x + dragAmount.y * dragAmount.y
+                                )
                                 
                                 // Check for auto-scroll
                                 autoScrollDirection = when {
@@ -207,16 +219,30 @@ fun DragSelectPhotoGrid(
                                 }
                             },
                             onDragEnd = {
+                                // Check if this was a "long press without move" (drag distance < threshold)
+                                val wasLongPressOnly = totalDragDistance < dragThreshold
+                                val startIndex = dragStartIndex
+                                
+                                // Reset drag state
                                 isDragging = false
                                 autoScrollDirection = 0
                                 dragStartIndex = -1
                                 dragCurrentIndex = -1
+                                totalDragDistance = 0f
+                                
+                                // If it was just a long press without drag, notify callback
+                                // The photo is already selected from onDragStart
+                                if (wasLongPressOnly && startIndex >= 0 && startIndex < photos.size) {
+                                    val photo = photos[startIndex]
+                                    onPhotoLongPress(photo.id, photo.systemUri)
+                                }
                             },
                             onDragCancel = {
                                 isDragging = false
                                 autoScrollDirection = 0
                                 dragStartIndex = -1
                                 dragCurrentIndex = -1
+                                totalDragDistance = 0f
                             }
                         )
                     }
@@ -243,6 +269,7 @@ fun DragSelectPhotoGrid(
                     isSelected = isSelected || isInDragRange,
                     isSelectionMode = selectedIds.isNotEmpty() || isDragging,
                     selectionColor = selectionColor,
+                    enableLongPressOnItem = !enableDragSelect, // Only handle long press on item when drag select is disabled
                     onClick = {
                         if (selectedIds.isNotEmpty()) {
                             // Toggle selection
@@ -257,14 +284,8 @@ fun DragSelectPhotoGrid(
                         }
                     },
                     onLongPress = {
-                        if (selectedIds.isEmpty() && !enableDragSelect) {
-                            // Show action sheet for single photo
-                            onPhotoLongPress(photo.id, photo.systemUri)
-                        } else if (selectedIds.isEmpty()) {
-                            // Enter selection mode
-                            onSelectionChanged(setOf(photo.id))
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        }
+                        // Only called when enableDragSelect is false
+                        onPhotoLongPress(photo.id, photo.systemUri)
                     }
                 )
             }
@@ -274,6 +295,9 @@ fun DragSelectPhotoGrid(
 
 /**
  * Individual photo item with selection indicator.
+ * 
+ * @param enableLongPressOnItem If true, long press is handled by this item.
+ *        If false, long press is handled by the parent grid (for drag select).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -282,6 +306,7 @@ private fun DragSelectPhotoItem(
     isSelected: Boolean,
     isSelectionMode: Boolean,
     selectionColor: Color,
+    enableLongPressOnItem: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit
 ) {
@@ -310,13 +335,15 @@ private fun DragSelectPhotoItem(
                     )
                 } else Modifier
             )
-            .pointerInput(Unit) {
+            .pointerInput(enableLongPressOnItem) {
                 detectTapGestures(
                     onTap = { onClick() },
-                    onLongPress = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onLongPress()
-                    }
+                    onLongPress = if (enableLongPressOnItem) {
+                        {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onLongPress()
+                        }
+                    } else null
                 )
             }
     ) {

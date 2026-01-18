@@ -12,6 +12,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,6 +41,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Compare
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Star
@@ -487,51 +490,81 @@ private fun SelectionBottomBar(
 }
 
 /**
- * Bottom bar for comparison mode - only "Trash All" and "Keep All"
+ * Bottom bar for comparison mode with vertical icon+text layout.
  */
 @Composable
 private fun ComparisonBottomBar(
     onKeepAll: () -> Unit,
     onTrashAll: () -> Unit
 ) {
-    BottomAppBar(
-        containerColor = MaterialTheme.colorScheme.surface
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 8.dp,
+        shadowElevation = 8.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .navigationBarsPadding()
+                .padding(horizontal = 4.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Trash all
-            FilledTonalButton(
-                onClick = onTrashAll,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = TrashRed.copy(alpha = 0.15f),
-                    contentColor = TrashRed
-                ),
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Delete, null, Modifier.size(20.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("丢弃全部")
-            }
+            LightTableBottomBarItem(
+                icon = Icons.Default.Delete,
+                label = "丢弃",
+                color = TrashRed,
+                onClick = onTrashAll
+            )
             
             // Keep all
-            FilledTonalButton(
-                onClick = onKeepAll,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = KeepGreen.copy(alpha = 0.15f),
-                    contentColor = KeepGreen
-                ),
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Check, null, Modifier.size(20.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("保留全部")
-            }
+            LightTableBottomBarItem(
+                icon = Icons.Default.Favorite,
+                label = "保留",
+                color = KeepGreen,
+                onClick = onKeepAll
+            )
         }
+    }
+}
+
+@Composable
+private fun LightTableBottomBarItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    color: Color,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(color.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = color,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            textAlign = TextAlign.Center,
+            maxLines = 1
+        )
     }
 }
 

@@ -54,6 +54,9 @@ import androidx.compose.material.icons.filled.PhotoAlbum
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material.icons.filled.ViewModule
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Share
+import com.example.photozen.ui.components.shareImage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -276,9 +279,20 @@ fun PhotoListScreen(
                 enter = slideInVertically(initialOffsetY = { it }),
                 exit = slideOutVertically(targetOffsetY = { it })
             ) {
+                // Get the single selected photo for single-select actions
+                val singleSelectedPhoto = if (uiState.selectedCount == 1) {
+                    uiState.photos.find { it.id in uiState.selectedPhotoIds }
+                } else null
+                
                 SelectionBottomBar(
                     status = uiState.status,
                     selectedCount = uiState.selectedCount,
+                    onEdit = if (singleSelectedPhoto != null) {
+                        { onNavigateToEditor(singleSelectedPhoto.id) }
+                    } else null,
+                    onShare = if (singleSelectedPhoto != null) {
+                        { shareImage(context, Uri.parse(singleSelectedPhoto.systemUri)) }
+                    } else null,
                     onMoveToKeep = if (uiState.status != PhotoStatus.KEEP) {{ viewModel.moveSelectedToKeep() }} else null,
                     onMoveToMaybe = if (uiState.status != PhotoStatus.MAYBE) {{ viewModel.moveSelectedToMaybe() }} else null,
                     onMoveToTrash = if (uiState.status != PhotoStatus.TRASH) {{ viewModel.moveSelectedToTrash() }} else null,
@@ -445,19 +459,24 @@ fun PhotoListScreen(
 
 /**
  * Selection mode bottom bar with batch actions.
- * Shows different actions based on current status.
+ * Shows different actions based on current status and selection count.
+ * Single selection shows more individual actions (edit, share).
  * Uses vertical icon+text layout to prevent crowding.
  */
 @Composable
 private fun SelectionBottomBar(
     status: PhotoStatus,
     selectedCount: Int,
+    onEdit: (() -> Unit)? = null,
+    onShare: (() -> Unit)? = null,
     onMoveToKeep: (() -> Unit)? = null,
     onMoveToMaybe: (() -> Unit)? = null,
     onMoveToTrash: (() -> Unit)? = null,
     onResetToUnsorted: () -> Unit,
     onAddToAlbum: (() -> Unit)? = null
 ) {
+    val isSingleSelect = selectedCount == 1
+    
     Surface(
         modifier = Modifier.fillMaxWidth(),
         tonalElevation = 8.dp,
@@ -471,6 +490,36 @@ private fun SelectionBottomBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Edit button (single select only)
+            if (isSingleSelect && onEdit != null) {
+                BottomBarActionItem(
+                    icon = Icons.Default.Edit,
+                    label = "编辑",
+                    color = MaterialTheme.colorScheme.tertiary,
+                    onClick = onEdit
+                )
+            }
+            
+            // Share button (single select only)
+            if (isSingleSelect && onShare != null) {
+                BottomBarActionItem(
+                    icon = Icons.Default.Share,
+                    label = "分享",
+                    color = Color(0xFF1E88E5),
+                    onClick = onShare
+                )
+            }
+            
+            // Add to album button (for KEEP status)
+            if (onAddToAlbum != null) {
+                BottomBarActionItem(
+                    icon = Icons.Default.PhotoAlbum,
+                    label = "相册",
+                    color = MaterialTheme.colorScheme.primary,
+                    onClick = onAddToAlbum
+                )
+            }
+            
             // Keep button (for MAYBE and TRASH status)
             if (onMoveToKeep != null) {
                 BottomBarActionItem(
@@ -498,16 +547,6 @@ private fun SelectionBottomBar(
                     label = "删除",
                     color = TrashRed,
                     onClick = onMoveToTrash
-                )
-            }
-            
-            // Add to album button (for KEEP status)
-            if (onAddToAlbum != null) {
-                BottomBarActionItem(
-                    icon = Icons.Default.PhotoAlbum,
-                    label = "加入相册",
-                    color = MaterialTheme.colorScheme.primary,
-                    onClick = onAddToAlbum
                 )
             }
             

@@ -592,7 +592,7 @@ class PreferencesRepository @Inject constructor(
      */
     suspend fun setAlbumTagSize(size: Float) {
         dataStore.edit { preferences ->
-            preferences[KEY_ALBUM_TAG_SIZE] = size.coerceIn(0.8f, 1.2f)
+            preferences[KEY_ALBUM_TAG_SIZE] = size
         }
     }
     

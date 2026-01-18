@@ -3,6 +3,8 @@ package com.example.photozen.ui.screens.workflow
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
@@ -33,6 +36,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -152,7 +157,7 @@ fun TrashStageContent(
 }
 
 /**
- * Action bar for trash stage.
+ * Action bar for trash stage with vertical icon+text layout.
  */
 @Composable
 private fun TrashActionBar(
@@ -163,78 +168,80 @@ private fun TrashActionBar(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 8.dp,
         shadowElevation = 8.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .navigationBarsPadding()
+                .padding(horizontal = 4.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Restore to Keep
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                FilledTonalButton(
-                    onClick = onRestoreToKeep,
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = KeepGreen.copy(alpha = 0.15f)
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Favorite,
-                        contentDescription = null,
-                        tint = KeepGreen,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("恢复为保留", color = KeepGreen)
-                }
-            }
+            TrashStageBottomBarItem(
+                icon = Icons.Default.Favorite,
+                label = "保留",
+                color = KeepGreen,
+                onClick = onRestoreToKeep
+            )
             
             // Restore to Maybe
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                FilledTonalButton(
-                    onClick = onRestoreToMaybe,
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = MaybeAmber.copy(alpha = 0.15f)
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.QuestionMark,
-                        contentDescription = null,
-                        tint = MaybeAmber,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("恢复为待定", color = MaybeAmber)
-                }
-            }
+            TrashStageBottomBarItem(
+                icon = Icons.Default.QuestionMark,
+                label = "待定",
+                color = MaybeAmber,
+                onClick = onRestoreToMaybe
+            )
             
             // Permanent Delete
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Button(
-                    onClick = onPermanentDelete,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = TrashRed
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.DeleteForever,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("永久删除")
-                }
-            }
+            TrashStageBottomBarItem(
+                icon = Icons.Default.DeleteForever,
+                label = "彻删",
+                color = TrashRed,
+                onClick = onPermanentDelete
+            )
         }
+    }
+}
+
+@Composable
+private fun TrashStageBottomBarItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    color: Color,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(color.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = color,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            textAlign = TextAlign.Center,
+            maxLines = 1
+        )
     }
 }
 

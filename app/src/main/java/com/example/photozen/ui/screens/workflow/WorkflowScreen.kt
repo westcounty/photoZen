@@ -192,8 +192,16 @@ fun WorkflowScreen(
             if (uiState.currentStage != WorkflowStage.VICTORY) {
                 WorkflowTopBar(
                     stageName = uiState.stageName,
-                    stageSubtitle = uiState.stageSubtitle,
                     currentStage = uiState.currentStage,
+                    sortedCount = uiState.stats.totalSorted,
+                    unsortedCount = uiState.unsortedCount,
+                    sessionMaybeCount = uiState.sessionMaybeCount,
+                    sessionKeepCount = uiState.sessionKeepCount,
+                    sessionTrashCount = uiState.sessionTrashCount,
+                    classifyModeIndex = uiState.classifyModeIndex,
+                    isDailyTask = uiState.isDailyTask,
+                    dailyTaskCurrent = uiState.dailyTaskCurrent,
+                    dailyTaskTarget = uiState.dailyTaskTarget,
                     progress = uiState.stageProgress,
                     canProceed = uiState.canProceedToNext,
                     nextButtonText = uiState.nextButtonText,
@@ -284,12 +292,21 @@ fun WorkflowScreen(
 /**
  * Top bar showing workflow progress and controls.
  * Properly handles status bar insets to avoid overlap.
+ * Displays sorted/unsorted counts in two lines to avoid conflict with buttons.
  */
 @Composable
 private fun WorkflowTopBar(
     stageName: String,
-    stageSubtitle: String,
     currentStage: WorkflowStage,
+    sortedCount: Int,
+    unsortedCount: Int,
+    sessionMaybeCount: Int,
+    sessionKeepCount: Int,
+    sessionTrashCount: Int,
+    classifyModeIndex: Int,
+    isDailyTask: Boolean,
+    dailyTaskCurrent: Int,
+    dailyTaskTarget: Int,
     progress: Float,
     canProceed: Boolean,
     nextButtonText: String,
@@ -319,20 +336,67 @@ private fun WorkflowTopBar(
                 )
             }
             
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(4.dp))
             
-            // Stage indicator
+            // Stage indicator with two-line counts
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stageName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                Text(
-                    text = stageSubtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // Display counts based on current stage
+                when (currentStage) {
+                    WorkflowStage.SWIPE -> {
+                        if (isDailyTask) {
+                            Text(
+                                text = "今日 $dailyTaskCurrent/$dailyTaskTarget",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Text(
+                                text = "已整理 $sortedCount",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = KeepGreen
+                            )
+                            Text(
+                                text = "待整理 $unsortedCount",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    WorkflowStage.COMPARE -> {
+                        Text(
+                            text = "待定 $sessionMaybeCount 张",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaybeAmber
+                        )
+                    }
+                    WorkflowStage.CLASSIFY -> {
+                        Text(
+                            text = "${classifyModeIndex + 1}/$sessionKeepCount",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = KeepGreen
+                        )
+                    }
+                    WorkflowStage.TRASH -> {
+                        Text(
+                            text = "回收站 $sessionTrashCount 张",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TrashRed
+                        )
+                    }
+                    WorkflowStage.VICTORY -> {
+                        Text(
+                            text = "完成",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = KeepGreen
+                        )
+                    }
+                }
             }
             
             // Next button

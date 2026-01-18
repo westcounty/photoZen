@@ -8,8 +8,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -262,71 +264,91 @@ private fun TrashSelectionBottomBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                .padding(horizontal = 4.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             // Keep button
-            FilledTonalButton(
-                onClick = onKeep,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = KeepGreen.copy(alpha = 0.15f),
-                    contentColor = KeepGreen
-                )
-            ) {
-                Icon(Icons.Default.Favorite, null, Modifier.size(16.dp))
-                Spacer(Modifier.width(2.dp))
-                Text("保留", maxLines = 1)
-            }
+            TrashBottomBarActionItem(
+                icon = Icons.Default.Favorite,
+                label = "保留",
+                color = KeepGreen,
+                onClick = onKeep
+            )
             
             // Maybe button
-            FilledTonalButton(
-                onClick = onMaybe,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = MaybeAmber.copy(alpha = 0.15f),
-                    contentColor = MaybeAmber
-                )
-            ) {
-                Icon(Icons.Default.QuestionMark, null, Modifier.size(16.dp))
-                Spacer(Modifier.width(2.dp))
-                Text("待定", maxLines = 1)
-            }
+            TrashBottomBarActionItem(
+                icon = Icons.Default.QuestionMark,
+                label = "待定",
+                color = MaybeAmber,
+                onClick = onMaybe
+            )
             
             // Restore button
-            FilledTonalButton(
-                onClick = onRestore,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            ) {
-                Icon(Icons.AutoMirrored.Filled.Undo, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("重置")
-            }
+            TrashBottomBarActionItem(
+                icon = Icons.AutoMirrored.Filled.Undo,
+                label = "重置",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                onClick = onRestore
+            )
             
             // Delete button
-            Button(
+            TrashBottomBarActionItem(
+                icon = Icons.Default.DeleteForever,
+                label = "彻删",
+                color = TrashRed,
                 onClick = onDelete,
-                enabled = !isDeleting,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = TrashRed)
-            ) {
-                if (isDeleting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Icon(Icons.Default.DeleteForever, null, Modifier.size(18.dp))
-                }
-                Spacer(Modifier.width(4.dp))
-                Text("彻底删除")
+                isLoading = isDeleting
+            )
+        }
+    }
+}
+
+@Composable
+private fun TrashBottomBarActionItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    color: Color,
+    onClick: () -> Unit,
+    isLoading: Boolean = false
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = !isLoading, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(color.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = color,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = color,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            textAlign = TextAlign.Center,
+            maxLines = 1
+        )
     }
 }
 

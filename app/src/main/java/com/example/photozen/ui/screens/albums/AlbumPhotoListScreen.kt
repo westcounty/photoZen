@@ -51,7 +51,9 @@ import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.ui.components.PhotoStatusBadge
+import com.example.photozen.ui.components.shareImage
 import com.example.photozen.ui.theme.KeepGreen
+import androidx.compose.ui.text.style.TextAlign
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
 
@@ -88,10 +90,6 @@ fun AlbumPhotoListScreen(
     // Album picker state
     var showAlbumPicker by remember { mutableStateOf(false) }
     var pickerMode by remember { mutableStateOf("move") }  // "move" or "copy"
-    
-    // Context menu state (for long press)
-    var showContextMenu by remember { mutableStateOf(false) }
-    var contextMenuPhotoIndex by remember { mutableIntStateOf(-1) }
     
     // Delete confirmation launcher
     val deleteResultLauncher = rememberLauncherForActivityResult(
@@ -241,9 +239,8 @@ fun AlbumPhotoListScreen(
                             onPhotoLongClick = { index ->
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 if (!uiState.isSelectionMode) {
-                                    // Show context menu instead of entering selection mode directly
-                                    contextMenuPhotoIndex = index
-                                    showContextMenu = true
+                                    // Enter selection mode and select this photo
+                                    viewModel.enterSelectionMode(uiState.photos[index].id)
                                 }
                             }
                         )
@@ -257,7 +254,19 @@ fun AlbumPhotoListScreen(
                 enter = slideInVertically(initialOffsetY = { it }),
                 exit = slideOutVertically(targetOffsetY = { it })
             ) {
+                // Get the single selected photo for single-select actions
+                val singleSelectedPhoto = if (uiState.selectedCount == 1) {
+                    uiState.photos.find { it.id in uiState.selectedIds }
+                } else null
+                
                 SelectionActionBar(
+                    selectedCount = uiState.selectedCount,
+                    onEdit = if (singleSelectedPhoto != null) {
+                        { onNavigateToEditor(singleSelectedPhoto.id) }
+                    } else null,
+                    onShare = if (singleSelectedPhoto != null) {
+                        { shareImage(context, Uri.parse(singleSelectedPhoto.systemUri)) }
+                    } else null,
                     onMove = {
                         pickerMode = "move"
                         showAlbumPicker = true
@@ -265,6 +274,22 @@ fun AlbumPhotoListScreen(
                     onCopy = {
                         pickerMode = "copy"
                         showAlbumPicker = true
+                    },
+                    onFilter = {
+                        // Get photo IDs from first selected to the end
+                        val firstSelectedIndex = uiState.photos.indexOfFirst { it.id in uiState.selectedIds }
+                        if (firstSelectedIndex >= 0) {
+                            val photoIdsFromHere = uiState.photos
+                                .drop(firstSelectedIndex)
+                                .map { it.id }
+                            
+                            if (photoIdsFromHere.isNotEmpty()) {
+                                scope.launch {
+                                    viewModel.setFilterSessionAndNavigate(photoIdsFromHere)
+                                    onNavigateToFlowSorter()
+                                }
+                            }
+                        }
                     },
                     onDelete = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -314,88 +339,6 @@ fun AlbumPhotoListScreen(
         )
     }
     
-    // Context menu dialog (for long press on photo)
-    if (showContextMenu && contextMenuPhotoIndex >= 0 && contextMenuPhotoIndex < uiState.photos.size) {
-        val photo = uiState.photos[contextMenuPhotoIndex]
-        
-        AlertDialog(
-            onDismissRequest = { 
-                showContextMenu = false 
-                contextMenuPhotoIndex = -1
-            },
-            title = { Text("选择操作") },
-            text = {
-                Column {
-                    // Option 1: Select (enter selection mode)
-                    TextButton(
-                        onClick = {
-                            showContextMenu = false
-                            viewModel.enterSelectionMode(photo.id)
-                            contextMenuPhotoIndex = -1
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Start,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text("选择")
-                        }
-                    }
-                    
-                    // Option 2: Start filtering from this photo
-                    TextButton(
-                        onClick = {
-                            showContextMenu = false
-                            // Get photo IDs from current index to the end
-                            val photoIdsFromHere = uiState.photos
-                                .drop(contextMenuPhotoIndex)
-                                .map { it.id }
-                            
-                            if (photoIdsFromHere.isNotEmpty()) {
-                                scope.launch {
-                                    viewModel.setFilterSessionAndNavigate(photoIdsFromHere)
-                                    onNavigateToFlowSorter()
-                                }
-                            }
-                            contextMenuPhotoIndex = -1
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Start,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.FilterList,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text("从此张开始筛选")
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { 
-                    showContextMenu = false 
-                    contextMenuPhotoIndex = -1
-                }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
 }
 
 @Composable
@@ -609,57 +552,126 @@ private fun PhotoGrid(
     }
 }
 
+/**
+ * Selection action bar with vertical icon+text layout.
+ * Single selection shows more individual actions (edit, share).
+ */
 @Composable
 private fun SelectionActionBar(
+    selectedCount: Int,
+    onEdit: (() -> Unit)? = null,
+    onShare: (() -> Unit)? = null,
     onMove: () -> Unit,
     onCopy: () -> Unit,
+    onFilter: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val isSingleSelect = selectedCount == 1
+    
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        tonalElevation = 3.dp
+        tonalElevation = 8.dp,
+        shadowElevation = 8.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .navigationBarsPadding(),
-            horizontalArrangement = Arrangement.SpaceEvenly
+                .navigationBarsPadding()
+                .padding(horizontal = 4.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            FilledTonalButton(
-                onClick = onMove,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+            // Edit button (single select only)
+            if (isSingleSelect && onEdit != null) {
+                AlbumBottomBarActionItem(
+                    icon = Icons.Default.Edit,
+                    label = "编辑",
+                    color = MaterialTheme.colorScheme.tertiary,
+                    onClick = onEdit
                 )
-            ) {
-                Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("移动")
             }
             
-            FilledTonalButton(
-                onClick = onCopy,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+            // Share button (single select only)
+            if (isSingleSelect && onShare != null) {
+                AlbumBottomBarActionItem(
+                    icon = Icons.Default.Share,
+                    label = "分享",
+                    color = Color(0xFF1E88E5),
+                    onClick = onShare
                 )
-            ) {
-                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("复制")
             }
             
-            FilledTonalButton(
-                onClick = onDelete,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = TrashRed.copy(alpha = 0.15f),
-                    contentColor = TrashRed
-                )
-            ) {
-                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("删除")
-            }
+            // Move button
+            AlbumBottomBarActionItem(
+                icon = Icons.Default.Folder,
+                label = "移动",
+                color = MaterialTheme.colorScheme.primary,
+                onClick = onMove
+            )
+            
+            // Copy button
+            AlbumBottomBarActionItem(
+                icon = Icons.Default.ContentCopy,
+                label = "复制",
+                color = MaterialTheme.colorScheme.secondary,
+                onClick = onCopy
+            )
+            
+            // Filter button
+            AlbumBottomBarActionItem(
+                icon = Icons.Default.FilterList,
+                label = "筛选",
+                color = MaterialTheme.colorScheme.secondary,
+                onClick = onFilter
+            )
+            
+            // Delete button
+            AlbumBottomBarActionItem(
+                icon = Icons.Default.Delete,
+                label = "删除",
+                color = TrashRed,
+                onClick = onDelete
+            )
         }
+    }
+}
+
+@Composable
+private fun AlbumBottomBarActionItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    color: Color,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(color.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = color,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            textAlign = TextAlign.Center,
+            maxLines = 1
+        )
     }
 }
 

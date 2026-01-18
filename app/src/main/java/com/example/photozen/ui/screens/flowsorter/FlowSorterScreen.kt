@@ -14,7 +14,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,6 +38,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.QuestionMark
@@ -59,6 +62,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -78,6 +82,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -1085,7 +1091,7 @@ private fun ConfettiAnimation(
 }
 
 /**
- * Bottom action bar for batch operations.
+ * Bottom action bar for batch operations with vertical icon+text layout.
  */
 @Composable
 private fun BatchActionBar(
@@ -1094,66 +1100,81 @@ private fun BatchActionBar(
     onTrash: () -> Unit,
     onMaybe: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 8.dp,
+        shadowElevation = 8.dp
     ) {
-        // Keep button
-        FilledTonalButton(
-            onClick = onKeep,
-            colors = ButtonDefaults.filledTonalButtonColors(
-                containerColor = KeepGreen.copy(alpha = 0.15f),
-                contentColor = KeepGreen
-            ),
-            modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 4.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Keep button
+            FlowSorterBottomBarActionItem(
+                icon = Icons.Default.Favorite,
+                label = "保留",
+                color = KeepGreen,
+                onClick = onKeep
+            )
+            
+            // Maybe button
+            FlowSorterBottomBarActionItem(
+                icon = Icons.Default.QuestionMark,
+                label = "待定",
+                color = MaybeAmber,
+                onClick = onMaybe
+            )
+            
+            // Trash button
+            FlowSorterBottomBarActionItem(
+                icon = Icons.Default.Delete,
+                label = "删除",
+                color = TrashRed,
+                onClick = onTrash
+            )
+        }
+    }
+}
+
+@Composable
+private fun FlowSorterBottomBarActionItem(
+    icon: ImageVector,
+    label: String,
+    color: Color,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(color.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
+                imageVector = icon,
+                contentDescription = label,
+                tint = color,
+                modifier = Modifier.size(20.dp)
             )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("保留")
         }
-        
-        // Trash button
-        FilledTonalButton(
-            onClick = onTrash,
-            colors = ButtonDefaults.filledTonalButtonColors(
-                containerColor = TrashRed.copy(alpha = 0.15f),
-                contentColor = TrashRed
-            ),
-            modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("删除")
-        }
-        
-        // Maybe button
-        FilledTonalButton(
-            onClick = onMaybe,
-            colors = ButtonDefaults.filledTonalButtonColors(
-                containerColor = MaybeAmber.copy(alpha = 0.15f),
-                contentColor = MaybeAmber
-            ),
-            modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.QuestionMark,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("待定")
-        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            textAlign = TextAlign.Center,
+            maxLines = 1
+        )
     }
 }
