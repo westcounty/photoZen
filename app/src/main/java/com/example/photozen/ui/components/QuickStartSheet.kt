@@ -528,7 +528,7 @@ private fun SwipeSensitivityStep(
  * Base threshold for triggering a swipe action (as fraction of screen width/height)
  * Same as SwipeablePhotoCard to ensure consistent feel
  */
-private const val BASE_SWIPE_THRESHOLD = 0.25f
+private const val BASE_SWIPE_THRESHOLD = 0.20f
 private const val THRESHOLD_MULTIPLIER_RIGHT = 1.0f
 private const val THRESHOLD_MULTIPLIER_LEFT = 0.9f
 private const val THRESHOLD_MULTIPLIER_UP = 0.8f
@@ -561,8 +561,8 @@ private fun VirtualSwipeCard(
     val baseThreshold = BASE_SWIPE_THRESHOLD * sensitivity
     val thresholdRight = screenWidthPx * baseThreshold * THRESHOLD_MULTIPLIER_RIGHT
     val thresholdLeft = screenWidthPx * baseThreshold * THRESHOLD_MULTIPLIER_LEFT
-    val thresholdUp = screenHeightPx * baseThreshold * THRESHOLD_MULTIPLIER_UP
-    val thresholdDown = screenHeightPx * baseThreshold * THRESHOLD_MULTIPLIER_DOWN
+    val thresholdUp = screenWidthPx * baseThreshold * THRESHOLD_MULTIPLIER_UP
+    val thresholdDown = screenWidthPx * baseThreshold * THRESHOLD_MULTIPLIER_DOWN
     
     var cardIndex by remember { mutableIntStateOf(0) }
     var offsetX by remember { mutableFloatStateOf(0f) }

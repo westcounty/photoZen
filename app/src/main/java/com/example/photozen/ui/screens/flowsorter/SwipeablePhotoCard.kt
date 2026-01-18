@@ -38,7 +38,7 @@ import kotlin.math.roundToInt
  * Base threshold for triggering a swipe action (as fraction of screen width/height)
  * This is the default when sensitivity = 1.0
  */
-private const val BASE_SWIPE_THRESHOLD = 0.25f
+private const val BASE_SWIPE_THRESHOLD = 0.20f
 
 /**
  * Direction-specific threshold multipliers:
@@ -110,8 +110,8 @@ fun SwipeablePhotoCard(
     val baseThreshold = BASE_SWIPE_THRESHOLD * swipeSensitivity
     val thresholdRight = screenWidthPx * baseThreshold * THRESHOLD_MULTIPLIER_RIGHT
     val thresholdLeft = screenWidthPx * baseThreshold * THRESHOLD_MULTIPLIER_LEFT
-    val thresholdUp = screenHeightPx * baseThreshold * THRESHOLD_MULTIPLIER_UP
-    val thresholdDown = screenHeightPx * baseThreshold * THRESHOLD_MULTIPLIER_DOWN
+    val thresholdUp = screenWidthPx * baseThreshold * THRESHOLD_MULTIPLIER_UP
+    val thresholdDown = screenWidthPx * baseThreshold * THRESHOLD_MULTIPLIER_DOWN
     
     // Use rememberUpdatedState to ensure lambda captures latest threshold values
     // This is critical when swipeSensitivity changes while the card is displayed
@@ -119,6 +119,11 @@ fun SwipeablePhotoCard(
     val currentThresholdLeft by rememberUpdatedState(thresholdLeft)
     val currentThresholdUp by rememberUpdatedState(thresholdUp)
     val currentThresholdDown by rememberUpdatedState(thresholdDown)
+    
+    // CRITICAL: Use rememberUpdatedState for isTopCard so that when the card
+    // becomes the top card (after previous card is swiped), the gesture handler
+    // will use the updated value instead of the captured old value
+    val currentIsTopCard by rememberUpdatedState(isTopCard)
     
     // Animatable offsets for smooth animations
     val offsetX = remember(photo.id) { Animatable(0f) }
@@ -202,7 +207,7 @@ fun SwipeablePhotoCard(
             .pointerInput(photo.id, swipeSensitivity) {
                 detectDragGestures(
                     onDragStart = {
-                        if (!isTopCard || hasTriggeredSwipe) return@detectDragGestures
+                        if (!currentIsTopCard || hasTriggeredSwipe) return@detectDragGestures
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         // Reset threshold states
                         hasReachedThresholdRight = false
@@ -211,7 +216,7 @@ fun SwipeablePhotoCard(
                         hasReachedThresholdDown = false
                     },
                     onDragEnd = {
-                        if (!isTopCard || hasTriggeredSwipe) return@detectDragGestures
+                        if (!currentIsTopCard || hasTriggeredSwipe) return@detectDragGestures
                         
                         // Calculate thresholds in real-time to avoid closure capture issues
                         val reachedRight = offsetX.value > currentThresholdRight
@@ -277,14 +282,14 @@ fun SwipeablePhotoCard(
                         }
                     },
                     onDragCancel = {
-                        if (!isTopCard || hasTriggeredSwipe) return@detectDragGestures
+                        if (!currentIsTopCard || hasTriggeredSwipe) return@detectDragGestures
                         scope.launch {
                             launch { offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy)) }
                             launch { offsetY.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy)) }
                         }
                     },
                     onDrag = { change, dragAmount ->
-                        if (!isTopCard || hasTriggeredSwipe) return@detectDragGestures
+                        if (!currentIsTopCard || hasTriggeredSwipe) return@detectDragGestures
                         change.consume()
                         scope.launch {
                             offsetX.snapTo(offsetX.value + dragAmount.x)

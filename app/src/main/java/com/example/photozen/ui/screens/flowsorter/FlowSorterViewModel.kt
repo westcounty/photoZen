@@ -290,7 +290,9 @@ class FlowSorterViewModel @Inject constructor(
             _sortedPhotoIds
         ) { photos, sortedIds ->
             // Filter out photos that have been sorted
-            photos.filter { it.id !in sortedIds }
+            val filtered = photos.filter { it.id !in sortedIds }
+            Log.d(TAG, "getFilteredPhotosFlow: pagedPhotos=${photos.size}, sortedIds=${sortedIds.size}, filtered=${filtered.size}")
+            filtered
         }
     }
     
