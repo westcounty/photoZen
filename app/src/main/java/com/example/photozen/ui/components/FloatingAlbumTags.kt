@@ -6,11 +6,20 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,7 +76,8 @@ fun FloatingAlbumTags(
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)
+            // Fix: Use CenterVertically for proper vertical alignment of all items
+            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)
         ) {
             displayAlbums.forEach { album ->
                 FloatingAlbumTag(
@@ -130,6 +140,8 @@ private fun FloatingAlbumTag(
 /**
  * Add Album button - shows at the end of floating tags.
  * Opens the album picker dialog when clicked.
+ * 
+ * Fixed: Use same padding as album tags for proper vertical alignment.
  */
 @Composable
 private fun AddAlbumButton(
@@ -138,7 +150,8 @@ private fun AddAlbumButton(
 ) {
     val baseIconSize = 18.dp
     val scaledIconSize = baseIconSize * tagSize
-    val basePaddingHorizontal = 12.dp
+    // Fix: Use same vertical padding as album tags for proper alignment
+    val basePaddingHorizontal = 14.dp
     val basePaddingVertical = 10.dp
     val scaledPaddingHorizontal = basePaddingHorizontal * tagSize
     val scaledPaddingVertical = basePaddingVertical * tagSize
@@ -163,43 +176,6 @@ private fun AddAlbumButton(
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.size(scaledIconSize)
             )
-        }
-    }
-}
-
-/**
- * Preview version without animation for testing.
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun FloatingAlbumTagsPreview(
-    albums: List<AlbumBubbleEntity>,
-    tagSize: Float = 1.0f,
-    maxCount: Int = 0,
-    onAlbumClick: (AlbumBubbleEntity) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val displayAlbums = if (maxCount > 0) {
-        albums.take(maxCount)
-    } else {
-        albums
-    }
-    
-    if (displayAlbums.isNotEmpty()) {
-        FlowRow(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)
-        ) {
-            displayAlbums.forEach { album ->
-                FloatingAlbumTag(
-                    album = album,
-                    tagSize = tagSize,
-                    onClick = { onAlbumClick(album) }
-                )
-            }
         }
     }
 }

@@ -74,8 +74,11 @@ import java.util.Locale
  * @param swipeDirection Current swipe direction based on gesture
  * @param hasReachedThreshold Whether the swipe has reached the action threshold
  * @param onPhotoClick Called when photo is clicked (for fullscreen view)
- * @param showInfoOnImage When true, photo info is shown on the image itself (bottom-left corner)
- *                        instead of at the card bottom. Used when album tags are displayed at bottom.
+ * @param showInfoOnImage When true, photo info is shown on the TOP-LEFT of the image with compact layout:
+ *                        - Line 1: File name
+ *                        - Line 2: Date/Time, Resolution, File Size, Location (smaller text)
+ *                        The zoom icon stays at TOP-RIGHT. Used when album tags are displayed at bottom
+ *                        to avoid overlapping.
  * @param modifier Modifier for the card
  */
 @Composable
@@ -147,37 +150,37 @@ fun PhotoCard(
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                 )
                 
-                // When showInfoOnImage is true, display info on the IMAGE itself (not card)
-                // This ensures info is positioned relative to the photo, not the entire card
+                // When showInfoOnImage is true, display info at the TOP-LEFT of the IMAGE
+                // This ensures info doesn't overlap with bottom album tags
+                // Zoom icon stays at TOP-RIGHT, info is positioned to avoid overlap
                 if (showInfoOnImage) {
-                    // Gradient overlay at the bottom of the IMAGE
+                    // Gradient overlay at the TOP of the IMAGE
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(80.dp)
-                            .align(Alignment.BottomCenter)
-                            .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
+                            .height(72.dp)
+                            .align(Alignment.TopCenter)
+                            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                             .background(
                                 Brush.verticalGradient(
                                     colors = listOf(
-                                        Color.Transparent,
-                                        Color.Black.copy(alpha = 0.6f)
+                                        Color.Black.copy(alpha = 0.65f),
+                                        Color.Transparent
                                     )
                                 )
                             )
                     )
                     
-                    // Info text at the bottom-left of the IMAGE
-                    PhotoInfoOverlay(
+                    // Info text at the top-left of the IMAGE (leave space for zoom icon on right)
+                    PhotoInfoOverlayCompact(
                         photo = photo,
-                        compact = true,
                         modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(start = 12.dp, bottom = 8.dp, end = 12.dp)
+                            .align(Alignment.TopStart)
+                            .padding(start = 12.dp, top = 10.dp, end = 52.dp) // Leave space for zoom icon
                     )
                 }
                 
-                // Tap hint badge - Only shown when zoom is enabled
+                // Tap hint badge - Always at TOP-RIGHT
                 if (onPhotoClick != null) {
                     Box(
                         modifier = Modifier
@@ -370,6 +373,101 @@ private fun PhotoInfoOverlay(
                         color = secondaryTextColor
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Compact photo info overlay for top-left display when album tags are at bottom.
+ * Two-line layout:
+ * - Line 1: File name (medium weight)
+ * - Line 2: Date/Time, Resolution, File Size, Location (smaller text, spaced)
+ * 
+ * Designed to coexist with zoom icon at top-right.
+ */
+@Composable
+private fun PhotoInfoOverlayCompact(
+    photo: PhotoEntity,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val offlineGeocoder = remember { OfflineGeocoder(context) }
+    var locationText by remember { mutableStateOf<String?>(null) }
+    
+    // Load location text asynchronously
+    LaunchedEffect(photo.id, photo.latitude, photo.longitude, photo.gpsScanned) {
+        locationText = when {
+            photo.latitude != null && photo.longitude != null -> {
+                offlineGeocoder.getLocationText(photo.latitude, photo.longitude)
+            }
+            !photo.gpsScanned -> {
+                offlineGeocoder.getLocationTextFromUri(photo.systemUri)
+            }
+            else -> null
+        }
+    }
+    
+    Column(modifier = modifier) {
+        // Line 1: File name
+        Text(
+            text = photo.displayName,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        
+        Spacer(modifier = Modifier.height(2.dp))
+        
+        // Line 2: Date/Time, Resolution, File Size, Location (all in one row, smaller text)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Date and Time
+            val displayTime = when {
+                photo.dateTaken > 0 -> photo.dateTaken
+                photo.dateAdded > 0 -> photo.dateAdded * 1000
+                else -> null
+            }
+            displayTime?.let { timestamp ->
+                Text(
+                    text = formatDateTime(timestamp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.85f)
+                )
+            }
+            
+            // Resolution
+            if (photo.width > 0 && photo.height > 0) {
+                Text(
+                    text = "${photo.width}×${photo.height}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.85f)
+                )
+            }
+            
+            // File size
+            if (photo.size > 0) {
+                val sizeMB = photo.size / (1024.0 * 1024.0)
+                Text(
+                    text = String.format("%.1fMB", sizeMB),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.85f)
+                )
+            }
+            
+            // Location (with ellipsis if too long)
+            locationText?.let { location ->
+                Text(
+                    text = location,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
             }
         }
     }

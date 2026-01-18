@@ -106,6 +106,18 @@ class TrashViewModel @Inject constructor(
         }
     }
     
+    /**
+     * Update selection with a new set of IDs (for drag-select).
+     */
+    fun updateSelection(newSelection: Set<String>) {
+        _internalState.update { state ->
+            state.copy(
+                selectedIds = newSelection,
+                inSelectionMode = newSelection.isNotEmpty()
+            )
+        }
+    }
+    
     fun selectAll() {
         val allIds = uiState.value.photos.map { it.id }.toSet()
         _internalState.update { it.copy(selectedIds = allIds) }

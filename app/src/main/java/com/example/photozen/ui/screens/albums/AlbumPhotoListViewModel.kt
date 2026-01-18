@@ -11,6 +11,8 @@ import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.AlbumAddAction
+import com.example.photozen.data.repository.CustomFilterSession
+import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.MediaStoreDataSource
 import com.example.photozen.domain.usecase.AlbumOperationsUseCase
@@ -52,6 +54,7 @@ data class AlbumPhotoListUiState(
     val bucketId: String = "",
     val albumName: String = "",
     val photos: List<PhotoEntity> = emptyList(),
+    val allPhotos: List<PhotoEntity> = emptyList(),  // Unfiltered photos
     val totalCount: Int = 0,
     val sortedCount: Int = 0,
     val viewMode: AlbumPhotoListViewMode = AlbumPhotoListViewMode.GRID_2,
@@ -61,12 +64,16 @@ data class AlbumPhotoListUiState(
     val albumBubbleList: List<AlbumBubbleEntity> = emptyList(),
     val albumAddAction: AlbumAddAction = AlbumAddAction.MOVE,
     val pendingOperation: PendingAlbumOperation? = null,
+    val pendingDeleteIds: List<String> = emptyList(),  // Track IDs pending deletion for Room sync
     val error: String? = null,
-    val message: String? = null
+    val message: String? = null,
+    // Phase 7.2: Global status filter
+    val statusFilter: Set<PhotoStatus> = PhotoStatus.entries.toSet()
 ) {
     val selectedCount: Int get() = selectedIds.size
     val unsortedCount: Int get() = totalCount - sortedCount
     val sortedPercentage: Float get() = if (totalCount > 0) sortedCount.toFloat() / totalCount else 0f
+    val isFilterActive: Boolean get() = statusFilter.size < PhotoStatus.entries.size
 }
 
 /**
@@ -114,13 +121,21 @@ class AlbumPhotoListViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             
             try {
-                photoDao.getPhotosByBucketId(bucketId).collect { photos ->
-                    val sortedCount = photos.count { it.status != PhotoStatus.UNSORTED }
+                photoDao.getPhotosByBucketId(bucketId).collect { allPhotos ->
+                    val sortedCount = allPhotos.count { it.status != PhotoStatus.UNSORTED }
+                    val statusFilter = _uiState.value.statusFilter
+                    // Apply status filter
+                    val filteredPhotos = if (statusFilter.size == PhotoStatus.entries.size) {
+                        allPhotos
+                    } else {
+                        allPhotos.filter { it.status in statusFilter }
+                    }
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            photos = photos,
-                            totalCount = photos.size,
+                            photos = filteredPhotos,
+                            allPhotos = allPhotos,
+                            totalCount = allPhotos.size,
                             sortedCount = sortedCount,
                             error = null
                         )
@@ -159,6 +174,23 @@ class AlbumPhotoListViewModel @Inject constructor(
         viewModelScope.launch {
             preferencesRepository.getAlbumAddAction().collect { action ->
                 _uiState.update { it.copy(albumAddAction = action) }
+            }
+        }
+        // Phase 7.2: Load status filter preference
+        viewModelScope.launch {
+            preferencesRepository.getAlbumPhotoStatusFilter().collect { filter ->
+                _uiState.update { currentState ->
+                    // Re-apply filter to photos
+                    val filteredPhotos = if (filter.size == PhotoStatus.entries.size) {
+                        currentState.allPhotos
+                    } else {
+                        currentState.allPhotos.filter { it.status in filter }
+                    }
+                    currentState.copy(
+                        statusFilter = filter,
+                        photos = filteredPhotos
+                    )
+                }
             }
         }
     }
@@ -248,6 +280,7 @@ class AlbumPhotoListViewModel @Inject constructor(
             val selectedPhotos = _uiState.value.photos.filter { it.id in _uiState.value.selectedIds }
             var successCount = 0
             var needsConfirmation = false
+            val movedPhotoIds = mutableListOf<String>()
             
             // Get target album path once before loop
             val targetAlbum = _uiState.value.albumBubbleList.find { it.bucketId == targetBucketId }
@@ -259,7 +292,10 @@ class AlbumPhotoListViewModel @Inject constructor(
                 val photoUri = Uri.parse(photo.systemUri)
                 
                 when (val result = albumOperationsUseCase.movePhotoToAlbum(photoUri, targetPath)) {
-                    is MovePhotoResult.Success -> successCount++
+                    is MovePhotoResult.Success -> {
+                        successCount++
+                        movedPhotoIds.add(photo.id)
+                    }
                     is MovePhotoResult.NeedsConfirmation -> {
                         needsConfirmation = true
                         _uiState.update {
@@ -281,9 +317,15 @@ class AlbumPhotoListViewModel @Inject constructor(
             }
             
             if (successCount > 0) {
+                // Sync Room database: update bucket_id for moved photos
+                // This ensures the photo list updates immediately without needing app restart
+                for (photoId in movedPhotoIds) {
+                    photoDao.updateBucketId(photoId, targetBucketId)
+                }
+                
                 _uiState.update { it.copy(message = "已移动 $successCount 张照片") }
                 clearSelection()
-                refresh()
+                // Note: Room Flow will automatically update UI since we updated the database
             }
         }
     }
@@ -327,20 +369,40 @@ class AlbumPhotoListViewModel @Inject constructor(
     
     /**
      * Get URIs of selected photos for delete request.
+     * Also saves the IDs for later Room database sync.
      */
     fun getSelectedPhotoUris(): List<Uri> {
-        return _uiState.value.photos
-            .filter { it.id in _uiState.value.selectedIds }
-            .map { Uri.parse(it.systemUri) }
+        val selectedPhotos = _uiState.value.photos.filter { it.id in _uiState.value.selectedIds }
+        
+        // Save the IDs for deletion from Room after user confirms
+        _uiState.update { it.copy(pendingDeleteIds = selectedPhotos.map { photo -> photo.id }) }
+        
+        return selectedPhotos.map { Uri.parse(it.systemUri) }
     }
     
     /**
      * Handle delete confirmation result.
+     * Syncs Room database by removing deleted photo records.
      */
     fun onDeleteConfirmed() {
-        clearSelection()
-        refresh()
-        _uiState.update { it.copy(message = "照片已删除") }
+        viewModelScope.launch {
+            val pendingDeleteIds = _uiState.value.pendingDeleteIds
+            
+            if (pendingDeleteIds.isNotEmpty()) {
+                // Delete from Room database to ensure immediate UI update
+                photoDao.deleteByIds(pendingDeleteIds)
+            }
+            
+            // Clear pending state
+            _uiState.update { 
+                it.copy(
+                    pendingDeleteIds = emptyList(),
+                    message = "照片已删除"
+                ) 
+            }
+            clearSelection()
+            // Note: Room Flow will automatically update UI since we deleted from database
+        }
     }
     
     /**
@@ -362,5 +424,55 @@ class AlbumPhotoListViewModel @Inject constructor(
      */
     fun clearMessage() {
         _uiState.update { it.copy(message = null) }
+    }
+    
+    /**
+     * Set custom filter session with specific photo IDs and prepare for navigation.
+     * This allows "从此张开始筛选" feature to work by filtering only the specified photos.
+     */
+    fun setFilterSessionAndNavigate(photoIds: List<String>) {
+        viewModelScope.launch {
+            // Set custom filter session with specific photo IDs
+            preferencesRepository.setSessionCustomFilter(
+                CustomFilterSession(
+                    photoIds = photoIds,
+                    preciseMode = true
+                )
+            )
+            
+            // Set filter mode to CUSTOM
+            preferencesRepository.setPhotoFilterMode(PhotoFilterMode.CUSTOM)
+        }
+    }
+    
+    // ==================== Phase 7.2: Status Filter ====================
+    
+    /**
+     * Toggle a status in the filter.
+     */
+    fun toggleStatusFilter(status: PhotoStatus) {
+        viewModelScope.launch {
+            val currentFilter = _uiState.value.statusFilter
+            val newFilter = if (status in currentFilter) {
+                // Don't allow removing the last status
+                if (currentFilter.size > 1) {
+                    currentFilter - status
+                } else {
+                    currentFilter
+                }
+            } else {
+                currentFilter + status
+            }
+            preferencesRepository.setAlbumPhotoStatusFilter(newFilter)
+        }
+    }
+    
+    /**
+     * Select all statuses (reset filter).
+     */
+    fun selectAllStatuses() {
+        viewModelScope.launch {
+            preferencesRepository.setAlbumPhotoStatusFilter(PhotoStatus.entries.toSet())
+        }
     }
 }

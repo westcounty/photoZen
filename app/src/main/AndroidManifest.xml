@@ -53,6 +53,39 @@
             </intent-filter>
         </activity>
         
+        <!-- 分享入口：用 PhotoZen 复制 - 支持单张和多张 -->
+        <activity-alias
+            android:name=".ShareCopyAlias"
+            android:targetActivity=".MainActivity"
+            android:label="用 PhotoZen 复制"
+            android:icon="@mipmap/ic_launcher"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+        </activity-alias>
+        
+        <!-- 分享入口：用 PhotoZen 对比 - 仅支持多张 -->
+        <activity-alias
+            android:name=".ShareCompareAlias"
+            android:targetActivity=".MainActivity"
+            android:label="用 PhotoZen 对比"
+            android:icon="@mipmap/ic_launcher"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+        </activity-alias>
+        
         <!-- WorkManager Foreground Service -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
@@ -82,12 +115,7 @@
                 android:resource="@xml/daily_progress_widget_info" />
         </receiver>
         
-        <!-- Daily Reminder Receiver for scheduled notifications -->
-        <receiver
-            android:name=".receiver.DailyReminderReceiver"
-            android:exported="false" />
-        
-        <!-- Boot Receiver to reschedule alarms after device restart -->
+        <!-- Boot Receiver to start services after device restart -->
         <receiver
             android:name=".receiver.BootReceiver"
             android:exported="true">
@@ -96,6 +124,12 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+        
+        <!-- Daily Progress Foreground Service -->
+        <service
+            android:name=".service.DailyProgressService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
     </application>
 
 </manifest>

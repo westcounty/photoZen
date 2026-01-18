@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.LocalFireDepartment
@@ -70,11 +71,13 @@ import kotlinx.coroutines.delay
  * Shows:
  * - Trophy animation
  * - Session statistics (photos sorted, time, max combo)
+ * - New: Classified to album count, permanently deleted count
  * - Action buttons (Return home, Share)
  */
 @Composable
 fun VictoryScreen(
     stats: WorkflowStats,
+    cardSortingAlbumEnabled: Boolean = false,
     onReturnHome: () -> Unit,
     onShare: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -155,7 +158,7 @@ fun VictoryScreen(
                 visible = showStats,
                 enter = fadeIn(animationSpec = tween(500)) + scaleIn(initialScale = 0.9f)
             ) {
-                StatsGrid(stats = stats)
+                StatsGrid(stats = stats, cardSortingAlbumEnabled = cardSortingAlbumEnabled)
             }
             
             Spacer(modifier = Modifier.height(32.dp))
@@ -268,7 +271,7 @@ private fun TrophyAnimation() {
  * Grid of statistic cards.
  */
 @Composable
-private fun StatsGrid(stats: WorkflowStats) {
+private fun StatsGrid(stats: WorkflowStats, cardSortingAlbumEnabled: Boolean = false) {
     Column(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -299,7 +302,7 @@ private fun StatsGrid(stats: WorkflowStats) {
             }
         }
         
-        // Secondary stats row
+        // Secondary stats row: Keep/Trash/Maybe
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -313,7 +316,7 @@ private fun StatsGrid(stats: WorkflowStats) {
             )
             StatCard(
                 value = stats.trashedCount.toString(),
-                label = "删除",
+                label = "回收站",
                 icon = Icons.Default.Close,
                 color = TrashRed,
                 modifier = Modifier.weight(1f)
@@ -327,7 +330,48 @@ private fun StatsGrid(stats: WorkflowStats) {
             )
         }
         
-        // Time, Combo and Tagged row
+        // Classify and Trash cleanup stats (only show if relevant)
+        val showClassifyStats = !cardSortingAlbumEnabled && (stats.classifiedToAlbumCount > 0 || stats.skippedClassifyCount > 0)
+        val showTrashCleanupStats = stats.permanentlyDeletedCount > 0 || stats.restoredFromTrashCount > 0
+        
+        if (showClassifyStats || showTrashCleanupStats) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (showClassifyStats) {
+                    StatCard(
+                        value = stats.classifiedToAlbumCount.toString(),
+                        label = "分类到相册",
+                        icon = Icons.Default.Label,
+                        color = KeepGreen,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (showTrashCleanupStats) {
+                    if (stats.permanentlyDeletedCount > 0) {
+                        StatCard(
+                            value = stats.permanentlyDeletedCount.toString(),
+                            label = "永久删除",
+                            icon = Icons.Default.Close,
+                            color = TrashRed,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    if (stats.restoredFromTrashCount > 0) {
+                        StatCard(
+                            value = stats.restoredFromTrashCount.toString(),
+                            label = "已恢复",
+                            icon = Icons.Default.Favorite,
+                            color = KeepGreen,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+        
+        // Time, Combo row
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -350,8 +394,8 @@ private fun StatsGrid(stats: WorkflowStats) {
             )
         }
         
-        // Tagged stats row (only show if any photos were tagged)
-        if (stats.taggedCount > 0) {
+        // Legacy tagged stats row (for backwards compatibility)
+        if (stats.taggedCount > 0 && cardSortingAlbumEnabled) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)

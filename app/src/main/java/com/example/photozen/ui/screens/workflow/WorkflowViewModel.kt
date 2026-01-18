@@ -1,22 +1,34 @@
 package com.example.photozen.ui.screens.workflow
 
+import android.content.Context
+import android.content.IntentSender
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.photozen.data.local.dao.AlbumBubbleDao
+import com.example.photozen.data.local.dao.PhotoDao
+import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.MediaStoreDataSource
+import com.example.photozen.domain.usecase.AlbumOperationsUseCase
 import com.example.photozen.domain.usecase.GetDailyTaskStatusUseCase
 import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.GetUnsortedPhotosUseCase
+import com.example.photozen.domain.usecase.SortPhotoUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -27,16 +39,20 @@ import javax.inject.Inject
 /**
  * Workflow stages in the Flow Tunnel.
  * 
- * Flow: SWIPE -> COMPARE -> TAGGING -> VICTORY
+ * Dynamic flow based on cardSortingAlbumEnabled:
+ * - Enabled: SWIPE -> COMPARE -> TRASH -> VICTORY (3 stages)
+ * - Disabled: SWIPE -> COMPARE -> CLASSIFY -> TRASH -> VICTORY (4 stages)
  */
 enum class WorkflowStage {
     /** Stage 1: Swipe to sort photos (Keep/Trash/Maybe) */
     SWIPE,
     /** Stage 2: Compare "Maybe" photos in Light Table */
     COMPARE,
-    /** Stage 3: Tag the "Keep" photos with bubble tags */
-    TAGGING,
-    /** Stage 4: Show victory/results screen */
+    /** Stage 3: Classify "Keep" photos to albums (only if cardSortingAlbumEnabled is false) */
+    CLASSIFY,
+    /** Stage 4: Clean up "Trash" photos */
+    TRASH,
+    /** Final: Show victory/results screen */
     VICTORY
 }
 
@@ -55,7 +71,17 @@ data class WorkflowStats(
     /** Photo IDs marked as MAYBE during this session */
     val sessionMaybePhotoIds: Set<String> = emptySet(),
     /** Photo IDs marked as KEEP during this session */
-    val sessionKeepPhotoIds: Set<String> = emptySet()
+    val sessionKeepPhotoIds: Set<String> = emptySet(),
+    /** Photo IDs marked as TRASH during this session */
+    val sessionTrashPhotoIds: Set<String> = emptySet(),
+    /** Number of photos classified to albums during CLASSIFY stage */
+    val classifiedToAlbumCount: Int = 0,
+    /** Number of photos skipped during CLASSIFY stage */
+    val skippedClassifyCount: Int = 0,
+    /** Number of photos permanently deleted during TRASH stage */
+    val permanentlyDeletedCount: Int = 0,
+    /** Number of photos restored during TRASH stage */
+    val restoredFromTrashCount: Int = 0
 ) {
     val durationSeconds: Long
         get() = ((endTime ?: System.currentTimeMillis()) - startTime) / 1000
@@ -88,10 +114,23 @@ data class WorkflowUiState(
     val sessionMaybePhotos: List<PhotoEntity> = emptyList(),
     /** Keep photos from this session only */
     val sessionKeepPhotos: List<PhotoEntity> = emptyList(),
+    /** Trash photos from this session only */
+    val sessionTrashPhotos: List<PhotoEntity> = emptyList(),
     // Daily Task Info
     val isDailyTask: Boolean = false,
     val dailyTaskTarget: Int = -1,
-    val dailyTaskCurrent: Int = 0
+    val dailyTaskCurrent: Int = 0,
+    // New stage support
+    /** Whether card sorting album classification is enabled (affects workflow stages) */
+    val cardSortingAlbumEnabled: Boolean = false,
+    /** Albums available for classification */
+    val albumBubbleList: List<com.example.photozen.data.local.entity.AlbumBubbleEntity> = emptyList(),
+    /** Current index in CLASSIFY stage */
+    val classifyModeIndex: Int = 0,
+    /** Selected photo IDs in TRASH stage */
+    val trashSelectedIds: Set<String> = emptySet(),
+    /** Delete intent sender for system delete dialog */
+    val deleteIntentSender: android.content.IntentSender? = null
 ) {
     /** Whether there are more photos to sort */
     val hasUnsortedPhotos: Boolean get() = unsortedCount > 0
@@ -102,21 +141,44 @@ data class WorkflowUiState(
     /** Whether there are keep photos to tag (session-based) */
     val hasKeepPhotos: Boolean get() = sessionKeepPhotos.isNotEmpty()
     
+    /** Whether there are trash photos to clean (session-based) */
+    val hasTrashPhotos: Boolean get() = sessionTrashPhotos.isNotEmpty()
+    
     /** Session-based maybe count for display */
     val sessionMaybeCount: Int get() = sessionMaybePhotos.size
     
     /** Session-based keep count for display */
     val sessionKeepCount: Int get() = sessionKeepPhotos.size
     
+    /** Session-based trash count for display */
+    val sessionTrashCount: Int get() = sessionTrashPhotos.size
+    
+    /** Current photo to classify (if in CLASSIFY stage) */
+    val currentClassifyPhoto: PhotoEntity? 
+        get() = sessionKeepPhotos.getOrNull(classifyModeIndex)
+    
+    /** Dynamic stage list based on cardSortingAlbumEnabled */
+    val stageList: List<WorkflowStage>
+        get() = if (cardSortingAlbumEnabled) {
+            listOf(WorkflowStage.SWIPE, WorkflowStage.COMPARE, WorkflowStage.TRASH, WorkflowStage.VICTORY)
+        } else {
+            listOf(WorkflowStage.SWIPE, WorkflowStage.COMPARE, WorkflowStage.CLASSIFY, WorkflowStage.TRASH, WorkflowStage.VICTORY)
+        }
+    
+    /** Functional stages (excluding VICTORY) */
+    val functionalStages: List<WorkflowStage>
+        get() = stageList.filter { it != WorkflowStage.VICTORY }
+    
     /** Get stage display name */
     val stageName: String get() = when (currentStage) {
         WorkflowStage.SWIPE -> "整理照片"
         WorkflowStage.COMPARE -> "对比待定"
-        WorkflowStage.TAGGING -> "快速分类"
+        WorkflowStage.CLASSIFY -> "分类到相册"
+        WorkflowStage.TRASH -> "清理回收站"
         WorkflowStage.VICTORY -> "完成"
     }
     
-    /** Get stage subtitle with counts (uses session counts for COMPARE/TAGGING) */
+    /** Get stage subtitle with counts (uses session counts for COMPARE) */
     val stageSubtitle: String get() = when (currentStage) {
         WorkflowStage.SWIPE -> {
             if (isDailyTask) {
@@ -126,7 +188,8 @@ data class WorkflowUiState(
             }
         }
         WorkflowStage.COMPARE -> if (sessionMaybeCount > 0) "本次待定 $sessionMaybeCount 张" else "无待定照片"
-        WorkflowStage.TAGGING -> if (sessionKeepCount > 0) "本次保留 $sessionKeepCount 张" else "无保留照片"
+        WorkflowStage.CLASSIFY -> "${classifyModeIndex + 1} / $sessionKeepCount"
+        WorkflowStage.TRASH -> if (sessionTrashCount > 0) "本次回收站 $sessionTrashCount 张" else "无需清理"
         WorkflowStage.VICTORY -> "整理完成"
     }
     
@@ -134,25 +197,35 @@ data class WorkflowUiState(
     val canProceedToNext: Boolean get() = when (currentStage) {
         WorkflowStage.SWIPE -> true // Always can proceed (skip remaining unsorted)
         WorkflowStage.COMPARE -> true // Always can proceed (skip remaining maybe)
-        WorkflowStage.TAGGING -> true // Always can proceed (skip remaining untagged)
+        WorkflowStage.CLASSIFY -> true // Always can proceed (skip remaining classify)
+        WorkflowStage.TRASH -> true // Always can proceed (skip remaining trash cleanup)
         WorkflowStage.VICTORY -> false
     }
     
     /** Text for "Next" button */
-    val nextButtonText: String get() = when (currentStage) {
-        WorkflowStage.SWIPE -> if (unsortedCount > 0) "下一步" else "进入对比"
-        WorkflowStage.COMPARE -> if (sessionMaybeCount > 0) "下一步" else "进入分类"
-        WorkflowStage.TAGGING -> if (sessionKeepCount > 0) "完成" else "查看结果"
-        WorkflowStage.VICTORY -> ""
+    val nextButtonText: String get() {
+        val isLastFunctionalStage = currentStage == functionalStages.lastOrNull()
+        return when (currentStage) {
+            WorkflowStage.SWIPE -> if (unsortedCount > 0) "下一步" else "进入对比"
+            WorkflowStage.COMPARE -> if (sessionMaybeCount > 0) "下一步" else {
+                if (cardSortingAlbumEnabled) "清理回收站" else "分类到相册"
+            }
+            WorkflowStage.CLASSIFY -> if (classifyModeIndex < sessionKeepCount) "下一步" else "清理回收站"
+            WorkflowStage.TRASH -> if (isLastFunctionalStage) "完成整理" else "下一步"
+            WorkflowStage.VICTORY -> ""
+        }
     }
     
     /** Progress through the workflow (0-1) */
     val stageProgress: Float
-        get() = when (currentStage) {
-            WorkflowStage.SWIPE -> 0.25f
-            WorkflowStage.COMPARE -> 0.5f
-            WorkflowStage.TAGGING -> 0.75f
-            WorkflowStage.VICTORY -> 1f
+        get() {
+            val stages = functionalStages
+            val currentIndex = stages.indexOf(currentStage)
+            return if (currentIndex >= 0) {
+                (currentIndex + 1).toFloat() / stages.size
+            } else {
+                1f // VICTORY
+            }
         }
 }
 
@@ -167,12 +240,17 @@ data class WorkflowUiState(
  */
 @HiltViewModel
 class WorkflowViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val getPhotosUseCase: GetPhotosUseCase,
     private val getUnsortedPhotosUseCase: GetUnsortedPhotosUseCase,
     private val preferencesRepository: PreferencesRepository,
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val savedStateHandle: SavedStateHandle,
-    private val getDailyTaskStatusUseCase: GetDailyTaskStatusUseCase
+    private val getDailyTaskStatusUseCase: GetDailyTaskStatusUseCase,
+    private val albumBubbleDao: AlbumBubbleDao,
+    private val albumOperationsUseCase: AlbumOperationsUseCase,
+    private val sortPhotoUseCase: SortPhotoUseCase,
+    private val photoDao: PhotoDao
 ) : ViewModel() {
     
     private val isDailyTask: Boolean = savedStateHandle["isDailyTask"] ?: false
@@ -259,22 +337,51 @@ class WorkflowViewModel @Inject constructor(
         val sessionFilter: com.example.photozen.data.repository.CustomFilterSession?
     )
     
+    // Combined state flows for new stages
+    private data class CombinedState(
+        val internal: InternalState,
+        val unsortedCount: Int,
+        val maybePhotos: List<PhotoEntity>,
+        val keepPhotos: List<PhotoEntity>,
+        val trashPhotos: List<PhotoEntity>,
+        val dailyStatus: com.example.photozen.domain.usecase.DailyTaskStatus?,
+        val cardSortingAlbumEnabled: Boolean,
+        val albumBubbleList: List<AlbumBubbleEntity>
+    )
+    
     val uiState: StateFlow<WorkflowUiState> = combine(
         _internalState,
         getFilteredUnsortedCountFlow(),
         getPhotosUseCase.getPhotosByStatus(PhotoStatus.MAYBE),
         getPhotosUseCase.getPhotosByStatus(PhotoStatus.KEEP),
+        getPhotosUseCase.getPhotosByStatus(PhotoStatus.TRASH)
+    ) { internal, unsortedCount, maybePhotos, keepPhotos, trashPhotos ->
+        CombinedState(internal, unsortedCount, maybePhotos, keepPhotos, trashPhotos, null, false, emptyList())
+    }.combine(
         if (isDailyTask) getDailyTaskStatusUseCase() else flowOf(null)
-    ) { internal, unsortedCount, maybePhotos, keepPhotos, dailyStatus ->
-        // Filter to only session photos for COMPARE and TAGGING stages
-        val sessionMaybePhotos = maybePhotos.filter { it.id in internal.stats.sessionMaybePhotoIds }
-        val sessionKeepPhotos = keepPhotos.filter { it.id in internal.stats.sessionKeepPhotoIds }
+    ) { combined, dailyStatus ->
+        combined.copy(dailyStatus = dailyStatus)
+    }.combine(
+        preferencesRepository.getCardSortingAlbumEnabled()
+    ) { combined, cardSortingEnabled ->
+        combined.copy(cardSortingAlbumEnabled = cardSortingEnabled)
+    }.combine(
+        albumBubbleDao.getAll()
+    ) { combined, albums ->
+        combined.copy(albumBubbleList = albums)
+    }.combine(
+        _internalState // Re-combine to get latest internal state
+    ) { combined, internal ->
+        // Filter to only session photos for COMPARE, CLASSIFY, and TRASH stages
+        val sessionMaybePhotos = combined.maybePhotos.filter { it.id in internal.stats.sessionMaybePhotoIds }
+        val sessionKeepPhotos = combined.keepPhotos.filter { it.id in internal.stats.sessionKeepPhotoIds }
+        val sessionTrashPhotos = combined.trashPhotos.filter { it.id in internal.stats.sessionTrashPhotoIds }
         
-        var displayedUnsortedCount = unsortedCount
+        var displayedUnsortedCount = combined.unsortedCount
         
         // Handle Daily Task Logic for counts
-        if (isDailyTask && dailyStatus != null) {
-            val dailyCurrent = dailyStatus.current
+        if (isDailyTask && combined.dailyStatus != null) {
+            val dailyCurrent = combined.dailyStatus.current
             val needed = (targetCount - dailyCurrent).coerceAtLeast(0)
             
             // Limit displayed unsorted count to what's needed
@@ -287,17 +394,23 @@ class WorkflowViewModel @Inject constructor(
             currentStage = internal.currentStage,
             stats = internal.stats,
             unsortedCount = displayedUnsortedCount,
-            maybeCount = maybePhotos.size,
-            keepCount = keepPhotos.size,
-            keepPhotos = keepPhotos,
+            maybeCount = combined.maybePhotos.size,
+            keepCount = combined.keepPhotos.size,
+            keepPhotos = combined.keepPhotos,
             isWorkflowActive = internal.isWorkflowActive,
             showExitConfirmation = internal.showExitConfirmation,
             showNextStageConfirmation = internal.showNextStageConfirmation,
             sessionMaybePhotos = sessionMaybePhotos,
             sessionKeepPhotos = sessionKeepPhotos,
+            sessionTrashPhotos = sessionTrashPhotos,
             isDailyTask = isDailyTask,
             dailyTaskTarget = targetCount,
-            dailyTaskCurrent = dailyStatus?.current ?: 0
+            dailyTaskCurrent = combined.dailyStatus?.current ?: 0,
+            cardSortingAlbumEnabled = combined.cardSortingAlbumEnabled,
+            albumBubbleList = combined.albumBubbleList,
+            classifyModeIndex = internal.classifyModeIndex,
+            trashSelectedIds = internal.trashSelectedIds,
+            deleteIntentSender = internal.deleteIntentSender
         )
     }.stateIn(
         scope = viewModelScope,
@@ -342,6 +455,11 @@ class WorkflowViewModel @Inject constructor(
                     state.stats.sessionKeepPhotoIds + photoId
                 } else {
                     state.stats.sessionKeepPhotoIds
+                },
+                sessionTrashPhotoIds = if (status == PhotoStatus.TRASH) {
+                    state.stats.sessionTrashPhotoIds + photoId
+                } else {
+                    state.stats.sessionTrashPhotoIds
                 }
             )
             state.copy(stats = newStats)
@@ -387,7 +505,8 @@ class WorkflowViewModel @Inject constructor(
         val hasRemaining = when (state.currentStage) {
             WorkflowStage.SWIPE -> state.unsortedCount > 0
             WorkflowStage.COMPARE -> state.sessionMaybeCount > 0
-            WorkflowStage.TAGGING -> false // No confirmation needed for tagging
+            WorkflowStage.CLASSIFY -> state.classifyModeIndex < state.sessionKeepCount
+            WorkflowStage.TRASH -> state.sessionTrashCount > 0
             WorkflowStage.VICTORY -> false
         }
         
@@ -415,14 +534,18 @@ class WorkflowViewModel @Inject constructor(
     
     /**
      * Proceed to the next stage.
+     * Uses dynamic stage list based on cardSortingAlbumEnabled.
      */
     private fun proceedToNextStage() {
+        val currentUiState = uiState.value
+        val stageList = currentUiState.stageList
+        val currentIndex = stageList.indexOf(currentUiState.currentStage)
+        
         _internalState.update { state ->
-            val nextStage = when (state.currentStage) {
-                WorkflowStage.SWIPE -> WorkflowStage.COMPARE
-                WorkflowStage.COMPARE -> WorkflowStage.TAGGING
-                WorkflowStage.TAGGING -> WorkflowStage.VICTORY
-                WorkflowStage.VICTORY -> WorkflowStage.VICTORY
+            val nextStage = if (currentIndex >= 0 && currentIndex < stageList.size - 1) {
+                stageList[currentIndex + 1]
+            } else {
+                WorkflowStage.VICTORY
             }
             
             val newStats = if (nextStage == WorkflowStage.VICTORY) {
@@ -431,7 +554,17 @@ class WorkflowViewModel @Inject constructor(
                 state.stats
             }
             
-            state.copy(currentStage = nextStage, stats = newStats)
+            // Reset classify index when entering CLASSIFY stage
+            val newClassifyIndex = if (nextStage == WorkflowStage.CLASSIFY) 0 else state.classifyModeIndex
+            // Clear trash selection when entering TRASH stage
+            val newTrashSelection = if (nextStage == WorkflowStage.TRASH) emptySet() else state.trashSelectedIds
+            
+            state.copy(
+                currentStage = nextStage, 
+                stats = newStats,
+                classifyModeIndex = newClassifyIndex,
+                trashSelectedIds = newTrashSelection
+            )
         }
     }
     
@@ -487,7 +620,10 @@ class WorkflowViewModel @Inject constructor(
             state.copy(
                 isWorkflowActive = false,
                 currentStage = WorkflowStage.SWIPE,
-                stats = WorkflowStats()
+                stats = WorkflowStats(),
+                classifyModeIndex = 0,
+                trashSelectedIds = emptySet(),
+                deleteIntentSender = null
             )
         }
     }
@@ -497,6 +633,210 @@ class WorkflowViewModel @Inject constructor(
         val stats: WorkflowStats = WorkflowStats(),
         val isWorkflowActive: Boolean = false,
         val showExitConfirmation: Boolean = false,
-        val showNextStageConfirmation: Boolean = false
+        val showNextStageConfirmation: Boolean = false,
+        // New stage support
+        val classifyModeIndex: Int = 0,
+        val trashSelectedIds: Set<String> = emptySet(),
+        val deleteIntentSender: IntentSender? = null
     )
+    
+    // ==================== CLASSIFY Stage Methods ====================
+    
+    /**
+     * Classify current photo to an album.
+     */
+    fun classifyPhotoToAlbum(bucketId: String) {
+        viewModelScope.launch {
+            val currentPhoto = uiState.value.currentClassifyPhoto ?: return@launch
+            val album = uiState.value.albumBubbleList.find { it.bucketId == bucketId } ?: return@launch
+            
+            // Get target album path
+            val targetPath = mediaStoreDataSource.getAlbumPath(bucketId)
+                ?: "Pictures/${album.displayName}"
+            
+            // Copy photo to album
+            val photoUri = Uri.parse(currentPhoto.systemUri)
+            val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
+            
+            if (result.isSuccess) {
+                // Update bucket_id in database
+                photoDao.updateBucketId(currentPhoto.id, bucketId)
+                
+                // Update stats and advance
+                _internalState.update { state ->
+                    state.copy(
+                        stats = state.stats.copy(
+                            classifiedToAlbumCount = state.stats.classifiedToAlbumCount + 1
+                        ),
+                        classifyModeIndex = state.classifyModeIndex + 1
+                    )
+                }
+            }
+        }
+    }
+    
+    /**
+     * Skip current photo classification.
+     */
+    fun skipClassifyPhoto() {
+        _internalState.update { state ->
+            state.copy(
+                stats = state.stats.copy(
+                    skippedClassifyCount = state.stats.skippedClassifyCount + 1
+                ),
+                classifyModeIndex = state.classifyModeIndex + 1
+            )
+        }
+    }
+    
+    /**
+     * Called when classify stage auto-completes (all keep photos processed).
+     */
+    fun onClassifyAutoComplete() {
+        proceedToNextStage()
+    }
+    
+    // ==================== TRASH Stage Methods ====================
+    
+    /**
+     * Toggle photo selection in TRASH stage.
+     */
+    fun toggleTrashSelection(photoId: String) {
+        _internalState.update { state ->
+            val newSelection = if (photoId in state.trashSelectedIds) {
+                state.trashSelectedIds - photoId
+            } else {
+                state.trashSelectedIds + photoId
+            }
+            state.copy(trashSelectedIds = newSelection)
+        }
+    }
+    
+    /**
+     * Update trash selection (for drag select).
+     */
+    fun updateTrashSelection(selectedIds: Set<String>) {
+        _internalState.update { state ->
+            state.copy(trashSelectedIds = selectedIds)
+        }
+    }
+    
+    /**
+     * Select all trash photos.
+     */
+    fun selectAllTrash() {
+        val allIds = uiState.value.sessionTrashPhotos.map { it.id }.toSet()
+        _internalState.update { it.copy(trashSelectedIds = allIds) }
+    }
+    
+    /**
+     * Clear trash selection.
+     */
+    fun clearTrashSelection() {
+        _internalState.update { it.copy(trashSelectedIds = emptySet()) }
+    }
+    
+    /**
+     * Restore selected trash photos to a status.
+     */
+    fun restoreTrashPhotos(targetStatus: PhotoStatus) {
+        viewModelScope.launch {
+            val selectedIds = _internalState.value.trashSelectedIds.toList()
+            if (selectedIds.isEmpty()) return@launch
+            
+            for (photoId in selectedIds) {
+                sortPhotoUseCase.updateStatus(photoId, targetStatus)
+            }
+            
+            // Update stats - restored photos
+            _internalState.update { state ->
+                state.copy(
+                    stats = state.stats.copy(
+                        restoredFromTrashCount = state.stats.restoredFromTrashCount + selectedIds.size,
+                        // Remove restored photos from session trash
+                        sessionTrashPhotoIds = state.stats.sessionTrashPhotoIds - selectedIds.toSet()
+                    ),
+                    trashSelectedIds = emptySet()
+                )
+            }
+        }
+    }
+    
+    /**
+     * Request permanent delete of selected trash photos.
+     */
+    fun requestPermanentDelete() {
+        viewModelScope.launch {
+            val selectedIds = _internalState.value.trashSelectedIds.toList()
+            if (selectedIds.isEmpty()) return@launch
+            
+            val photos = uiState.value.sessionTrashPhotos.filter { it.id in selectedIds }
+            val uris = photos.map { Uri.parse(it.systemUri) }
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    val deleteRequest = MediaStore.createDeleteRequest(
+                        context.contentResolver,
+                        uris
+                    )
+                    _internalState.update { it.copy(deleteIntentSender = deleteRequest.intentSender) }
+                } catch (e: Exception) {
+                    // Handle error
+                }
+            } else {
+                // For older versions, delete directly
+                for (photo in photos) {
+                    try {
+                        context.contentResolver.delete(Uri.parse(photo.systemUri), null, null)
+                        photoDao.deleteById(photo.id)
+                    } catch (e: Exception) {
+                        // Ignore individual failures
+                    }
+                }
+                onDeleteComplete(true)
+            }
+        }
+    }
+    
+    /**
+     * Clear delete intent sender.
+     */
+    fun clearDeleteIntentSender() {
+        _internalState.update { it.copy(deleteIntentSender = null) }
+    }
+    
+    /**
+     * Handle delete completion result.
+     */
+    fun onDeleteComplete(success: Boolean) {
+        if (success) {
+            viewModelScope.launch {
+                val selectedIds = _internalState.value.trashSelectedIds.toList()
+                
+                // Delete from Room database
+                for (photoId in selectedIds) {
+                    photoDao.deleteById(photoId)
+                }
+                
+                // Update stats
+                _internalState.update { state ->
+                    state.copy(
+                        stats = state.stats.copy(
+                            permanentlyDeletedCount = state.stats.permanentlyDeletedCount + selectedIds.size,
+                            // Remove deleted photos from session trash
+                            sessionTrashPhotoIds = state.stats.sessionTrashPhotoIds - selectedIds.toSet()
+                        ),
+                        trashSelectedIds = emptySet()
+                    )
+                }
+            }
+        }
+    }
+    
+    /**
+     * Called when trash stage auto-completes (all trash photos cleaned).
+     */
+    fun onTrashAutoComplete() {
+        proceedToNextStage()
+    }
 }

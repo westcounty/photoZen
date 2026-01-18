@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -48,6 +49,8 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.ui.components.PhotoStatusBadge
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
@@ -63,6 +66,7 @@ fun AlbumPhotoListScreen(
     onNavigateBack: () -> Unit,
     onNavigateToEditor: (String) -> Unit,
     onNavigateToQuickSort: (String) -> Unit = {},
+    onNavigateToFlowSorter: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: AlbumPhotoListViewModel = hiltViewModel()
 ) {
@@ -70,6 +74,7 @@ fun AlbumPhotoListScreen(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     
     // Initialize ViewModel
     LaunchedEffect(bucketId, albumName) {
@@ -83,6 +88,10 @@ fun AlbumPhotoListScreen(
     // Album picker state
     var showAlbumPicker by remember { mutableStateOf(false) }
     var pickerMode by remember { mutableStateOf("move") }  // "move" or "copy"
+    
+    // Context menu state (for long press)
+    var showContextMenu by remember { mutableStateOf(false) }
+    var contextMenuPhotoIndex by remember { mutableIntStateOf(-1) }
     
     // Delete confirmation launcher
     val deleteResultLauncher = rememberLauncherForActivityResult(
@@ -177,6 +186,15 @@ fun AlbumPhotoListScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            // Phase 7.2: Status filter chips
+            if (!uiState.isSelectionMode && uiState.allPhotos.isNotEmpty()) {
+                StatusFilterChips(
+                    selectedStatuses = uiState.statusFilter,
+                    onStatusToggle = { status -> viewModel.toggleStatusFilter(status) },
+                    onSelectAll = { viewModel.selectAllStatuses() }
+                )
+            }
+            
             // Stats card
             if (!uiState.isSelectionMode && uiState.photos.isNotEmpty()) {
                 AlbumStatsCard(
@@ -223,7 +241,9 @@ fun AlbumPhotoListScreen(
                             onPhotoLongClick = { index ->
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 if (!uiState.isSelectionMode) {
-                                    viewModel.enterSelectionMode(uiState.photos[index].id)
+                                    // Show context menu instead of entering selection mode directly
+                                    contextMenuPhotoIndex = index
+                                    showContextMenu = true
                                 }
                             }
                         )
@@ -291,6 +311,89 @@ fun AlbumPhotoListScreen(
                 }
             },
             onDismiss = { showAlbumPicker = false }
+        )
+    }
+    
+    // Context menu dialog (for long press on photo)
+    if (showContextMenu && contextMenuPhotoIndex >= 0 && contextMenuPhotoIndex < uiState.photos.size) {
+        val photo = uiState.photos[contextMenuPhotoIndex]
+        
+        AlertDialog(
+            onDismissRequest = { 
+                showContextMenu = false 
+                contextMenuPhotoIndex = -1
+            },
+            title = { Text("选择操作") },
+            text = {
+                Column {
+                    // Option 1: Select (enter selection mode)
+                    TextButton(
+                        onClick = {
+                            showContextMenu = false
+                            viewModel.enterSelectionMode(photo.id)
+                            contextMenuPhotoIndex = -1
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Start,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("选择")
+                        }
+                    }
+                    
+                    // Option 2: Start filtering from this photo
+                    TextButton(
+                        onClick = {
+                            showContextMenu = false
+                            // Get photo IDs from current index to the end
+                            val photoIdsFromHere = uiState.photos
+                                .drop(contextMenuPhotoIndex)
+                                .map { it.id }
+                            
+                            if (photoIdsFromHere.isNotEmpty()) {
+                                scope.launch {
+                                    viewModel.setFilterSessionAndNavigate(photoIdsFromHere)
+                                    onNavigateToFlowSorter()
+                                }
+                            }
+                            contextMenuPhotoIndex = -1
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Start,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FilterList,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("从此张开始筛选")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { 
+                    showContextMenu = false 
+                    contextMenuPhotoIndex = -1
+                }) {
+                    Text("取消")
+                }
+            }
         )
     }
 }
@@ -459,6 +562,17 @@ private fun PhotoGrid(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
+                
+                // Photo status badge (top-left, only show when not in selection mode)
+                if (!isSelectionMode && photo.status != PhotoStatus.UNSORTED) {
+                    PhotoStatusBadge(
+                        status = photo.status,
+                        size = 20.dp,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(6.dp)
+                    )
+                }
                 
                 // Selection indicator
                 if (isSelectionMode) {
@@ -723,5 +837,85 @@ private fun ZoomableAlbumImage(
                     translationY = offsetY
                 }
         )
+    }
+}
+
+/**
+ * Phase 7.2: Status filter chips for album photo list.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StatusFilterChips(
+    selectedStatuses: Set<PhotoStatus>,
+    onStatusToggle: (PhotoStatus) -> Unit,
+    onSelectAll: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isAllSelected = selectedStatuses.size == PhotoStatus.entries.size
+    
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Status chips
+        PhotoStatus.entries.forEach { status ->
+            val isSelected = status in selectedStatuses
+            FilterChip(
+                selected = isSelected,
+                onClick = { onStatusToggle(status) },
+                label = {
+                    Text(
+                        text = when (status) {
+                            PhotoStatus.KEEP -> "保留"
+                            PhotoStatus.MAYBE -> "待定"
+                            PhotoStatus.TRASH -> "回收站"
+                            PhotoStatus.UNSORTED -> "未筛选"
+                        },
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                },
+                leadingIcon = if (isSelected) {
+                    {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                } else null,
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = when (status) {
+                        PhotoStatus.KEEP -> KeepGreen.copy(alpha = 0.2f)
+                        PhotoStatus.MAYBE -> MaybeAmber.copy(alpha = 0.2f)
+                        PhotoStatus.TRASH -> TrashRed.copy(alpha = 0.2f)
+                        PhotoStatus.UNSORTED -> MaterialTheme.colorScheme.surfaceVariant
+                    },
+                    selectedLabelColor = when (status) {
+                        PhotoStatus.KEEP -> KeepGreen
+                        PhotoStatus.MAYBE -> MaybeAmber
+                        PhotoStatus.TRASH -> TrashRed
+                        PhotoStatus.UNSORTED -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                ),
+                modifier = Modifier.height(32.dp)
+            )
+        }
+        
+        // Reset button (show only when filter is active)
+        if (!isAllSelected) {
+            Spacer(modifier = Modifier.weight(1f))
+            TextButton(
+                onClick = onSelectAll,
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                Text(
+                    text = "全部",
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
     }
 }

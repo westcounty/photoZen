@@ -33,8 +33,10 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Refresh
@@ -43,6 +45,7 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material.icons.filled.ViewModule
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -56,15 +59,17 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import com.example.photozen.ui.components.FloatingAlbumTags
 import com.example.photozen.ui.components.StoragePermissionDialog
 import com.example.photozen.ui.components.SystemAlbumPickerDialog
-import com.example.photozen.ui.components.FloatingAlbumTags
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -150,25 +155,26 @@ fun FlowSorterScreen(
                                 style = MaterialTheme.typography.titleLarge
                             )
                         } else {
-                            Column {
+                            // Display progress prominently, centered in the title area
+                            if (uiState.isDailyTask) {
                                 Text(
-                                    text = if (uiState.viewMode == FlowSorterViewMode.CARD) "Flow Sorter" else "列表整理",
+                                    text = "${uiState.dailyTaskCurrent} / ${uiState.dailyTaskTarget} 今日目标",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            } else if (uiState.totalCount > 0) {
+                                // Use sortedCountImmediate for instant feedback on first swipe
+                                Text(
+                                    text = "$sortedCountImmediate / ${uiState.totalCount} 已整理",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            } else {
+                                Text(
+                                    text = if (uiState.viewMode == FlowSorterViewMode.CARD) "快速整理" else "列表整理",
                                     style = MaterialTheme.typography.titleLarge
                                 )
-                                if (uiState.isDailyTask) {
-                                    Text(
-                                        text = "${uiState.dailyTaskCurrent} / ${uiState.dailyTaskTarget} 今日目标",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                } else if (uiState.totalCount > 0) {
-                                    // Use sortedCountImmediate for instant feedback on first swipe
-                                    Text(
-                                        text = "$sortedCountImmediate / ${uiState.totalCount} 已整理",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
                             }
                         }
                     },
@@ -325,6 +331,10 @@ fun FlowSorterContent(
     val availableAlbums by viewModel.availableAlbums.collectAsState()
     var selectedAlbumIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     
+    // Context menu state (for "从此张开始筛选" feature)
+    var showContextMenu by remember { mutableStateOf(false) }
+    var contextMenuPhotoIndex by remember { mutableIntStateOf(-1) }
+    
     // Local view mode state for workflow mode (since we don't have TopAppBar)
     var localViewMode by remember { mutableStateOf(FlowSorterViewMode.CARD) }
     val effectiveViewMode = if (isWorkflowMode) localViewMode else uiState.viewMode
@@ -423,7 +433,12 @@ fun FlowSorterContent(
                                     fullscreenPhoto = photo
                                 }
                             },
-                            columns = uiState.gridColumns
+                            columns = uiState.gridColumns,
+                            onPhotoLongClick = { _, index ->
+                                // Show context menu for "从此张开始筛选"
+                                contextMenuPhotoIndex = index
+                                showContextMenu = true
+                            }
                         )
                     }
                     else -> {
@@ -691,6 +706,85 @@ fun FlowSorterContent(
             onPermissionGranted = { viewModel.onPermissionGranted() },
             onDismiss = { viewModel.dismissPermissionDialog() },
             showRetryError = uiState.permissionRetryError
+        )
+    }
+    
+    // Context menu dialog for "从此张开始筛选" feature
+    if (showContextMenu && contextMenuPhotoIndex >= 0 && contextMenuPhotoIndex < uiState.photos.size) {
+        AlertDialog(
+            onDismissRequest = { 
+                showContextMenu = false 
+                contextMenuPhotoIndex = -1
+            },
+            title = { Text("选择操作") },
+            text = {
+                Column {
+                    // Option 1: Select (enter selection mode)
+                    TextButton(
+                        onClick = {
+                            showContextMenu = false
+                            val photoId = uiState.photos[contextMenuPhotoIndex].id
+                            viewModel.updateSelection(setOf(photoId))
+                            contextMenuPhotoIndex = -1
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Start,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("选择")
+                        }
+                    }
+                    
+                    // Option 2: Start filtering from this photo
+                    TextButton(
+                        onClick = {
+                            showContextMenu = false
+                            // Start from this photo: remove photos before it and switch to card mode
+                            viewModel.startFromIndex(contextMenuPhotoIndex)
+                            // Switch to card view mode
+                            if (!isWorkflowMode) {
+                                viewModel.setViewMode(FlowSorterViewMode.CARD)
+                            } else {
+                                localViewMode = FlowSorterViewMode.CARD
+                            }
+                            contextMenuPhotoIndex = -1
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Start,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FilterList,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("从此张开始筛选")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { 
+                    showContextMenu = false 
+                    contextMenuPhotoIndex = -1
+                }) {
+                    Text("取消")
+                }
+            }
         )
     }
 }

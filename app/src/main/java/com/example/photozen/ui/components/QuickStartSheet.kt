@@ -1,5 +1,10 @@
 package com.example.photozen.ui.components
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -77,12 +82,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
@@ -119,6 +126,25 @@ fun QuickStartSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    
+    // 通知权限请求 launcher
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        // 权限结果处理：无论是否授予，都继续下一步
+        // 权限状态会在 onComplete 时由 HomeViewModel 处理
+    }
+    
+    // 检查并请求通知权限的辅助函数
+    fun checkAndRequestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) 
+                != PackageManager.PERMISSION_GRANTED) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
     
     // Current step (0-indexed)
     var currentStep by remember { mutableIntStateOf(0) }
@@ -221,8 +247,16 @@ fun QuickStartSheet(
                 Button(
                     onClick = {
                         if (currentStep < 2) {
+                            // 从 Step 0 到 Step 1 时，如果每日任务开启，请求通知权限
+                            if (currentStep == 0 && dailyTaskEnabled) {
+                                checkAndRequestNotificationPermission()
+                            }
                             currentStep++
                         } else {
+                            // 完成设置时，如果每日任务开启，再次检查通知权限
+                            if (dailyTaskEnabled) {
+                                checkAndRequestNotificationPermission()
+                            }
                             scope.launch {
                                 sheetState.hide()
                                 onComplete(

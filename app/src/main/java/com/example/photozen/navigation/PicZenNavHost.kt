@@ -20,8 +20,9 @@ import com.example.photozen.ui.screens.flowsorter.FlowSorterScreen
 import com.example.photozen.ui.screens.home.HomeScreen
 import com.example.photozen.ui.screens.lighttable.LightTableScreen
 import com.example.photozen.ui.screens.photolist.PhotoListScreen
-import com.example.photozen.ui.screens.quicktag.QuickTagScreen
 import com.example.photozen.ui.screens.settings.SettingsScreen
+import com.example.photozen.ui.screens.share.ShareCompareScreen
+import com.example.photozen.ui.screens.share.ShareCopyScreen
 import com.example.photozen.ui.screens.smartgallery.LabelBrowserScreen
 import com.example.photozen.ui.screens.smartgallery.LabelPhotosScreen
 import com.example.photozen.ui.screens.smartgallery.MapLibreScreen
@@ -33,18 +34,24 @@ import com.example.photozen.ui.screens.smartgallery.SmartSearchScreen
 import com.example.photozen.ui.screens.timeline.TimelineScreen
 import com.example.photozen.ui.screens.albums.AlbumBubbleScreen
 import com.example.photozen.ui.screens.albums.AlbumPhotoListScreen
-import com.example.photozen.ui.screens.tags.TagBubbleScreen
-import com.example.photozen.ui.screens.tags.TaggedPhotosScreen
 import com.example.photozen.ui.screens.trash.TrashScreen
 import com.example.photozen.ui.screens.workflow.WorkflowScreen
 
 /**
  * Main navigation host for PicZen app.
  * Manages navigation between all screens.
+ * 
+ * @param navController The navigation controller
+ * @param startDestination The start destination (defaults to Home, but can be ShareCopy/ShareCompare for share intents)
+ * @param onFinish Callback to finish the activity (used for share screens to return to original app)
+ * @param modifier Modifier for the NavHost
+ * @param achievementViewModel ViewModel for achievement celebrations
  */
 @Composable
 fun PicZenNavHost(
     navController: NavHostController,
+    startDestination: Screen = Screen.Home,
+    onFinish: () -> Unit = {},
     modifier: Modifier = Modifier,
     achievementViewModel: AchievementCelebrationViewModel = hiltViewModel()
 ) {
@@ -53,7 +60,7 @@ fun PicZenNavHost(
     Box(modifier = modifier.fillMaxSize()) {
         NavHost(
         navController = navController,
-        startDestination = Screen.Home,
+        startDestination = startDestination,
         modifier = modifier
     ) {
         composable<Screen.Home> {
@@ -75,9 +82,6 @@ fun PicZenNavHost(
                 },
                 onNavigateToWorkflow = { isDaily, target ->
                     navController.navigate(Screen.Workflow(isDailyTask = isDaily, targetCount = target))
-                },
-                onNavigateToTagBubble = {
-                    navController.navigate(Screen.TagBubble)
                 },
                 onNavigateToAlbumBubble = {
                     navController.navigate(Screen.AlbumBubble)
@@ -258,9 +262,6 @@ fun PicZenNavHost(
                 onNavigateToEditor = { photoId ->
                     navController.navigate(Screen.PhotoEditor(photoId))
                 },
-                onNavigateToQuickTag = {
-                    navController.navigate(Screen.QuickTag)
-                },
                 onNavigateToLightTable = {
                     navController.navigate(Screen.LightTable)
                 }
@@ -297,38 +298,6 @@ fun PicZenNavHost(
         composable<Screen.Workflow> {
             WorkflowScreen(
                 onExit = {
-                    navController.popBackStack()
-                }
-            )
-        }
-        
-        composable<Screen.TagBubble> {
-            TagBubbleScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onNavigateToPhotoList = { tagId ->
-                    navController.navigate(Screen.PhotoListByTag(tagId))
-                }
-            )
-        }
-        
-        composable<Screen.PhotoListByTag> { backStackEntry ->
-            val route = backStackEntry.toRoute<Screen.PhotoListByTag>()
-            TaggedPhotosScreen(
-                tagId = route.tagId,
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onNavigateToEditor = { photoId ->
-                    navController.navigate(Screen.PhotoEditor(photoId))
-                }
-            )
-        }
-        
-        composable<Screen.QuickTag> {
-            QuickTagScreen(
-                onNavigateBack = {
                     navController.popBackStack()
                 }
             )
@@ -386,14 +355,32 @@ fun PicZenNavHost(
                     when (route.mode) {
                         "flow" -> navController.navigate(Screen.FlowSorter())
                         "workflow" -> navController.navigate(Screen.Workflow())
-                        "quicktag" -> navController.navigate(Screen.QuickTag)
                         "flow_daily" -> navController.navigate(Screen.FlowSorter(isDailyTask = true, targetCount = route.targetCount))
                         "workflow_daily" -> navController.navigate(Screen.Workflow(isDailyTask = true, targetCount = route.targetCount))
                         else -> navController.navigate(Screen.FlowSorter())
                     }
                     // Note: The filter parameters are stored in PreferencesRepository
-                    // for use by FlowSorter/Workflow/QuickTag
+                    // for use by FlowSorter/Workflow
                 }
+            )
+        }
+        
+        // ==================== Share Screens ====================
+        // These screens handle external share intents
+        
+        composable<Screen.ShareCopy> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.ShareCopy>()
+            ShareCopyScreen(
+                urisJson = route.urisJson,
+                onFinish = onFinish
+            )
+        }
+        
+        composable<Screen.ShareCompare> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.ShareCompare>()
+            ShareCompareScreen(
+                urisJson = route.urisJson,
+                onFinish = onFinish
             )
         }
     }

@@ -3,8 +3,9 @@ package com.example.photozen.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.example.photozen.data.repository.PreferencesRepository
-import com.example.photozen.util.AlarmScheduler
+import com.example.photozen.service.DailyProgressService
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,13 +15,10 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * BroadcastReceiver to reschedule alarms after device boot.
+ * BroadcastReceiver to start services after device boot.
  */
 @AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
-    
-    @Inject
-    lateinit var alarmScheduler: AlarmScheduler
     
     @Inject
     lateinit var preferencesRepository: PreferencesRepository
@@ -28,25 +26,30 @@ class BootReceiver : BroadcastReceiver() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED || 
+            intent.action == "android.intent.action.QUICKBOOT_POWERON") {
+            
+            Log.d(TAG, "Boot completed, initializing services")
             val pendingResult = goAsync()
             
             scope.launch {
                 try {
-                    // Check if daily reminder is enabled
-                    val reminderEnabled = preferencesRepository.getDailyReminderEnabled().first()
-                    
-                    if (reminderEnabled) {
-                        // Get the reminder time
-                        val reminderTime = preferencesRepository.getDailyReminderTime().first()
-                        
-                        // Reschedule the alarm
-                        alarmScheduler.scheduleDailyReminder(reminderTime.first, reminderTime.second)
+                    // Start foreground progress service if enabled
+                    val progressEnabled = preferencesRepository.getProgressNotificationEnabled().first()
+                    if (progressEnabled) {
+                        DailyProgressService.start(context)
+                        Log.d(TAG, "Progress service started on boot")
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during boot initialization", e)
                 } finally {
                     pendingResult.finish()
                 }
             }
         }
+    }
+    
+    companion object {
+        private const val TAG = "BootReceiver"
     }
 }

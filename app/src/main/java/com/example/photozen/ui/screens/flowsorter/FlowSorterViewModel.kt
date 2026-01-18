@@ -1492,6 +1492,39 @@ class FlowSorterViewModel @Inject constructor(
      */
     fun getMaxCombo(): Int = _combo.value.maxCount
     
+    /**
+     * Set view mode directly (for switching to card mode from context menu).
+     */
+    fun setViewMode(mode: FlowSorterViewMode) {
+        _viewMode.value = mode
+        // Clear selection when switching modes
+        _selectedPhotoIds.value = emptySet()
+    }
+    
+    /**
+     * Start filtering from a specific index.
+     * Removes all photos before the specified index from the current photo list.
+     * Used for "从此张开始筛选" feature.
+     */
+    fun startFromIndex(index: Int) {
+        val currentPhotos = _pagedPhotos.value
+        if (index < 0 || index >= currentPhotos.size) return
+        
+        // Get photos from the specified index to the end
+        val photosFromIndex = currentPhotos.drop(index)
+        
+        // Update the photos list
+        _pagedPhotos.value = photosFromIndex
+        
+        // Reset the current index to 0 (start of the new list)
+        _currentIndex.value = 0
+        
+        // Clear any selection
+        _selectedPhotoIds.value = emptySet()
+        
+        Log.d(TAG, "startFromIndex: index=$index, remaining photos=${photosFromIndex.size}")
+    }
+    
     override fun onCleared() {
         super.onCleared()
         comboTimeoutJob?.cancel()

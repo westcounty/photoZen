@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
+import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.domain.GroupingMode
 import com.example.photozen.domain.PhotoEvent
 import kotlinx.coroutines.launch
@@ -54,9 +55,15 @@ fun TimelineScreen(
     viewModel: TimelineViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val albumBubbleList by viewModel.albumBubbleList.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    
+    // Fullscreen preview state
+    var showFullscreen by remember { mutableStateOf(false) }
+    var fullscreenPhotos by remember { mutableStateOf<List<PhotoEntity>>(emptyList()) }
+    var fullscreenStartIndex by remember { mutableIntStateOf(0) }
     
     // Handle navigation to sorter (card mode)
     LaunchedEffect(uiState.navigateToSorter) {
@@ -223,7 +230,13 @@ fun TimelineScreen(
                                 event = event,
                                 isExpanded = viewModel.isEventExpanded(event.id),
                                 onToggleExpanded = { viewModel.toggleEventExpanded(event.id) },
-                                onPhotoClick = onPhotoClick,
+                                onPhotoClick = { photoId ->
+                                    // Open fullscreen preview with current event's photos
+                                    val clickedIndex = event.photos.indexOfFirst { it.id == photoId }
+                                    fullscreenPhotos = event.photos
+                                    fullscreenStartIndex = if (clickedIndex >= 0) clickedIndex else 0
+                                    showFullscreen = true
+                                },
                                 onSortGroup = { viewModel.sortGroup(event.startTime, event.endTime) },
                                 onViewMore = { viewModel.sortGroup(event.startTime, event.endTime, listMode = true) }
                             )
@@ -261,6 +274,78 @@ fun TimelineScreen(
             }
         }
     }
+    
+    // Fullscreen preview overlay
+    if (showFullscreen && fullscreenPhotos.isNotEmpty()) {
+        TimelineFullscreenViewerWrapper(
+            photos = fullscreenPhotos,
+            initialIndex = fullscreenStartIndex,
+            albums = albumBubbleList,
+            viewModel = viewModel,
+            snackbarHostState = snackbarHostState,
+            onDismiss = { showFullscreen = false },
+            onPhotosUpdated = { updatedPhotos ->
+                fullscreenPhotos = updatedPhotos
+                if (updatedPhotos.isEmpty()) {
+                    showFullscreen = false
+                }
+            }
+        )
+    }
+}
+
+/**
+ * Wrapper composable to handle async operations for TimelineFullscreenViewer.
+ */
+@Composable
+private fun TimelineFullscreenViewerWrapper(
+    photos: List<PhotoEntity>,
+    initialIndex: Int,
+    albums: List<com.example.photozen.data.local.entity.AlbumBubbleEntity>,
+    viewModel: TimelineViewModel,
+    snackbarHostState: SnackbarHostState,
+    onDismiss: () -> Unit,
+    onPhotosUpdated: (List<PhotoEntity>) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var currentPhotos by remember { mutableStateOf(photos) }
+    var deleteIntentSender by remember { mutableStateOf<android.content.IntentSender?>(null) }
+    
+    // Update when photos change externally
+    LaunchedEffect(photos) {
+        currentPhotos = photos
+    }
+    
+    TimelineFullscreenViewer(
+        photos = currentPhotos,
+        initialIndex = initialIndex,
+        albums = albums,
+        onDismiss = onDismiss,
+        onAddToAlbum = { photoId, albumBucketId ->
+            viewModel.addPhotoToAlbum(photoId, albumBucketId)
+            scope.launch {
+                snackbarHostState.showSnackbar("已添加到相册")
+            }
+        },
+        onRequestDelete = { photoId ->
+            // Fetch delete intent sender asynchronously
+            scope.launch {
+                deleteIntentSender = viewModel.getDeleteIntentSender(photoId)
+            }
+        },
+        deleteIntentSender = deleteIntentSender,
+        onToggleStatus = { photoId ->
+            viewModel.togglePhotoStatus(photoId)
+        },
+        onDeleteConfirmed = { photoId ->
+            viewModel.onPhotoDeleted(photoId)
+            // Remove from current photos list
+            val updatedPhotos = currentPhotos.filter { it.id != photoId }
+            currentPhotos = updatedPhotos
+            onPhotosUpdated(updatedPhotos)
+            deleteIntentSender = null
+        }
+    )
 }
 
 /**

@@ -10,7 +10,6 @@ import com.example.photozen.data.local.dao.FaceDao
 import com.example.photozen.data.local.dao.PhotoAnalysisDao
 import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.dao.PhotoLabelDao
-import com.example.photozen.data.local.dao.TagDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -191,6 +190,20 @@ private val MIGRATION_8_9 = object : Migration(8, 9) {
 }
 
 /**
+ * Migration from version 9 to 10: Remove tag-related tables (tags feature removed).
+ * - Drop tags table
+ * - Drop photo_tag_cross_ref table
+ */
+private val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Drop photo_tag_cross_ref table first (due to foreign key)
+        db.execSQL("DROP TABLE IF EXISTS photo_tag_cross_ref")
+        // Drop tags table
+        db.execSQL("DROP TABLE IF EXISTS tags")
+    }
+}
+
+/**
  * Hilt module for providing Room database and DAOs.
  */
 @Module
@@ -210,7 +223,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME
         )
-            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
             .fallbackToDestructiveMigration(dropAllTables = true) // For development - use migrations in production
             .build()
     }
@@ -222,15 +235,6 @@ object DatabaseModule {
     @Singleton
     fun providePhotoDao(database: AppDatabase): PhotoDao {
         return database.photoDao()
-    }
-    
-    /**
-     * Provides TagDao from the database.
-     */
-    @Provides
-    @Singleton
-    fun provideTagDao(database: AppDatabase): TagDao {
-        return database.tagDao()
     }
 
     /**

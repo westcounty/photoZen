@@ -91,6 +91,7 @@ class PreferencesRepository @Inject constructor(
         val KEY_DAILY_REMINDER_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("daily_reminder_enabled")
         val KEY_DAILY_REMINDER_HOUR = intPreferencesKey("daily_reminder_hour")
         val KEY_DAILY_REMINDER_MINUTE = intPreferencesKey("daily_reminder_minute")
+        val KEY_PROGRESS_NOTIFICATION_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("progress_notification_enabled")
         
         // Widget Settings
         val KEY_WIDGET_PHOTO_SOURCE = stringPreferencesKey("widget_photo_source")
@@ -129,6 +130,12 @@ class PreferencesRepository @Inject constructor(
         val KEY_ALBUM_TAG_SIZE = androidx.datastore.preferences.core.floatPreferencesKey("album_tag_size")
         val KEY_MAX_ALBUM_TAG_COUNT = intPreferencesKey("max_album_tag_count")
         val KEY_ALBUM_VIEW_MODE = stringPreferencesKey("album_view_mode")
+        
+        // Keep list display settings
+        val KEY_SHOW_PHOTOS_IN_ALBUM_KEEP_LIST = androidx.datastore.preferences.core.booleanPreferencesKey("show_photos_in_album_keep_list")
+        
+        // Album photo list status filter (comma-separated status names, default all)
+        val KEY_ALBUM_PHOTO_STATUS_FILTER = stringPreferencesKey("album_photo_status_filter")
         
         // Changelog and Quick Start version tracking
         val KEY_LAST_SEEN_CHANGELOG_VERSION = stringPreferencesKey("last_seen_changelog_version")
@@ -267,6 +274,23 @@ class PreferencesRepository @Inject constructor(
         dataStore.edit { preferences ->
             preferences[KEY_DAILY_REMINDER_HOUR] = hour
             preferences[KEY_DAILY_REMINDER_MINUTE] = minute
+        }
+    }
+    
+    /**
+     * Get whether progress notification service is enabled.
+     * Default: true (enabled)
+     */
+    fun getProgressNotificationEnabled(): Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[KEY_PROGRESS_NOTIFICATION_ENABLED] ?: true
+    }
+    
+    /**
+     * Set progress notification service enabled/disabled.
+     */
+    suspend fun setProgressNotificationEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[KEY_PROGRESS_NOTIFICATION_ENABLED] = enabled
         }
     }
 
@@ -476,6 +500,63 @@ class PreferencesRepository @Inject constructor(
     suspend fun setAlbumViewMode(mode: String) {
         dataStore.edit { preferences ->
             preferences[KEY_ALBUM_VIEW_MODE] = mode
+        }
+    }
+    
+    /**
+     * Get whether to show photos that are already in albums in keep list.
+     * When false, only photos not in any "my albums" are shown.
+     * Default is true (show all).
+     */
+    fun getShowPhotosInAlbumKeepList(): Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[KEY_SHOW_PHOTOS_IN_ALBUM_KEEP_LIST] ?: true
+    }
+    
+    /**
+     * Set whether to show photos that are already in albums in keep list.
+     */
+    suspend fun setShowPhotosInAlbumKeepList(show: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[KEY_SHOW_PHOTOS_IN_ALBUM_KEEP_LIST] = show
+        }
+    }
+    
+    /**
+     * Get album photo list status filter.
+     * Returns a set of PhotoStatus values that should be shown.
+     * Default is all statuses (KEEP, MAYBE, TRASH, UNSORTED).
+     */
+    fun getAlbumPhotoStatusFilter(): Flow<Set<com.example.photozen.data.model.PhotoStatus>> = dataStore.data.map { preferences ->
+        val filterStr = preferences[KEY_ALBUM_PHOTO_STATUS_FILTER]
+        if (filterStr.isNullOrEmpty()) {
+            // Default: show all statuses
+            com.example.photozen.data.model.PhotoStatus.entries.toSet()
+        } else {
+            filterStr.split(",")
+                .mapNotNull { name ->
+                    try {
+                        com.example.photozen.data.model.PhotoStatus.valueOf(name.trim())
+                    } catch (e: IllegalArgumentException) {
+                        null
+                    }
+                }
+                .toSet()
+                .ifEmpty { com.example.photozen.data.model.PhotoStatus.entries.toSet() }
+        }
+    }
+    
+    /**
+     * Set album photo list status filter.
+     */
+    suspend fun setAlbumPhotoStatusFilter(statuses: Set<com.example.photozen.data.model.PhotoStatus>) {
+        val filterStr = if (statuses.size == com.example.photozen.data.model.PhotoStatus.entries.size) {
+            // All selected - store empty string (default)
+            ""
+        } else {
+            statuses.joinToString(",") { it.name }
+        }
+        dataStore.edit { preferences ->
+            preferences[KEY_ALBUM_PHOTO_STATUS_FILTER] = filterStr
         }
     }
     
@@ -1073,12 +1154,15 @@ data class AchievementData(
  * @param preciseMode When false (default), endDate is treated as the start of a day and
  *                    automatically extended to include the whole day (23:59:59.999).
  *                    When true, endDate is used exactly as provided (for precise time range filtering).
+ * @param photoIds Optional list of specific photo IDs to filter. When set, only these photos
+ *                 will be shown, ignoring albumIds and date range filters.
  */
 data class CustomFilterSession(
     val albumIds: List<String>? = null,
     val startDate: Long? = null,
     val endDate: Long? = null,
-    val preciseMode: Boolean = false
+    val preciseMode: Boolean = false,
+    val photoIds: List<String>? = null
 )
 
 /**

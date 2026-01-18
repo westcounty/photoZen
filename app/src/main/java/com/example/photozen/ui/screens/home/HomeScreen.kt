@@ -104,7 +104,6 @@ fun HomeScreen(
     onNavigateToPhotoList: (PhotoStatus) -> Unit,
     onNavigateToTrash: () -> Unit,
     onNavigateToWorkflow: (Boolean, Int) -> Unit,
-    onNavigateToTagBubble: () -> Unit,
     onNavigateToAlbumBubble: () -> Unit,
     onNavigateToAchievements: () -> Unit,
     onNavigateToFilterSelection: (String, Int) -> Unit = { _, _ -> },
@@ -130,13 +129,14 @@ fun HomeScreen(
         }
     }
     
-    // Request permission on launch
+    // Request permission on launch (only media permissions, not notifications)
+    // POST_NOTIFICATIONS is requested when user enables daily reminder
     LaunchedEffect(Unit) {
         val permissions = mutableListOf<String>()
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
-            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+            // 移除：POST_NOTIFICATIONS 改为在用户开启每日提醒时请求
         } else {
             permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
@@ -230,8 +230,8 @@ fun HomeScreen(
             
             // Action Cards
             if (!uiState.isLoading) {
-                // Compact stats header - shown when one-stop is disabled
-                if (!uiState.onestopEnabled && uiState.hasPhotos) {
+                // Compact stats header
+                if (uiState.hasPhotos) {
                     CompactStatsHeader(
                         unsortedCount = uiState.unsortedCount,
                         sortedCount = uiState.sortedCount
@@ -257,25 +257,6 @@ fun HomeScreen(
                                 } else {
                                     onNavigateToFlowSorter(true, target)
                                 }
-                            }
-                        }
-                    )
-                }
-                
-                // Mission Card - Only shown when onestopEnabled is true
-                if (uiState.onestopEnabled && uiState.filteredUnsorted > 0) {
-                    SecondaryMissionCard(
-                        unsortedCount = uiState.filteredUnsorted,
-                        sortedCount = uiState.filteredSorted,
-                        totalCount = uiState.filteredTotal,
-                        progress = uiState.filteredProgress,
-                        filterMode = uiState.photoFilterMode,
-                        onStartFlow = {
-                            // Check if custom filter selection is needed before starting Flow
-                            if (uiState.needsFilterSelection) {
-                                onNavigateToFilterSelection("workflow", -1)
-                            } else {
-                                onNavigateToWorkflow(false, -1)
                             }
                         }
                     )
@@ -358,26 +339,15 @@ fun HomeScreen(
                     onClick = onNavigateToTimeline
                 )
                 
-                // Tag/Album Bubble Card - based on classification mode
-                if (uiState.photoClassificationMode == PhotoClassificationMode.ALBUM) {
-                    ActionCard(
-                        title = "相册气泡",
-                        subtitle = "可视化管理我的相册",
-                        icon = Icons.Default.Collections,
-                        iconTint = Color(0xFF4FC3F7), // Light Blue
-                        enabled = true,
-                        onClick = onNavigateToAlbumBubble
-                    )
-                } else {
-                    ActionCard(
-                        title = "标签气泡",
-                        subtitle = "可视化浏览和管理标签",
-                        icon = Icons.Default.Sell,
-                        iconTint = Color(0xFFA78BFA), // Purple
-                        enabled = true,
-                        onClick = onNavigateToTagBubble
-                    )
-                }
+                // Album Bubble Card
+                ActionCard(
+                    title = "我的相册",
+                    subtitle = "可视化管理我的相册",
+                    icon = Icons.Default.Collections,
+                    iconTint = Color(0xFF4FC3F7), // Light Blue
+                    enabled = true,
+                    onClick = onNavigateToAlbumBubble
+                )
                 
                 // Achievement Card
                 val achievements = generateAchievements(uiState.achievementData)
@@ -795,111 +765,6 @@ private fun StatChip(
                     .size(16.dp)
                     .align(Alignment.CenterEnd)
             )
-        }
-    }
-}
-
-/**
- * Secondary Mission Card - Now styled as the secondary card (smaller style).
- * For "一站式整理" workflow.
- */
-@Composable
-private fun SecondaryMissionCard(
-    unsortedCount: Int,
-    sortedCount: Int,
-    totalCount: Int,
-    progress: Float,
-    filterMode: PhotoFilterMode,
-    onStartFlow: () -> Unit
-) {
-    val filterModeText = when (filterMode) {
-        PhotoFilterMode.ALL -> "全部照片"
-        PhotoFilterMode.CAMERA_ONLY -> "相机照片"
-        PhotoFilterMode.EXCLUDE_CAMERA -> "非相机照片"
-        PhotoFilterMode.CUSTOM -> "自定义范围"
-    }
-    
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Rocket,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "一站式整理",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "$filterModeText · $unsortedCount 张待整理",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "$sortedCount / $totalCount",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-                Text(
-                    text = "${(progress * 100).toInt()}%",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp)),
-                color = KeepGreen,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Button(
-                onClick = onStartFlow,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("进入心流")
-            }
         }
     }
 }

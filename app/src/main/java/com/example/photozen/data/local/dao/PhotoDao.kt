@@ -10,7 +10,6 @@ import androidx.room.Transaction
 import androidx.room.Update
 import androidx.room.Upsert
 import com.example.photozen.data.local.entity.PhotoEntity
-import com.example.photozen.data.local.entity.PhotoWithTags
 import com.example.photozen.data.model.PhotoStatus
 import kotlinx.coroutines.flow.Flow
 
@@ -137,13 +136,6 @@ interface PhotoDao {
      */
     @Query("SELECT * FROM photos WHERE id = :photoId")
     fun getByIdFlow(photoId: String): Flow<PhotoEntity?>
-    
-    /**
-     * Get photo with tags by ID.
-     */
-    @Transaction
-    @Query("SELECT * FROM photos WHERE id = :photoId")
-    suspend fun getWithTagsById(photoId: String): PhotoWithTags?
     
     // ==================== QUERY - Lists ====================
     
@@ -669,22 +661,6 @@ interface PhotoDao {
      */
     @Query("DELETE FROM photos WHERE parent_id = :parentId")
     suspend fun deleteVirtualCopiesByParentId(parentId: String)
-    
-    // ==================== QUERY - Tag Related ====================
-    
-    /**
-     * Get all photos that have a specific tag.
-     * This is a reactive query that will emit new values when:
-     * - Photos are added/removed from the tag
-     * - Photo entities are updated/deleted
-     */
-    @Query("""
-        SELECT p.* FROM photos p
-        INNER JOIN photo_tag_cross_ref ptc ON p.id = ptc.photo_id
-        WHERE ptc.tag_id = :tagId AND p.is_virtual_copy = 0
-        ORDER BY p.date_added DESC
-    """)
-    fun getPhotosByTagId(tagId: String): Flow<List<PhotoEntity>>
     
     // ==================== QUERY - GPS/Location ====================
     

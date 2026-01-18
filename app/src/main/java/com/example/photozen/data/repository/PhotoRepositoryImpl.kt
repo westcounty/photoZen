@@ -11,7 +11,6 @@ import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.dao.DailyStatsDao
 import com.example.photozen.data.local.entity.DailyStats
 import com.example.photozen.data.local.entity.PhotoEntity
-import com.example.photozen.data.local.entity.PhotoWithTags
 import com.example.photozen.data.model.CropState
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.source.MediaStoreDataSource
@@ -137,10 +136,6 @@ class PhotoRepositoryImpl @Inject constructor(
     
     override fun getPhotoByIdFlow(photoId: String): Flow<PhotoEntity?> {
         return photoDao.getByIdFlow(photoId)
-    }
-    
-    override suspend fun getPhotoWithTags(photoId: String): PhotoWithTags? {
-        return photoDao.getWithTagsById(photoId)
     }
     
     // ==================== READ - Lists ====================

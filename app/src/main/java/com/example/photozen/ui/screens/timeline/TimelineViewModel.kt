@@ -1,19 +1,30 @@
 package com.example.photozen.ui.screens.timeline
 
+import android.content.IntentSender
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.photozen.data.local.dao.AlbumBubbleDao
 import com.example.photozen.data.local.dao.PhotoDao
+import com.example.photozen.data.local.entity.AlbumBubbleEntity
+import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.CustomFilterSession
 import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.PreferencesRepository
+import com.example.photozen.data.source.DeleteResult
+import com.example.photozen.data.source.MediaStoreDataSource
 import com.example.photozen.domain.EventGrouper
 import com.example.photozen.domain.EventGrouper.Companion.getEffectiveTime
 import com.example.photozen.domain.GroupingMode
 import com.example.photozen.domain.PhotoEvent
+import com.example.photozen.domain.usecase.AlbumOperationsUseCase
+import com.example.photozen.domain.usecase.SortPhotoUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -59,11 +70,19 @@ data class TimelineUiState(
 class TimelineViewModel @Inject constructor(
     private val photoDao: PhotoDao,
     private val eventGrouper: EventGrouper,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    private val albumBubbleDao: AlbumBubbleDao,
+    private val mediaStoreDataSource: MediaStoreDataSource,
+    private val albumOperationsUseCase: AlbumOperationsUseCase,
+    private val sortPhotoUseCase: SortPhotoUseCase
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(TimelineUiState())
     val uiState: StateFlow<TimelineUiState> = _uiState.asStateFlow()
+    
+    // Album list for picker
+    val albumBubbleList: StateFlow<List<AlbumBubbleEntity>> = albumBubbleDao.getAll()
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     
     init {
         loadTimeline()
@@ -337,5 +356,71 @@ class TimelineViewModel @Inject constructor(
      */
     fun clearScrollTarget() {
         _uiState.update { it.copy(scrollToIndex = null) }
+    }
+    
+    // ==================== Photo Operations for Fullscreen Viewer ====================
+    
+    /**
+     * Toggle photo status between MAYBE and KEEP.
+     * If current status is MAYBE -> KEEP
+     * If current status is KEEP or other -> MAYBE
+     */
+    fun togglePhotoStatus(photoId: String) {
+        viewModelScope.launch {
+            val photo = photoDao.getById(photoId) ?: return@launch
+            
+            when (photo.status) {
+                PhotoStatus.MAYBE -> sortPhotoUseCase.keepPhoto(photoId)
+                else -> sortPhotoUseCase.maybePhoto(photoId)
+            }
+        }
+    }
+    
+    /**
+     * Get delete intent sender for system delete confirmation.
+     * @return IntentSender for delete request, or null if deletion failed
+     */
+    suspend fun getDeleteIntentSender(photoId: String): IntentSender? {
+        val photo = photoDao.getById(photoId) ?: return null
+        val uri = Uri.parse(photo.systemUri)
+        
+        return when (val result = mediaStoreDataSource.deletePhotos(listOf(uri))) {
+            is DeleteResult.RequiresConfirmation -> result.intentSender
+            is DeleteResult.Success -> null // Direct deletion succeeded
+            is DeleteResult.Failed -> null
+        }
+    }
+    
+    /**
+     * Handle photo deletion after user confirms.
+     * Removes the photo from Room database.
+     */
+    fun onPhotoDeleted(photoId: String) {
+        viewModelScope.launch {
+            photoDao.deleteByIds(listOf(photoId))
+        }
+    }
+    
+    /**
+     * Add photo to album (copy operation).
+     */
+    fun addPhotoToAlbum(photoId: String, albumBucketId: String) {
+        viewModelScope.launch {
+            val photo = photoDao.getById(photoId) ?: return@launch
+            val photoUri = Uri.parse(photo.systemUri)
+            
+            // Get target album path
+            val album = albumBubbleList.value.find { it.bucketId == albumBucketId }
+            val targetPath = mediaStoreDataSource.getAlbumPath(albumBucketId)
+                ?: "Pictures/${album?.displayName ?: "PhotoZen"}"
+            
+            // Copy photo to album
+            val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
+            if (result.isSuccess) {
+                _uiState.update { it.copy(error = null) }
+            } else {
+                _uiState.update { it.copy(error = "添加到相册失败") }
+            }
+        }
     }
 }

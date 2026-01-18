@@ -54,7 +54,6 @@ data class HomeUiState(
     val photoFilterMode: PhotoFilterMode = PhotoFilterMode.ALL,
     val photoClassificationMode: PhotoClassificationMode = PhotoClassificationMode.TAG,
     val dailyTaskStatus: DailyTaskStatus? = null,
-    val onestopEnabled: Boolean = false,
     val experimentalEnabled: Boolean = false,
     // Smart Gallery stats
     val smartGalleryPersonCount: Int = 0,
@@ -311,10 +310,9 @@ class HomeViewModel @Inject constructor(
     private val filteredCountsFlow: Flow<FilteredCounts> = combine(
         getFilteredTotalCount(),
         getFilteredSortedCount(),
-        preferencesRepository.getOnestopEnabled(),
         preferencesRepository.getExperimentalEnabled()
-    ) { total, sorted, onestop, experimental ->
-        FilteredCounts(total, sorted, onestop, experimental)
+    ) { total, sorted, experimental ->
+        FilteredCounts(total, sorted, experimental)
     }
     
     /**
@@ -413,7 +411,6 @@ class HomeViewModel @Inject constructor(
             photoFilterMode = extraData.filterMode,
             photoClassificationMode = extraData.classificationMode,
             dailyTaskStatus = extraData.dailyTaskStatus,
-            onestopEnabled = extraData.counts.onestopEnabled,
             experimentalEnabled = extraData.counts.experimentalEnabled,
             // Smart Gallery stats
             smartGalleryPersonCount = sgStats.personCount,
@@ -437,7 +434,6 @@ class HomeViewModel @Inject constructor(
     private data class FilteredCounts(
         val filteredTotal: Int,
         val filteredSorted: Int,
-        val onestopEnabled: Boolean,
         val experimentalEnabled: Boolean
     )
     

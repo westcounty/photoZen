@@ -75,28 +75,7 @@ sealed interface Screen {
     ) : Screen
     
     /**
-     * Tag Bubble screen - interactive bubble graph for tag visualization.
-     */
-    @Serializable
-    data object TagBubble : Screen
-    
-    /**
-     * Photo List by Tag screen - display photos with a specific tag.
-     * @param tagId The ID of the tag to filter by
-     */
-    @Serializable
-    data class PhotoListByTag(val tagId: String) : Screen
-    
-    /**
-     * Quick Tag screen - Flow-style quick tagging for kept photos.
-     * Click tag to assign and auto-advance to next photo.
-     */
-    @Serializable
-    data object QuickTag : Screen
-    
-    /**
      * Album Bubble screen - interactive bubble graph for album visualization.
-     * Used when PhotoClassificationMode is ALBUM.
      */
     @Serializable
     data object AlbumBubble : Screen
@@ -189,4 +168,20 @@ sealed interface Screen {
      */
     @Serializable
     data object Timeline : Screen
+    
+    // ==================== Share Screens ====================
+    
+    /**
+     * Share Copy screen - copy shared photos from external apps to album.
+     * @param urisJson Comma-separated URI strings
+     */
+    @Serializable
+    data class ShareCopy(val urisJson: String) : Screen
+    
+    /**
+     * Share Compare screen - compare shared photos from external apps.
+     * @param urisJson Comma-separated URI strings
+     */
+    @Serializable
+    data class ShareCompare(val urisJson: String) : Screen
 }

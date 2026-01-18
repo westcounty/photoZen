@@ -78,6 +78,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.ui.components.DragSelectPhotoGrid
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
@@ -223,122 +224,20 @@ fun TrashScreen(
                     EmptyTrashState()
                 }
                 else -> {
-                    TrashPhotoGrid(
+                    DragSelectPhotoGrid(
                         photos = uiState.photos,
-                        columns = uiState.gridColumns,
                         selectedIds = uiState.selectedIds,
-                        isSelectionMode = uiState.isSelectionMode,
-                        onPhotoClick = { photoId ->
-                            if (uiState.isSelectionMode) {
-                                viewModel.toggleSelection(photoId)
-                            }
+                        onSelectionChanged = { newSelection ->
+                            viewModel.updateSelection(newSelection)
                         },
-                        onPhotoLongPress = { photoId ->
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            if (!uiState.isSelectionMode) {
-                                viewModel.enterSelectionMode()
-                            }
-                            viewModel.toggleSelection(photoId)
-                        }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun TrashPhotoGrid(
-    photos: List<PhotoEntity>,
-    columns: Int,
-    selectedIds: Set<String>,
-    isSelectionMode: Boolean,
-    onPhotoClick: (String) -> Unit,
-    onPhotoLongPress: (String) -> Unit
-) {
-    LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 4)),
-        contentPadding = PaddingValues(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalItemSpacing = 8.dp
-    ) {
-        items(photos, key = { it.id }) { photo ->
-            TrashPhotoItem(
-                photo = photo,
-                isSelected = photo.id in selectedIds,
-                isSelectionMode = isSelectionMode,
-                onClick = { onPhotoClick(photo.id) },
-                onLongPress = { onPhotoLongPress(photo.id) }
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun TrashPhotoItem(
-    photo: PhotoEntity,
-    isSelected: Boolean,
-    isSelectionMode: Boolean,
-    onClick: () -> Unit,
-    onLongPress: () -> Unit
-) {
-    val context = LocalContext.current
-    
-    // Calculate aspect ratio from photo dimensions
-    val aspectRatio = if (photo.width > 0 && photo.height > 0) {
-        photo.width.toFloat() / photo.height.toFloat()
-    } else {
-        1f // Default to square if dimensions unknown
-    }
-    
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .then(
-                if (isSelected) {
-                    Modifier.border(3.dp, TrashRed, RoundedCornerShape(8.dp))
-                } else Modifier
-            )
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongPress
-            )
-    ) {
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(Uri.parse(photo.systemUri))
-                .crossfade(true)
-                .build(),
-            contentDescription = photo.displayName,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(aspectRatio)
-        )
-        
-        // Selection indicator
-        if (isSelectionMode) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp)
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (isSelected) TrashRed
-                        else Color.Black.copy(alpha = 0.5f)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                if (isSelected) {
-                    Icon(
-                        Icons.Default.Check,
-                        null,
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
+                        onPhotoClick = { _, _ ->
+                            // Non-selection mode click - no action in trash
+                        },
+                        onPhotoLongPress = { _, _ ->
+                            // No action sheet for trash items
+                        },
+                        columns = uiState.gridColumns,
+                        selectionColor = TrashRed
                     )
                 }
             }

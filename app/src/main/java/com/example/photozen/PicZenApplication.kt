@@ -4,8 +4,14 @@ import android.app.Application
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.example.photozen.data.repository.PreferencesRepository
+import com.example.photozen.service.DailyProgressService
 import com.example.photozen.util.CrashLogger
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -20,6 +26,9 @@ class PicZenApplication : Application(), Configuration.Provider {
     
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
+    
+    @Inject
+    lateinit var preferencesRepository: PreferencesRepository
     
     override fun onCreate() {
         super.onCreate()
@@ -36,8 +45,36 @@ class PicZenApplication : Application(), Configuration.Provider {
         // Note: MapLibre initialization is now done lazily in MapLibreInitializer
         // to avoid potential initialization issues during app startup
         
+        // Start foreground progress service if enabled
+        initProgressService()
+        
         CrashLogger.logStartupEvent(this, "Application.onCreate completed")
         Log.i("PicZenApp", "Application initialization complete")
+    }
+    
+    /**
+     * Initialize foreground progress service on app startup.
+     * This service displays daily progress in status bar and keeps the app alive.
+     */
+    private fun initProgressService() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val enabled = preferencesRepository.getProgressNotificationEnabled().first()
+                Log.d("PicZenApp", "Progress notification enabled: $enabled")
+                if (enabled) {
+                    // 使用主线程启动服务，确保稳定性
+                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                        DailyProgressService.start(this@PicZenApplication)
+                    }
+                    Log.d("PicZenApp", "Progress notification service started successfully")
+                } else {
+                    Log.d("PicZenApp", "Progress notification disabled, skipping service start")
+                }
+            } catch (e: Exception) {
+                Log.e("PicZenApp", "Failed to start progress service", e)
+                CrashLogger.logStartupEvent(this@PicZenApplication, "Progress service start failed: ${e.message}")
+            }
+        }
     }
     
     /**

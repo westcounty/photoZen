@@ -1,6 +1,10 @@
 package com.example.photozen.ui.screens.workflow
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -25,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -55,18 +60,28 @@ import com.example.photozen.ui.theme.TrashRed
 /**
  * Workflow Screen - The immersive "Flow Tunnel" experience.
  * 
- * Manages the sequential flow through stages:
- * 1. SWIPE - Sort photos using swipe gestures (until done or user clicks "Next")
- * 2. COMPARE - Compare "Maybe" photos in Light Table (until done or user clicks "Next")
- * 3. TAGGING - Tag "Keep" photos with bubble tags (until done or user clicks "Finish")
+ * Manages the sequential flow through stages (dynamic based on cardSortingAlbumEnabled):
+ * 
+ * When cardSortingAlbumEnabled = true (3 stages):
+ * 1. SWIPE - Sort photos using swipe gestures
+ * 2. COMPARE - Compare "Maybe" photos in Light Table
+ * 3. TRASH - Clean up trash photos
  * 4. VICTORY - Show results and celebration
+ * 
+ * When cardSortingAlbumEnabled = false (4 stages):
+ * 1. SWIPE - Sort photos using swipe gestures
+ * 2. COMPARE - Compare "Maybe" photos in Light Table
+ * 3. CLASSIFY - Classify "Keep" photos to albums
+ * 4. TRASH - Clean up trash photos
+ * 5. VICTORY - Show results and celebration
  * 
  * Features:
  * - Full-screen immersive mode (no bottom nav)
- * - Progress indicator at top
+ * - Dynamic progress indicator at top
  * - "Next" button to proceed to next stage
  * - Back button confirmation to exit
  * - Automatic stage transitions when all items processed
+ * - Empty stage auto-skip with friendly messages
  */
 @Composable
 fun WorkflowScreen(
@@ -75,6 +90,13 @@ fun WorkflowScreen(
     viewModel: WorkflowViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    
+    // Launcher for system delete request
+    val deleteLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        viewModel.onDeleteComplete(result.resultCode == Activity.RESULT_OK)
+    }
     
     // Start workflow on screen launch
     LaunchedEffect(Unit) {
@@ -100,10 +122,35 @@ fun WorkflowScreen(
         }
     }
     
-    // Auto-advance when compare stage completes
-    LaunchedEffect(uiState.maybeCount, uiState.currentStage) {
+    // Auto-advance when compare stage completes (no session maybe photos)
+    LaunchedEffect(uiState.sessionMaybeCount, uiState.currentStage) {
         if (uiState.currentStage == WorkflowStage.COMPARE && !uiState.hasMaybePhotos) {
             viewModel.onCompareAutoComplete()
+        }
+    }
+    
+    // Auto-advance when classify stage completes
+    LaunchedEffect(uiState.classifyModeIndex, uiState.sessionKeepCount, uiState.currentStage) {
+        if (uiState.currentStage == WorkflowStage.CLASSIFY && 
+            uiState.classifyModeIndex >= uiState.sessionKeepCount) {
+            viewModel.onClassifyAutoComplete()
+        }
+    }
+    
+    // Auto-advance when trash stage completes (no session trash photos)
+    LaunchedEffect(uiState.sessionTrashCount, uiState.currentStage) {
+        if (uiState.currentStage == WorkflowStage.TRASH && !uiState.hasTrashPhotos) {
+            viewModel.onTrashAutoComplete()
+        }
+    }
+    
+    // Launch system delete dialog when intent sender is available
+    LaunchedEffect(uiState.deleteIntentSender) {
+        uiState.deleteIntentSender?.let { intentSender ->
+            deleteLauncher.launch(
+                IntentSenderRequest.Builder(intentSender).build()
+            )
+            viewModel.clearDeleteIntentSender()
         }
     }
     
@@ -125,8 +172,11 @@ fun WorkflowScreen(
             remainingCount = when (uiState.currentStage) {
                 WorkflowStage.SWIPE -> uiState.unsortedCount
                 WorkflowStage.COMPARE -> uiState.sessionMaybeCount
+                WorkflowStage.CLASSIFY -> uiState.sessionKeepCount - uiState.classifyModeIndex
+                WorkflowStage.TRASH -> uiState.sessionTrashCount
                 else -> 0
             },
+            isLastFunctionalStage = uiState.currentStage == uiState.functionalStages.lastOrNull(),
             onConfirm = { viewModel.confirmNextStage() },
             onDismiss = { viewModel.cancelNextStage() }
         )
@@ -147,6 +197,7 @@ fun WorkflowScreen(
                     progress = uiState.stageProgress,
                     canProceed = uiState.canProceedToNext,
                     nextButtonText = uiState.nextButtonText,
+                    isLastFunctionalStage = uiState.currentStage == uiState.functionalStages.lastOrNull(),
                     onClose = { viewModel.requestExit() },
                     onNext = { viewModel.requestNextStage() }
                 )
@@ -156,7 +207,10 @@ fun WorkflowScreen(
             AnimatedContent(
                 targetState = uiState.currentStage,
                 transitionSpec = {
-                    val direction = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                    val stageList = uiState.stageList
+                    val targetIndex = stageList.indexOf(targetState)
+                    val initialIndex = stageList.indexOf(initialState)
+                    val direction = if (targetIndex > initialIndex) 1 else -1
                     slideInHorizontally(
                         animationSpec = tween(300),
                         initialOffsetX = { it * direction }
@@ -182,20 +236,39 @@ fun WorkflowScreen(
                         CompareStageContent(
                             hasPhotos = uiState.hasMaybePhotos,
                             sessionPhotoIds = uiState.stats.sessionMaybePhotoIds,
+                            cardSortingAlbumEnabled = uiState.cardSortingAlbumEnabled,
                             onComplete = { viewModel.onCompareAutoComplete() },
                             onRequestNext = { viewModel.requestNextStage() }
                         )
                     }
-                    WorkflowStage.TAGGING -> {
-                        TaggingStageContent(
-                            keepPhotos = uiState.sessionKeepPhotos,
-                            onPhotoTagged = { viewModel.recordTagged() },
-                            onComplete = { viewModel.requestNextStage() }
+                    WorkflowStage.CLASSIFY -> {
+                        ClassifyStageContent(
+                            currentPhoto = uiState.currentClassifyPhoto,
+                            currentIndex = uiState.classifyModeIndex,
+                            totalCount = uiState.sessionKeepCount,
+                            albums = uiState.albumBubbleList,
+                            onAddToAlbum = { bucketId -> viewModel.classifyPhotoToAlbum(bucketId) },
+                            onSkip = { viewModel.skipClassifyPhoto() },
+                            onComplete = { viewModel.onClassifyAutoComplete() }
+                        )
+                    }
+                    WorkflowStage.TRASH -> {
+                        TrashStageContent(
+                            photos = uiState.sessionTrashPhotos,
+                            selectedIds = uiState.trashSelectedIds,
+                            onSelectionChanged = { viewModel.updateTrashSelection(it) },
+                            onSelectAll = { viewModel.selectAllTrash() },
+                            onClearSelection = { viewModel.clearTrashSelection() },
+                            onRestoreToKeep = { viewModel.restoreTrashPhotos(PhotoStatus.KEEP) },
+                            onRestoreToMaybe = { viewModel.restoreTrashPhotos(PhotoStatus.MAYBE) },
+                            onPermanentDelete = { viewModel.requestPermanentDelete() },
+                            onComplete = { viewModel.onTrashAutoComplete() }
                         )
                     }
                     WorkflowStage.VICTORY -> {
                         VictoryScreen(
                             stats = uiState.stats,
+                            cardSortingAlbumEnabled = uiState.cardSortingAlbumEnabled,
                             onReturnHome = {
                                 viewModel.finishWorkflow()
                                 onExit()
@@ -220,6 +293,7 @@ private fun WorkflowTopBar(
     progress: Float,
     canProceed: Boolean,
     nextButtonText: String,
+    isLastFunctionalStage: Boolean,
     onClose: () -> Unit,
     onNext: () -> Unit
 ) {
@@ -266,18 +340,20 @@ private fun WorkflowTopBar(
                 Button(
                     onClick = onNext,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = when (currentStage) {
-                            WorkflowStage.SWIPE -> MaybeAmber
-                            WorkflowStage.COMPARE -> KeepGreen
-                            WorkflowStage.TAGGING -> KeepGreen
-                            WorkflowStage.VICTORY -> KeepGreen
+                        containerColor = when {
+                            isLastFunctionalStage -> KeepGreen
+                            currentStage == WorkflowStage.SWIPE -> MaybeAmber
+                            currentStage == WorkflowStage.COMPARE -> MaybeAmber
+                            currentStage == WorkflowStage.CLASSIFY -> KeepGreen
+                            currentStage == WorkflowStage.TRASH -> KeepGreen
+                            else -> KeepGreen
                         }
                     )
                 ) {
                     Text(nextButtonText)
                     Spacer(modifier = Modifier.width(4.dp))
                     Icon(
-                        Icons.AutoMirrored.Filled.ArrowForward,
+                        if (isLastFunctionalStage) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
@@ -297,7 +373,8 @@ private fun WorkflowTopBar(
             color = when (currentStage) {
                 WorkflowStage.SWIPE -> MaterialTheme.colorScheme.primary
                 WorkflowStage.COMPARE -> MaybeAmber
-                WorkflowStage.TAGGING -> KeepGreen
+                WorkflowStage.CLASSIFY -> KeepGreen
+                WorkflowStage.TRASH -> TrashRed
                 WorkflowStage.VICTORY -> KeepGreen
             },
             trackColor = MaterialTheme.colorScheme.surfaceVariant
@@ -340,12 +417,21 @@ private fun ExitConfirmationDialog(
 private fun NextStageConfirmationDialog(
     currentStage: WorkflowStage,
     remainingCount: Int,
+    isLastFunctionalStage: Boolean,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val (title, message) = when (currentStage) {
         WorkflowStage.SWIPE -> "跳过剩余照片？" to "还有 $remainingCount 张照片未整理，确定要进入对比阶段吗？"
-        WorkflowStage.COMPARE -> "跳过剩余对比？" to "还有 $remainingCount 张待定照片未处理，确定要进入分类阶段吗？"
+        WorkflowStage.COMPARE -> "跳过剩余对比？" to "还有 $remainingCount 张待定照片未处理，确定要继续吗？"
+        WorkflowStage.CLASSIFY -> "跳过剩余分类？" to "还有 $remainingCount 张保留照片未分类到相册，确定要继续吗？"
+        WorkflowStage.TRASH -> {
+            if (isLastFunctionalStage) {
+                "跳过清理回收站？" to "还有 $remainingCount 张照片在回收站未处理，确定要完成整理吗？"
+            } else {
+                "跳过清理回收站？" to "还有 $remainingCount 张照片在回收站未处理，确定要继续吗？"
+            }
+        }
         else -> "确定要继续？" to "确定要进入下一阶段吗？"
     }
     
@@ -358,7 +444,7 @@ private fun NextStageConfirmationDialog(
                 onClick = onConfirm,
                 colors = ButtonDefaults.buttonColors(containerColor = MaybeAmber)
             ) {
-                Text("确定跳过")
+                Text(if (isLastFunctionalStage) "确定完成" else "确定跳过")
             }
         },
         dismissButton = {
@@ -399,15 +485,17 @@ private fun SwipeStageContent(
 private fun CompareStageContent(
     hasPhotos: Boolean,
     sessionPhotoIds: Set<String>,
+    cardSortingAlbumEnabled: Boolean,
     onComplete: () -> Unit,
     onRequestNext: () -> Unit
 ) {
     if (!hasPhotos) {
+        val nextStageText = if (cardSortingAlbumEnabled) "清理回收站" else "分类到相册"
         EmptyStageContent(
             emoji = "✨",
             title = "没有待定的照片",
-            subtitle = "可以直接进入分类阶段",
-            buttonText = "进入分类阶段",
+            subtitle = "可以直接进入$nextStageText",
+            buttonText = nextStageText,
             onButtonClick = onRequestNext
         )
     } else {

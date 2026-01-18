@@ -1,6 +1,11 @@
 package com.example.photozen.ui.screens.settings
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import com.example.photozen.BuildConfig
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -34,6 +39,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.photozen.data.repository.DailyTaskMode
 import com.example.photozen.data.repository.PhotoFilterMode
@@ -75,6 +81,24 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    
+    // 通知权限请求 launcher
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        // 权限结果已处理，无需额外操作
+        // 通知权限用于状态栏进度通知
+    }
+    
+    // 检查并请求通知权限的辅助函数
+    fun checkAndRequestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) 
+                != PackageManager.PERMISSION_GRANTED) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
     
     // Dialog states
     var showDailyTaskDialog by remember { mutableStateOf(false) }
@@ -141,14 +165,6 @@ fun SettingsScreen(
                 onClick = { showFilterDialog = true }
             )
             
-            SettingsSwitchItem(
-                icon = Icons.Default.Rocket,
-                title = "一站式整理",
-                subtitle = if (uiState.onestopEnabled) "首页显示一站式整理模块" else "首页隐藏一站式整理模块",
-                checked = uiState.onestopEnabled,
-                onCheckedChange = { viewModel.setOnestopEnabled(it) }
-            )
-            
             // Theme Settings
             SettingsMenuItem(
                 icon = Icons.Default.Palette,
@@ -161,14 +177,11 @@ fun SettingsScreen(
                 onClick = { showThemeDialog = true }
             )
             
-            // Photo Classification Mode Settings (moved before Swipe Sensitivity)
+            // Quick Album Classification Settings
             SettingsMenuItem(
                 icon = Icons.Default.PhotoAlbum,
-                title = "照片分类模式",
-                subtitle = when (uiState.photoClassificationMode) {
-                    com.example.photozen.data.repository.PhotoClassificationMode.TAG -> "标签模式"
-                    com.example.photozen.data.repository.PhotoClassificationMode.ALBUM -> "相册模式"
-                },
+                title = "快速相册分类设置",
+                subtitle = "配置相册分类的相关选项",
                 onClick = { showClassificationModeDialog = true }
             )
             
@@ -218,15 +231,23 @@ fun SettingsScreen(
     if (showDailyTaskDialog) {
         DailyTaskSettingsDialog(
             uiState = uiState,
-            onDismiss = { showDailyTaskDialog = false },
+            onDismiss = { 
+                showDailyTaskDialog = false
+                // 关闭对话框时，如果进度通知已开启，检查并请求通知权限
+                if (uiState.progressNotificationEnabled) {
+                    checkAndRequestNotificationPermission()
+                }
+            },
             onEnabledChange = { viewModel.setDailyTaskEnabled(it) },
             onTargetChange = { viewModel.setDailyTaskTarget(it) },
             onModeChange = { viewModel.setDailyTaskMode(it) },
-            onReminderEnabledChange = { enabled -> 
-                if (enabled) viewModel.setDailyTaskEnabled(true)
-                viewModel.setDailyReminderEnabled(enabled) 
-            },
-            onReminderTimeChange = { h, m -> viewModel.setDailyReminderTime(h, m) }
+            onProgressNotificationChange = { enabled ->
+                viewModel.setProgressNotificationEnabled(enabled)
+                // 开启进度通知时，检查并请求通知权限
+                if (enabled) {
+                    checkAndRequestNotificationPermission()
+                }
+            }
         )
     }
     
@@ -269,8 +290,7 @@ fun SettingsScreen(
     }
     
     if (showClassificationModeDialog) {
-        ClassificationModeDialog(
-            currentMode = uiState.photoClassificationMode,
+        QuickAlbumSettingsDialog(
             albumAddAction = uiState.albumAddAction,
             cardSortingAlbumEnabled = uiState.cardSortingAlbumEnabled,
             albumTagSize = uiState.albumTagSize,
@@ -278,7 +298,6 @@ fun SettingsScreen(
             hasManageStoragePermission = uiState.hasManageStoragePermission,
             isPermissionApplicable = viewModel.isManageStoragePermissionApplicable(),
             onDismiss = { showClassificationModeDialog = false },
-            onModeSelected = { viewModel.setPhotoClassificationMode(it) },
             onAlbumAddActionSelected = { viewModel.setAlbumAddAction(it) },
             onCardSortingAlbumEnabledChanged = { viewModel.setCardSortingAlbumEnabled(it) },
             onAlbumTagSizeChanged = { viewModel.setAlbumTagSize(it) },
@@ -399,10 +418,9 @@ fun DailyTaskSettingsDialog(
     onEnabledChange: (Boolean) -> Unit,
     onTargetChange: (Int) -> Unit,
     onModeChange: (DailyTaskMode) -> Unit,
-    onReminderEnabledChange: (Boolean) -> Unit,
-    onReminderTimeChange: (Int, Int) -> Unit
+    onProgressNotificationChange: (Boolean) -> Unit
 ) {
-    var showTimePicker by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -454,7 +472,7 @@ fun DailyTaskSettingsDialog(
                             onClick = { onModeChange(DailyTaskMode.FLOW) },
                             shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
                         ) {
-                            Text("一条龙整理")
+                            Text("一站式整理")
                         }
                         SegmentedButton(
                             selected = uiState.dailyTaskMode == DailyTaskMode.QUICK,
@@ -465,43 +483,49 @@ fun DailyTaskSettingsDialog(
                         }
                     }
                     
+                    // Mode description
+                    Text(
+                        text = if (uiState.dailyTaskMode == DailyTaskMode.FLOW) {
+                            "完整的照片整理流程，包括筛选、分类到相册、清理回收站"
+                        } else {
+                            "专注于照片去留的快速决策，适合批量处理大量照片"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                    
                     Spacer(modifier = Modifier.height(16.dp))
                     
-                    // Reminder
+                    // 状态栏进度通知（前台服务）
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "每日提醒",
+                                text = "状态栏进度通知",
                                 style = MaterialTheme.typography.titleSmall
                             )
-                            if (uiState.dailyReminderEnabled) {
-                                Text(
-                                    text = String.format("%02d:%02d", uiState.dailyReminderTime.first, uiState.dailyReminderTime.second),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
+                            Text(
+                                text = "时刻督促自己完成每日目标",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                         Switch(
-                            checked = uiState.dailyReminderEnabled,
-                            onCheckedChange = onReminderEnabledChange
+                            checked = uiState.progressNotificationEnabled,
+                            onCheckedChange = { enabled ->
+                                onProgressNotificationChange(enabled)
+                                // 启动或停止前台服务
+                                if (enabled) {
+                                    com.example.photozen.service.DailyProgressService.start(context)
+                                } else {
+                                    com.example.photozen.service.DailyProgressService.stop(context)
+                                }
+                            }
                         )
-                    }
-                    
-                    if (uiState.dailyReminderEnabled) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = { showTimePicker = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Alarm, null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = "设置提醒时间: ${String.format("%02d:%02d", uiState.dailyReminderTime.first, uiState.dailyReminderTime.second)}")
-                        }
                     }
                 } else {
                     Text(
@@ -518,18 +542,6 @@ fun DailyTaskSettingsDialog(
             }
         }
     )
-    
-    if (showTimePicker) {
-        WheelTimePickerDialog(
-            initialHour = uiState.dailyReminderTime.first,
-            initialMinute = uiState.dailyReminderTime.second,
-            onDismiss = { showTimePicker = false },
-            onConfirm = { hour, minute ->
-                onReminderTimeChange(hour, minute)
-                showTimePicker = false
-            }
-        )
-    }
 }
 
 /**
@@ -617,6 +629,7 @@ private fun WheelTimePickerDialog(
 
 /**
  * Single wheel picker column with snapping behavior.
+ * Fixed initialization issue: prevents incorrect scroll to 00:00 on dialog open.
  */
 @Composable
 private fun WheelPicker(
@@ -626,15 +639,26 @@ private fun WheelPicker(
     modifier: Modifier = Modifier,
     label: String = ""
 ) {
+    // 关键：追踪是否已完成初始化，防止在布局完成前触发错误更新
+    var isInitialized by remember { mutableStateOf(false) }
+    
+    // 直接使用 selectedItem 作为初始位置
+    // contentPadding = 76.dp 刚好让 item 出现在高亮区域中心
     val listState = rememberLazyListState(
-        initialFirstVisibleItemIndex = (selectedItem - 2).coerceAtLeast(0)
+        initialFirstVisibleItemIndex = selectedItem.coerceIn(items.indices)
     )
     val hapticFeedback = LocalHapticFeedback.current
     
-    // Track the center item
+    // Track the center item - 只有初始化后才计算真正的 centerIndex
     val centerIndex by remember {
         derivedStateOf {
+            // 未初始化时，直接返回 selectedItem，避免错误更新
+            if (!isInitialized) return@derivedStateOf selectedItem
+            
             val layoutInfo = listState.layoutInfo
+            // 布局信息为空时，返回 selectedItem
+            if (layoutInfo.visibleItemsInfo.isEmpty()) return@derivedStateOf selectedItem
+            
             val viewportCenter = layoutInfo.viewportStartOffset + layoutInfo.viewportSize.height / 2
             layoutInfo.visibleItemsInfo.minByOrNull { item ->
                 kotlin.math.abs(item.offset + item.size / 2 - viewportCenter)
@@ -642,17 +666,21 @@ private fun WheelPicker(
         }
     }
     
-    // Update selection when center item changes
+    // 初始滚动 + 延迟启用 centerIndex 更新
+    LaunchedEffect(Unit) {
+        // 直接滚动到 selectedItem，contentPadding 会自动使其居中
+        listState.scrollToItem(selectedItem.coerceIn(items.indices))
+        // 等待布局稳定后再启用 centerIndex 更新
+        delay(150)
+        isInitialized = true
+    }
+    
+    // 只有初始化完成后才响应 centerIndex 变化
     LaunchedEffect(centerIndex) {
-        if (centerIndex in items.indices && items[centerIndex] != selectedItem) {
+        if (isInitialized && centerIndex in items.indices && items[centerIndex] != selectedItem) {
             hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             onItemSelected(items[centerIndex])
         }
-    }
-    
-    // Scroll to initial position
-    LaunchedEffect(Unit) {
-        listState.scrollToItem((selectedItem - 2).coerceAtLeast(0))
     }
     
     Box(
@@ -1657,11 +1685,10 @@ private fun SwipeSensitivitySetting(
 }
 
 /**
- * Classification mode settings dialog.
+ * Quick album classification settings dialog.
  */
 @Composable
-private fun ClassificationModeDialog(
-    currentMode: com.example.photozen.data.repository.PhotoClassificationMode,
+private fun QuickAlbumSettingsDialog(
     albumAddAction: com.example.photozen.data.repository.AlbumAddAction,
     cardSortingAlbumEnabled: Boolean,
     albumTagSize: Float,
@@ -1669,7 +1696,6 @@ private fun ClassificationModeDialog(
     hasManageStoragePermission: Boolean,
     isPermissionApplicable: Boolean,
     onDismiss: () -> Unit,
-    onModeSelected: (com.example.photozen.data.repository.PhotoClassificationMode) -> Unit,
     onAlbumAddActionSelected: (com.example.photozen.data.repository.AlbumAddAction) -> Unit,
     onCardSortingAlbumEnabledChanged: (Boolean) -> Unit,
     onAlbumTagSizeChanged: (Float) -> Unit,
@@ -1680,44 +1706,130 @@ private fun ClassificationModeDialog(
     
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("照片分类模式设置") },
+        title = { Text("快速相册分类设置") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState())
             ) {
-                // Mode selection
+                // Card sorting album enabled
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "滑动筛选照片时可分类到相册",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "筛选界面底部将显示快捷添加到相册的入口",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = cardSortingAlbumEnabled,
+                        onCheckedChange = onCardSortingAlbumEnabledChanged
+                    )
+                }
+                
+                // Album tag settings (only if enabled)
+                if (cardSortingAlbumEnabled) {
+                    // Album tag size
+                    Text(
+                        text = "相册标签大小",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "小",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Slider(
+                            value = albumTagSize,
+                            onValueChange = onAlbumTagSizeChanged,
+                            valueRange = 0.6f..1.5f,
+                            // Remove steps to allow continuous sliding to edges
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 8.dp)
+                        )
+                        Text(
+                            text = "大",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    
+                    // Max album tag count
+                    Text(
+                        text = "最大显示数量: ${if (maxAlbumTagCount == 0) "不限" else maxAlbumTagCount.toString()}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                    )
+                    Slider(
+                        value = maxAlbumTagCount.toFloat(),
+                        onValueChange = { onMaxAlbumTagCountChanged(it.toInt()) },
+                        valueRange = 0f..20f,
+                        steps = 19,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                
+                HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+                
+                // Album add action
                 Text(
-                    text = "分类模式",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    text = "添加到相册时默认操作",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(vertical = 8.dp)
                 )
                 
-                com.example.photozen.data.repository.PhotoClassificationMode.entries.forEach { mode ->
+                com.example.photozen.data.repository.AlbumAddAction.entries.forEach { action ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onModeSelected(mode) }
-                            .padding(vertical = 8.dp),
+                            .clickable {
+                                if (action == com.example.photozen.data.repository.AlbumAddAction.MOVE &&
+                                    !hasManageStoragePermission && isPermissionApplicable) {
+                                    showPermissionDialog = true
+                                }
+                                onAlbumAddActionSelected(action)
+                            }
+                            .padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
-                            selected = mode == currentMode,
-                            onClick = { onModeSelected(mode) }
+                            selected = action == albumAddAction,
+                            onClick = {
+                                if (action == com.example.photozen.data.repository.AlbumAddAction.MOVE &&
+                                    !hasManageStoragePermission && isPermissionApplicable) {
+                                    showPermissionDialog = true
+                                }
+                                onAlbumAddActionSelected(action)
+                            }
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
-                                text = when (mode) {
-                                    com.example.photozen.data.repository.PhotoClassificationMode.TAG -> "标签模式"
-                                    com.example.photozen.data.repository.PhotoClassificationMode.ALBUM -> "相册模式"
+                                text = when (action) {
+                                    com.example.photozen.data.repository.AlbumAddAction.COPY -> "复制到相册"
+                                    com.example.photozen.data.repository.AlbumAddAction.MOVE -> "移动到相册"
                                 },
-                                style = MaterialTheme.typography.bodyLarge
+                                style = MaterialTheme.typography.bodyMedium
                             )
                             Text(
-                                text = when (mode) {
-                                    com.example.photozen.data.repository.PhotoClassificationMode.TAG -> "使用自定义标签管理照片"
-                                    com.example.photozen.data.repository.PhotoClassificationMode.ALBUM -> "使用系统相册组织照片"
+                                text = when (action) {
+                                    com.example.photozen.data.repository.AlbumAddAction.COPY -> "照片保留在原位置"
+                                    com.example.photozen.data.repository.AlbumAddAction.MOVE -> "照片从原位置移除"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1726,183 +1838,44 @@ private fun ClassificationModeDialog(
                     }
                 }
                 
-                // Album mode specific settings
-                if (currentMode == com.example.photozen.data.repository.PhotoClassificationMode.ALBUM) {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
-                    
-                    Text(
-                        text = "相册模式设置",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    
-                    // Card sorting album enabled (moved before album add action)
+                // Permission warning - only show when permission is needed and not granted
+                if (albumAddAction == com.example.photozen.data.repository.AlbumAddAction.MOVE &&
+                    !hasManageStoragePermission && isPermissionApplicable) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                            .padding(top = 8.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f))
+                            .clickable { onRequestPermission() }
+                            .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "滑动筛选照片时可分类到相册",
-                                style = MaterialTheme.typography.bodyMedium
+                                text = "需要文件管理权限",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.error
                             )
                             Text(
-                                text = "筛选界面底部将显示快捷添加到相册的入口",
+                                text = "点击前往设置授权",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(
-                            checked = cardSortingAlbumEnabled,
-                            onCheckedChange = onCardSortingAlbumEnabledChanged
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
-                    
-                    // Album tag settings (only if enabled)
-                    if (cardSortingAlbumEnabled) {
-                        // Album tag size
-                        Text(
-                            text = "相册标签大小",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "小",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Slider(
-                                value = albumTagSize,
-                                onValueChange = onAlbumTagSizeChanged,
-                                valueRange = 0.6f..1.5f,
-                                steps = 8,  // Add steps to make slider stop at discrete positions
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(horizontal = 8.dp)
-                            )
-                            Text(
-                                text = "大",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        
-                        // Max album tag count
-                        Text(
-                            text = "最大显示数量: ${if (maxAlbumTagCount == 0) "不限" else maxAlbumTagCount.toString()}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-                        )
-                        Slider(
-                            value = maxAlbumTagCount.toFloat(),
-                            onValueChange = { onMaxAlbumTagCountChanged(it.toInt()) },
-                            valueRange = 0f..20f,
-                            steps = 19,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
-                    
-                    // Album add action
-                    Text(
-                        text = "添加到相册时默认操作",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                    
-                    com.example.photozen.data.repository.AlbumAddAction.entries.forEach { action ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    if (action == com.example.photozen.data.repository.AlbumAddAction.MOVE &&
-                                        !hasManageStoragePermission && isPermissionApplicable) {
-                                        showPermissionDialog = true
-                                    }
-                                    onAlbumAddActionSelected(action)
-                                }
-                                .padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = action == albumAddAction,
-                                onClick = {
-                                    if (action == com.example.photozen.data.repository.AlbumAddAction.MOVE &&
-                                        !hasManageStoragePermission && isPermissionApplicable) {
-                                        showPermissionDialog = true
-                                    }
-                                    onAlbumAddActionSelected(action)
-                                }
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = when (action) {
-                                        com.example.photozen.data.repository.AlbumAddAction.COPY -> "复制到相册"
-                                        com.example.photozen.data.repository.AlbumAddAction.MOVE -> "移动到相册"
-                                    },
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = when (action) {
-                                        com.example.photozen.data.repository.AlbumAddAction.COPY -> "照片保留在原位置"
-                                        com.example.photozen.data.repository.AlbumAddAction.MOVE -> "照片从原位置移除"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                    
-                    // Permission warning - only show when permission is needed and not granted
-                    if (albumAddAction == com.example.photozen.data.repository.AlbumAddAction.MOVE &&
-                        !hasManageStoragePermission && isPermissionApplicable) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f))
-                                .clickable { onRequestPermission() }
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "需要文件管理权限",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                                Text(
-                                    text = "点击前往设置授权",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
                     }
                 }
             }

@@ -1,9 +1,5 @@
 package com.example.photozen.ui.screens.flowsorter
 
-import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -23,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -88,18 +83,6 @@ fun SwipeablePhotoCard(
     val haptic = LocalHapticFeedback.current
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
-    val context = LocalContext.current
-    
-    // Get vibrator for threshold feedback
-    val vibrator = remember {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val vibratorManager = context.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-            vibratorManager?.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as? Vibrator
-        }
-    }
     
     // Screen dimensions for threshold calculation
     val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
@@ -178,21 +161,6 @@ fun SwipeablePhotoCard(
         1f - (offsetY.value / screenHeightPx) * 0.5f
     } else 1f
     
-    // Helper function for threshold haptic feedback
-    fun performThresholdHaptic() {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val effect = VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
-                vibrator?.vibrate(effect)
-            } else {
-                @Suppress("DEPRECATION")
-                vibrator?.vibrate(10)
-            }
-        } catch (e: Exception) {
-            // Fallback to standard haptic
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        }
-    }
     
     Box(
         modifier = modifier
@@ -296,37 +264,33 @@ fun SwipeablePhotoCard(
                             offsetY.snapTo(offsetY.value + dragAmount.y)
                         }
                         
-                        // Check for threshold crossing and provide haptic feedback
+                        // Check for threshold crossing (for UI feedback, no haptic)
                         // Use currentThreshold* to always use latest sensitivity values
                         val newReachedRight = offsetX.value > currentThresholdRight
                         val newReachedLeft = offsetX.value < -currentThresholdLeft
                         val newReachedUp = offsetY.value < -currentThresholdUp && abs(offsetY.value) > abs(offsetX.value)
                         val newReachedDown = offsetY.value > currentThresholdDown && abs(offsetY.value) > abs(offsetX.value)
                         
-                        // Trigger haptic when crossing threshold (entering threshold zone)
+                        // Update threshold states (used for visual feedback)
                         if (newReachedRight && !hasReachedThresholdRight) {
-                            performThresholdHaptic()
                             hasReachedThresholdRight = true
                         } else if (!newReachedRight) {
                             hasReachedThresholdRight = false
                         }
                         
                         if (newReachedLeft && !hasReachedThresholdLeft) {
-                            performThresholdHaptic()
                             hasReachedThresholdLeft = true
                         } else if (!newReachedLeft) {
                             hasReachedThresholdLeft = false
                         }
                         
                         if (newReachedUp && !hasReachedThresholdUp) {
-                            performThresholdHaptic()
                             hasReachedThresholdUp = true
                         } else if (!newReachedUp) {
                             hasReachedThresholdUp = false
                         }
                         
                         if (newReachedDown && !hasReachedThresholdDown) {
-                            performThresholdHaptic()
                             hasReachedThresholdDown = true
                         } else if (!newReachedDown) {
                             hasReachedThresholdDown = false

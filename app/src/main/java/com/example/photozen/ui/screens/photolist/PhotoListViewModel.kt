@@ -6,11 +6,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.dao.AlbumBubbleDao
 import com.example.photozen.data.local.dao.PhotoDao
-import com.example.photozen.data.local.dao.TagDao
 import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.local.entity.PhotoEntity
-import com.example.photozen.data.local.entity.PhotoTagCrossRef
-import com.example.photozen.data.local.entity.TagEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.AlbumAddAction
 import com.example.photozen.data.repository.PhotoClassificationMode
@@ -46,38 +43,32 @@ data class PhotoListUiState(
     val isLoading: Boolean = true,
     val message: String? = null,
     val defaultExternalApp: String? = null,
-    val untaggedCount: Int = 0,
     val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC,
     val isSelectionMode: Boolean = false,
     val selectedPhotoIds: Set<String> = emptySet(),
-    val availableTags: List<TagInfo> = emptyList(),
-    val showTagDialog: Boolean = false,
     val gridColumns: Int = 2,
     // Album mode support
-    val classificationMode: PhotoClassificationMode = PhotoClassificationMode.TAG,
     val albumBubbleList: List<AlbumBubbleEntity> = emptyList(),
     val albumAddAction: AlbumAddAction = AlbumAddAction.MOVE,
-    val showAlbumDialog: Boolean = false
+    val showAlbumDialog: Boolean = false,
+    // Phase 6: Keep list album filter
+    val showPhotosInAlbum: Boolean = true,  // When false, only show photos not in "my albums"
+    val notInAlbumCount: Int = 0,           // Count of photos not in any "my album"
+    val myAlbumBucketIds: Set<String> = emptySet(),  // Bucket IDs of "my albums"
+    // Album classify mode
+    val isClassifyMode: Boolean = false,
+    val classifyModePhotos: List<PhotoEntity> = emptyList(),
+    val classifyModeIndex: Int = 0
 ) {
     val selectedCount: Int get() = selectedPhotoIds.size
     val allSelected: Boolean get() = photos.isNotEmpty() && selectedPhotoIds.size == photos.size
     // Batch management is available for KEEP, MAYBE, and TRASH
     val canBatchManage: Boolean get() = status in listOf(PhotoStatus.KEEP, PhotoStatus.MAYBE, PhotoStatus.TRASH)
-    // Tag operations only for KEEP status
-    val canBatchTag: Boolean get() = status == PhotoStatus.KEEP
-    // Album operations for KEEP status in album mode
-    val canBatchAlbum: Boolean get() = status == PhotoStatus.KEEP && classificationMode == PhotoClassificationMode.ALBUM
+    // Album operations for KEEP status
+    val canBatchAlbum: Boolean get() = status == PhotoStatus.KEEP
+    // Current photo in classify mode
+    val currentClassifyPhoto: PhotoEntity? get() = classifyModePhotos.getOrNull(classifyModeIndex)
 }
-
-/**
- * Simplified tag info for display.
- */
-data class TagInfo(
-    val id: String,
-    val name: String,
-    val color: Int,
-    val photoCount: Int
-)
 
 private data class InternalState(
     val isLoading: Boolean = true,
@@ -86,15 +77,19 @@ private data class InternalState(
     val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC,
     val isSelectionMode: Boolean = false,
     val selectedPhotoIds: Set<String> = emptySet(),
-    val showTagDialog: Boolean = false,
     val gridColumns: Int = 2,
-    val showAlbumDialog: Boolean = false
+    val showAlbumDialog: Boolean = false,
+    // Phase 6: Keep list album filter
+    val showPhotosInAlbum: Boolean = true,
+    // Album classify mode
+    val isClassifyMode: Boolean = false,
+    val classifyModeIndex: Int = 0
 )
 
 private data class AlbumState(
-    val classificationMode: PhotoClassificationMode = PhotoClassificationMode.TAG,
     val albumBubbleList: List<AlbumBubbleEntity> = emptyList(),
-    val albumAddAction: AlbumAddAction = AlbumAddAction.MOVE
+    val albumAddAction: AlbumAddAction = AlbumAddAction.MOVE,
+    val myAlbumBucketIds: Set<String> = emptySet()
 )
 
 @HiltViewModel
@@ -105,7 +100,6 @@ class PhotoListViewModel @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val photoDao: PhotoDao,
-    private val tagDao: TagDao,
     private val albumBubbleDao: AlbumBubbleDao,
     private val albumOperationsUseCase: AlbumOperationsUseCase
 ) : ViewModel() {
@@ -122,44 +116,58 @@ class PhotoListViewModel @Inject constructor(
     // Random seed for consistent random sorting
     private var randomSeed = System.currentTimeMillis()
     
-    // Track untagged count separately to avoid blocking UI
-    private val _untaggedCount = MutableStateFlow(0)
-    
-    // Available tags for batch tagging
-    private val _availableTags = MutableStateFlow<List<TagInfo>>(emptyList())
-    
     // Album mode state
     private val _albumState = MutableStateFlow(AlbumState())
     
     val uiState: StateFlow<PhotoListUiState> = combine(
         getPhotosUseCase.getPhotosByStatus(status),
         _internalState,
-        _untaggedCount,
-        combine(_availableTags, _albumState) { tags, album -> Pair(tags, album) }
-    ) { photos, internal, untaggedCount, (tags, albumState) ->
+        _albumState
+    ) { photos, internal, albumState ->
         // Apply sorting based on dateAdded (creation time)
         val sortedPhotos = applySortOrder(photos, internal.sortOrder)
+        
+        // Phase 6: Calculate photos not in "my albums" (only for KEEP status)
+        val myAlbumBucketIds = albumState.myAlbumBucketIds
+        val photosNotInAlbum = if (status == PhotoStatus.KEEP && myAlbumBucketIds.isNotEmpty()) {
+            sortedPhotos.filter { photo -> photo.bucketId == null || photo.bucketId !in myAlbumBucketIds }
+        } else {
+            emptyList()
+        }
+        val notInAlbumCount = photosNotInAlbum.size
+        
+        // Apply album filter for KEEP status (Phase 6.2)
+        val filteredPhotos = if (status == PhotoStatus.KEEP && !internal.showPhotosInAlbum && myAlbumBucketIds.isNotEmpty()) {
+            photosNotInAlbum
+        } else {
+            sortedPhotos
+        }
+        
         // Filter out selected photos that no longer exist
         val validSelectedIds = internal.selectedPhotoIds.filter { id ->
-            sortedPhotos.any { it.id == id }
+            filteredPhotos.any { it.id == id }
         }.toSet()
+        
         PhotoListUiState(
-            photos = sortedPhotos,
+            photos = filteredPhotos,
             status = status,
             isLoading = internal.isLoading && photos.isEmpty(),
             message = internal.message,
             defaultExternalApp = internal.defaultExternalApp,
-            untaggedCount = untaggedCount,
             sortOrder = internal.sortOrder,
             isSelectionMode = internal.isSelectionMode,
             selectedPhotoIds = validSelectedIds,
-            availableTags = tags,
-            showTagDialog = internal.showTagDialog,
             gridColumns = internal.gridColumns,
-            classificationMode = albumState.classificationMode,
             albumBubbleList = albumState.albumBubbleList,
             albumAddAction = albumState.albumAddAction,
-            showAlbumDialog = internal.showAlbumDialog
+            showAlbumDialog = internal.showAlbumDialog,
+            // Phase 6
+            showPhotosInAlbum = internal.showPhotosInAlbum,
+            notInAlbumCount = notInAlbumCount,
+            myAlbumBucketIds = myAlbumBucketIds,
+            isClassifyMode = internal.isClassifyMode,
+            classifyModePhotos = photosNotInAlbum,
+            classifyModeIndex = internal.classifyModeIndex
         )
     }.stateIn(
         scope = viewModelScope,
@@ -188,39 +196,8 @@ class PhotoListViewModel @Inject constructor(
                 _internalState.update { it.copy(gridColumns = columns) }
             }
         }
-        // Count untagged photos for KEEP status - reactive to photo list changes
+        // Load album settings for KEEP status
         if (status == PhotoStatus.KEEP) {
-            viewModelScope.launch {
-                getPhotosUseCase.getPhotosByStatus(PhotoStatus.KEEP).collect { photos ->
-                    // Calculate untagged count in background
-                    var count = 0
-                    for (photo in photos) {
-                        if (!tagDao.photoHasAnyTag(photo.id)) {
-                            count++
-                        }
-                    }
-                    _untaggedCount.value = count
-                }
-            }
-            // Load available tags for KEEP status (batch tagging)
-            viewModelScope.launch {
-                tagDao.getTagsWithPhotoCount().collect { tagsWithCount ->
-                    _availableTags.value = tagsWithCount.map { tagWithCount ->
-                        TagInfo(
-                            id = tagWithCount.id,
-                            name = tagWithCount.name,
-                            color = tagWithCount.color,
-                            photoCount = tagWithCount.photoCount
-                        )
-                    }
-                }
-            }
-            // Load album settings for KEEP status
-            viewModelScope.launch {
-                preferencesRepository.getPhotoClassificationMode().collect { mode ->
-                    _albumState.update { it.copy(classificationMode = mode) }
-                }
-            }
             viewModelScope.launch {
                 preferencesRepository.getAlbumAddAction().collect { action ->
                     _albumState.update { it.copy(albumAddAction = action) }
@@ -228,7 +205,18 @@ class PhotoListViewModel @Inject constructor(
             }
             viewModelScope.launch {
                 albumBubbleDao.getAll().collect { albums ->
-                    _albumState.update { it.copy(albumBubbleList = albums) }
+                    _albumState.update { 
+                        it.copy(
+                            albumBubbleList = albums,
+                            myAlbumBucketIds = albums.map { album -> album.bucketId }.toSet()
+                        )
+                    }
+                }
+            }
+            // Phase 6.2: Load show photos in album preference
+            viewModelScope.launch {
+                preferencesRepository.getShowPhotosInAlbumKeepList().collect { show ->
+                    _internalState.update { it.copy(showPhotosInAlbum = show) }
                 }
             }
         }
@@ -358,6 +346,18 @@ class PhotoListViewModel @Inject constructor(
                 state.selectedPhotoIds + photoId
             }
             state.copy(selectedPhotoIds = newSelection)
+        }
+    }
+    
+    /**
+     * Update selection with a new set of IDs (for drag-select).
+     */
+    fun updateSelection(newSelection: Set<String>) {
+        _internalState.update { state ->
+            state.copy(
+                isSelectionMode = newSelection.isNotEmpty(),
+                selectedPhotoIds = newSelection
+            )
         }
     }
     
@@ -504,96 +504,6 @@ class PhotoListViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 _internalState.update { it.copy(message = "复制照片失败: ${e.message}") }
-            }
-        }
-    }
-    
-    // ==================== Batch Tagging ====================
-    
-    /**
-     * Show tag selection dialog.
-     */
-    fun showTagDialog() {
-        _internalState.update { it.copy(showTagDialog = true) }
-    }
-    
-    /**
-     * Hide tag selection dialog.
-     */
-    fun hideTagDialog() {
-        _internalState.update { it.copy(showTagDialog = false) }
-    }
-    
-    /**
-     * Apply a tag to all selected photos.
-     */
-    fun applyTagToSelected(tagId: String) {
-        val selectedIds = _internalState.value.selectedPhotoIds
-        if (selectedIds.isEmpty()) return
-        
-        viewModelScope.launch {
-            try {
-                var addedCount = 0
-                selectedIds.forEach { photoId ->
-                    // Check if already tagged
-                    if (!tagDao.photoHasTag(photoId, tagId)) {
-                        tagDao.addTagToPhoto(PhotoTagCrossRef(photoId, tagId))
-                        addedCount++
-                    }
-                }
-                val tagName = _availableTags.value.find { it.id == tagId }?.name ?: "标签"
-                _internalState.update { 
-                    it.copy(
-                        showTagDialog = false,
-                        message = "已为 $addedCount 张照片添加标签「$tagName」",
-                        selectedPhotoIds = emptySet(),
-                        isSelectionMode = false
-                    )
-                }
-            } catch (e: Exception) {
-                _internalState.update { it.copy(message = "设置标签失败") }
-            }
-        }
-    }
-    
-    /**
-     * Create a new tag and apply to selected photos.
-     */
-    fun createTagAndApplyToSelected(tagName: String, tagColor: Int) {
-        val selectedIds = _internalState.value.selectedPhotoIds
-        if (selectedIds.isEmpty()) return
-        
-        viewModelScope.launch {
-            try {
-                // Check if tag name already exists
-                if (tagDao.tagNameExists(tagName)) {
-                    _internalState.update { it.copy(message = "标签「$tagName」已存在") }
-                    return@launch
-                }
-                
-                // Create the new tag
-                val newTag = TagEntity(
-                    id = java.util.UUID.randomUUID().toString(),
-                    name = tagName,
-                    color = tagColor
-                )
-                tagDao.insert(newTag)
-                
-                // Apply to selected photos
-                selectedIds.forEach { photoId ->
-                    tagDao.addTagToPhoto(PhotoTagCrossRef(photoId, newTag.id))
-                }
-                
-                _internalState.update { 
-                    it.copy(
-                        showTagDialog = false,
-                        message = "已创建标签「$tagName」并应用到 ${selectedIds.size} 张照片",
-                        selectedPhotoIds = emptySet(),
-                        isSelectionMode = false
-                    )
-                }
-            } catch (e: Exception) {
-                _internalState.update { it.copy(message = "创建标签失败: ${e.message}") }
             }
         }
     }
@@ -766,6 +676,103 @@ class PhotoListViewModel @Inject constructor(
             }
             val newColumns = preferencesRepository.cycleGridColumns(gridScreen)
             _internalState.update { it.copy(gridColumns = newColumns) }
+        }
+    }
+    
+    // ==================== Phase 6: Keep List Album Features ====================
+    
+    /**
+     * Toggle whether to show photos that are already in albums.
+     */
+    fun toggleShowPhotosInAlbum() {
+        viewModelScope.launch {
+            val newValue = !_internalState.value.showPhotosInAlbum
+            preferencesRepository.setShowPhotosInAlbumKeepList(newValue)
+            _internalState.update { it.copy(showPhotosInAlbum = newValue) }
+        }
+    }
+    
+    /**
+     * Enter album classify mode - for quickly adding photos to albums.
+     * Only available for KEEP status photos not in any "my album".
+     */
+    fun enterClassifyMode() {
+        if (status != PhotoStatus.KEEP) return
+        _internalState.update { 
+            it.copy(
+                isClassifyMode = true,
+                classifyModeIndex = 0
+            )
+        }
+    }
+    
+    /**
+     * Exit album classify mode.
+     */
+    fun exitClassifyMode() {
+        _internalState.update { 
+            it.copy(
+                isClassifyMode = false,
+                classifyModeIndex = 0
+            )
+        }
+    }
+    
+    /**
+     * Add current photo in classify mode to an album, then advance to next.
+     */
+    fun classifyPhotoToAlbum(bucketId: String) {
+        val currentPhoto = uiState.value.currentClassifyPhoto ?: return
+        
+        viewModelScope.launch {
+            try {
+                val album = _albumState.value.albumBubbleList.find { it.bucketId == bucketId }
+                val targetPath = mediaStoreDataSource.getAlbumPath(bucketId)
+                    ?: "Pictures/${album?.displayName ?: "PhotoZen"}"
+                val photoUri = Uri.parse(currentPhoto.systemUri)
+                
+                // Copy photo to album (don't move, keep original location)
+                val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
+                if (result.isSuccess) {
+                    // Update photo's bucketId in database
+                    photoDao.updateBucketId(currentPhoto.id, bucketId)
+                    _internalState.update { it.copy(message = "已添加到「${album?.displayName}」") }
+                }
+                
+                // Advance to next photo
+                advanceClassifyMode()
+            } catch (e: Exception) {
+                _internalState.update { it.copy(message = "操作失败: ${e.message}") }
+            }
+        }
+    }
+    
+    /**
+     * Skip current photo in classify mode (don't add to any album).
+     */
+    fun skipClassifyPhoto() {
+        advanceClassifyMode()
+    }
+    
+    /**
+     * Advance to next photo in classify mode.
+     */
+    private fun advanceClassifyMode() {
+        val currentIndex = _internalState.value.classifyModeIndex
+        val totalCount = uiState.value.classifyModePhotos.size
+        
+        if (currentIndex + 1 >= totalCount) {
+            // All photos processed, exit classify mode
+            _internalState.update { 
+                it.copy(
+                    isClassifyMode = false,
+                    classifyModeIndex = 0,
+                    message = "全部照片已分类完成"
+                )
+            }
+        } else {
+            // Move to next photo
+            _internalState.update { it.copy(classifyModeIndex = currentIndex + 1) }
         }
     }
 }

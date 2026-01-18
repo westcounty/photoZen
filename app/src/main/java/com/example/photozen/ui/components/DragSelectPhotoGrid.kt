@@ -3,7 +3,7 @@ package com.example.photozen.ui.components
 import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -24,7 +24,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -45,6 +44,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -56,159 +56,38 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Staggered (waterfall) photo grid that preserves original aspect ratios.
- * 
- * Features:
- * - Supports 1-4 column layouts
- * - Photos displayed in their original aspect ratio
- * - Optional selection mode with checkmarks
- * - Long press and click callbacks
- * 
- * @param columns Number of columns (1-4), defaults to 2
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun StaggeredPhotoGrid(
-    photos: List<PhotoEntity>,
-    onPhotoClick: (String, Int) -> Unit,
-    onPhotoLongPress: (String, String) -> Unit, // photoId, photoUri
-    modifier: Modifier = Modifier,
-    columns: Int = 2,
-    selectedIds: Set<String> = emptySet(),
-    selectionMode: Boolean = false
-) {
-    LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 4)),
-        contentPadding = PaddingValues(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalItemSpacing = 8.dp,
-        modifier = modifier.fillMaxSize()
-    ) {
-        itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
-            StaggeredPhotoItem(
-                photo = photo,
-                isSelected = selectedIds.contains(photo.id),
-                selectionMode = selectionMode,
-                onClick = { onPhotoClick(photo.id, index) },
-                onLongPress = { onPhotoLongPress(photo.id, photo.systemUri) }
-            )
-        }
-    }
-}
-
-/**
- * Single photo item in the staggered grid.
- * Calculates aspect ratio from photo dimensions.
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun StaggeredPhotoItem(
-    photo: PhotoEntity,
-    isSelected: Boolean,
-    selectionMode: Boolean,
-    onClick: () -> Unit,
-    onLongPress: () -> Unit
-) {
-    val haptic = LocalHapticFeedback.current
-    val context = LocalContext.current
-    
-    // Calculate aspect ratio from photo dimensions
-    val aspectRatio = remember(photo.width, photo.height) {
-        if (photo.width > 0 && photo.height > 0) {
-            photo.width.toFloat() / photo.height.toFloat()
-        } else {
-            1f // Default to square if dimensions unknown
-        }
-    }
-    
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongPress()
-                }
-            )
-    ) {
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(Uri.parse(photo.systemUri))
-                .crossfade(true)
-                .build(),
-            contentDescription = photo.displayName,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(aspectRatio)
-        )
-        
-        // Selection overlay
-        if (selectionMode) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(
-                        if (isSelected) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-                        } else {
-                            Color.Transparent
-                        }
-                    )
-            )
-            
-            // Selection indicator
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp)
-                    .size(24.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (isSelected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            Color.White.copy(alpha = 0.7f)
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                if (isSelected) {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "已选择",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Staggered photo grid with selection support for batch operations.
- * Supports 1-4 column layouts with drag-to-select functionality.
+ * Photo grid with drag-to-select functionality.
  * 
  * Features:
  * - Long press to enter selection mode
  * - Drag to select multiple photos
  * - Auto-scroll when dragging near edges
  * - Haptic feedback on selection changes
+ * 
+ * @param photos List of photos to display
+ * @param selectedIds Set of selected photo IDs
+ * @param onSelectionChanged Callback when selection changes
+ * @param onPhotoClick Callback when a photo is clicked (non-selection mode)
+ * @param onPhotoLongPress Callback when a photo is long-pressed (for action sheet)
+ * @param modifier Modifier for the grid
+ * @param columns Number of columns (1-4)
+ * @param selectionColor Color for selection indicator
+ * @param enableDragSelect Whether drag-to-select is enabled
+ * @param gridState LazyStaggeredGridState for external control
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun SelectableStaggeredPhotoGrid(
+fun DragSelectPhotoGrid(
     photos: List<PhotoEntity>,
     selectedIds: Set<String>,
     onSelectionChanged: (Set<String>) -> Unit,
     onPhotoClick: (String, Int) -> Unit,
+    onPhotoLongPress: (String, String) -> Unit,
     modifier: Modifier = Modifier,
     columns: Int = 2,
-    gridState: LazyStaggeredGridState = rememberLazyStaggeredGridState(),
-    onPhotoLongClick: ((String, Int) -> Unit)? = null  // Optional callback for context menu
+    selectionColor: Color = MaterialTheme.colorScheme.primary,
+    enableDragSelect: Boolean = true,
+    gridState: LazyStaggeredGridState = rememberLazyStaggeredGridState()
 ) {
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
@@ -276,68 +155,73 @@ fun SelectableStaggeredPhotoGrid(
         modifier = modifier
             .fillMaxSize()
             .onSizeChanged { gridSize = it }
-            .pointerInput(photos, selectedIds) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { offset ->
-                        val index = getItemIndexAtPosition(offset)
-                        if (index >= 0 && index < photos.size) {
-                            isDragging = true
-                            dragStartIndex = index
-                            dragCurrentIndex = index
-                            initialSelection = selectedIds
-                            
-                            // Add initial item to selection
-                            val photoId = photos[index].id
-                            val newSelection = if (selectedIds.contains(photoId)) {
-                                selectedIds
-                            } else {
-                                selectedIds + photoId
+            .then(
+                if (enableDragSelect) {
+                    Modifier.pointerInput(photos, selectedIds) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { offset ->
+                                val index = getItemIndexAtPosition(offset)
+                                if (index >= 0 && index < photos.size) {
+                                    isDragging = true
+                                    dragStartIndex = index
+                                    dragCurrentIndex = index
+                                    initialSelection = selectedIds
+                                    
+                                    // Add initial item to selection
+                                    val photoId = photos[index].id
+                                    val newSelection = if (selectedIds.contains(photoId)) {
+                                        // If already selected, keep current selection
+                                        selectedIds
+                                    } else {
+                                        selectedIds + photoId
+                                    }
+                                    onSelectionChanged(newSelection)
+                                    
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                }
+                            },
+                            onDrag = { change, _ ->
+                                if (!isDragging) return@detectDragGesturesAfterLongPress
+                                
+                                change.consume()
+                                val position = change.position
+                                
+                                // Check for auto-scroll
+                                autoScrollDirection = when {
+                                    position.y < scrollThreshold -> -1
+                                    position.y > gridSize.height - scrollThreshold -> 1
+                                    else -> 0
+                                }
+                                
+                                // Find item at current position
+                                val currentIndex = getItemIndexAtPosition(position)
+                                if (currentIndex >= 0 && currentIndex != dragCurrentIndex) {
+                                    dragCurrentIndex = currentIndex
+                                    
+                                    // Select range from start to current
+                                    val newSelection = selectRange(dragStartIndex, dragCurrentIndex)
+                                    if (newSelection != selectedIds) {
+                                        onSelectionChanged(newSelection)
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    }
+                                }
+                            },
+                            onDragEnd = {
+                                isDragging = false
+                                autoScrollDirection = 0
+                                dragStartIndex = -1
+                                dragCurrentIndex = -1
+                            },
+                            onDragCancel = {
+                                isDragging = false
+                                autoScrollDirection = 0
+                                dragStartIndex = -1
+                                dragCurrentIndex = -1
                             }
-                            onSelectionChanged(newSelection)
-                            
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        }
-                    },
-                    onDrag = { change, _ ->
-                        if (!isDragging) return@detectDragGesturesAfterLongPress
-                        
-                        change.consume()
-                        val position = change.position
-                        
-                        // Check for auto-scroll
-                        autoScrollDirection = when {
-                            position.y < scrollThreshold -> -1
-                            position.y > gridSize.height - scrollThreshold -> 1
-                            else -> 0
-                        }
-                        
-                        // Find item at current position
-                        val currentIndex = getItemIndexAtPosition(position)
-                        if (currentIndex >= 0 && currentIndex != dragCurrentIndex) {
-                            dragCurrentIndex = currentIndex
-                            
-                            // Select range from start to current
-                            val newSelection = selectRange(dragStartIndex, dragCurrentIndex)
-                            if (newSelection != selectedIds) {
-                                onSelectionChanged(newSelection)
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            }
-                        }
-                    },
-                    onDragEnd = {
-                        isDragging = false
-                        autoScrollDirection = 0
-                        dragStartIndex = -1
-                        dragCurrentIndex = -1
-                    },
-                    onDragCancel = {
-                        isDragging = false
-                        autoScrollDirection = 0
-                        dragStartIndex = -1
-                        dragCurrentIndex = -1
+                        )
                     }
-                )
-            }
+                } else Modifier
+            )
     ) {
         LazyVerticalStaggeredGrid(
             columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 4)),
@@ -349,18 +233,18 @@ fun SelectableStaggeredPhotoGrid(
         ) {
             itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
                 val isSelected = selectedIds.contains(photo.id)
-                val selectionMode = selectedIds.isNotEmpty() || isDragging
                 val isInDragRange = isDragging && 
                     dragStartIndex >= 0 && 
                     dragCurrentIndex >= 0 &&
                     index in minOf(dragStartIndex, dragCurrentIndex)..maxOf(dragStartIndex, dragCurrentIndex)
                 
-                SelectableStaggeredPhotoItem(
+                DragSelectPhotoItem(
                     photo = photo,
                     isSelected = isSelected || isInDragRange,
-                    selectionMode = selectionMode,
+                    isSelectionMode = selectedIds.isNotEmpty() || isDragging,
+                    selectionColor = selectionColor,
                     onClick = {
-                        if (selectionMode && !isDragging) {
+                        if (selectedIds.isNotEmpty()) {
                             // Toggle selection
                             val newSelection = if (isSelected) {
                                 selectedIds - photo.id
@@ -368,20 +252,18 @@ fun SelectableStaggeredPhotoGrid(
                                 selectedIds + photo.id
                             }
                             onSelectionChanged(newSelection)
-                        } else if (!isDragging) {
+                        } else {
                             onPhotoClick(photo.id, index)
                         }
                     },
                     onLongPress = {
-                        // Long press without drag
-                        if (!isDragging) {
+                        if (selectedIds.isEmpty() && !enableDragSelect) {
+                            // Show action sheet for single photo
+                            onPhotoLongPress(photo.id, photo.systemUri)
+                        } else if (selectedIds.isEmpty()) {
+                            // Enter selection mode
+                            onSelectionChanged(setOf(photo.id))
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            // If custom callback provided, use it; otherwise enter selection mode
-                            if (onPhotoLongClick != null && !selectionMode) {
-                                onPhotoLongClick(photo.id, index)
-                            } else if (!selectionMode) {
-                                onSelectionChanged(setOf(photo.id))
-                            }
                         }
                     }
                 )
@@ -390,23 +272,28 @@ fun SelectableStaggeredPhotoGrid(
     }
 }
 
+/**
+ * Individual photo item with selection indicator.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SelectableStaggeredPhotoItem(
+private fun DragSelectPhotoItem(
     photo: PhotoEntity,
     isSelected: Boolean,
-    selectionMode: Boolean,
+    isSelectionMode: Boolean,
+    selectionColor: Color,
     onClick: () -> Unit,
     onLongPress: () -> Unit
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     
+    // Calculate aspect ratio from photo dimensions
     val aspectRatio = remember(photo.width, photo.height) {
         if (photo.width > 0 && photo.height > 0) {
             photo.width.toFloat() / photo.height.toFloat()
         } else {
-            1f
+            1f // Default to square if dimensions unknown
         }
     }
     
@@ -414,10 +301,22 @@ private fun SelectableStaggeredPhotoItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
+            .then(
+                if (isSelected) {
+                    Modifier.border(
+                        width = 3.dp,
+                        color = selectionColor,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                } else Modifier
+            )
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onClick() },
-                    onLongPress = { onLongPress() }
+                    onLongPress = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLongPress()
+                    }
                 )
             }
     ) {
@@ -438,12 +337,12 @@ private fun SelectableStaggeredPhotoItem(
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                    .background(selectionColor.copy(alpha = 0.2f))
             )
         }
         
         // Selection indicator
-        if (selectionMode) {
+        if (isSelectionMode) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -451,11 +350,8 @@ private fun SelectableStaggeredPhotoItem(
                     .size(28.dp)
                     .clip(CircleShape)
                     .background(
-                        if (isSelected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            Color.Black.copy(alpha = 0.5f)
-                        }
+                        if (isSelected) selectionColor
+                        else Color.Black.copy(alpha = 0.5f)
                     ),
                 contentAlignment = Alignment.Center
             ) {
@@ -471,3 +367,4 @@ private fun SelectableStaggeredPhotoItem(
         }
     }
 }
+

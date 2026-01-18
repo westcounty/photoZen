@@ -135,6 +135,16 @@ class GetUnsortedPhotosUseCase @Inject constructor(
                 }
             }
             com.example.photozen.data.repository.PhotoFilterMode.CUSTOM -> {
+                // If photoIds is provided, use it directly (highest priority)
+                val photoIds = sessionFilter?.photoIds
+                if (!photoIds.isNullOrEmpty()) {
+                    // Filter to only include UNSORTED photos from the provided list
+                    val allPhotos = photoDao.getPhotosByIds(photoIds)
+                    return allPhotos
+                        .filter { it.status == com.example.photozen.data.model.PhotoStatus.UNSORTED }
+                        .map { it.id }
+                }
+                
                 val bucketIds = sessionFilter?.albumIds
                 val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
                 

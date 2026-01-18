@@ -19,12 +19,10 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import com.example.photozen.util.AlarmScheduler
 import com.example.photozen.util.WidgetUpdater
 
 import com.example.photozen.data.repository.WidgetPhotoSource
 import com.example.photozen.data.repository.ThemeMode
-import com.example.photozen.data.repository.PhotoClassificationMode
 import com.example.photozen.data.repository.AlbumAddAction
 import com.example.photozen.util.StoragePermissionHelper
 
@@ -37,8 +35,7 @@ data class SettingsUiState(
     val dailyTaskEnabled: Boolean = true,
     val dailyTaskTarget: Int = 100,
     val dailyTaskMode: DailyTaskMode = DailyTaskMode.FLOW,
-    val dailyReminderEnabled: Boolean = false,
-    val dailyReminderTime: Pair<Int, Int> = Pair(20, 0),
+    val progressNotificationEnabled: Boolean = true,  // 前台服务进度通知
     val widgetPhotoSource: WidgetPhotoSource = WidgetPhotoSource.ALL,
     val widgetCustomAlbumIds: Set<String> = emptySet(),
     val widgetStartDate: Long? = null,
@@ -48,8 +45,7 @@ data class SettingsUiState(
     val experimentalEnabled: Boolean = false,
     val themeMode: ThemeMode = ThemeMode.DARK,
     val swipeSensitivity: Float = 1.0f,
-    // Photo classification mode settings
-    val photoClassificationMode: PhotoClassificationMode = PhotoClassificationMode.TAG,
+    // Album classification settings
     val albumAddAction: AlbumAddAction = AlbumAddAction.MOVE,
     val cardSortingAlbumEnabled: Boolean = false,
     val albumTagSize: Float = 1.0f,
@@ -72,7 +68,6 @@ private data class InternalState(
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
-    private val alarmScheduler: AlarmScheduler,
     private val widgetUpdater: WidgetUpdater,
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val photoRepository: PhotoRepository,
@@ -108,12 +103,23 @@ class SettingsViewModel @Inject constructor(
         Triple(source, albumIds, dateRange)
     }
     
+    // Data class for extra settings
+    private data class ExtraSettings(
+        val cardZoomEnabled: Boolean,
+        val onestopEnabled: Boolean,
+        val experimentalEnabled: Boolean,
+        val progressNotificationEnabled: Boolean
+    )
+    
     // Combine extra settings
     private val extraSettingsFlow = combine(
         preferencesRepository.getCardZoomEnabled(),
         preferencesRepository.getOnestopEnabled(),
-        preferencesRepository.getExperimentalEnabled()
-    ) { cardZoom, onestop, experimental -> Triple(cardZoom, onestop, experimental) }
+        preferencesRepository.getExperimentalEnabled(),
+        preferencesRepository.getProgressNotificationEnabled()
+    ) { cardZoom, onestop, experimental, progressNotification -> 
+        ExtraSettings(cardZoom, onestop, experimental, progressNotification)
+    }
     
     // Combine appearance and swipe settings
     private val appearanceSettingsFlow = combine(
@@ -121,20 +127,18 @@ class SettingsViewModel @Inject constructor(
         preferencesRepository.getSwipeSensitivity()
     ) { themeMode, sensitivity -> Pair(themeMode, sensitivity) }
     
-    // Combine photo classification mode settings
+    // Combine album classification settings
     private val classificationSettingsFlow = combine(
-        preferencesRepository.getPhotoClassificationMode(),
         preferencesRepository.getAlbumAddAction(),
         preferencesRepository.getCardSortingAlbumEnabled(),
         preferencesRepository.getAlbumTagSize(),
         preferencesRepository.getMaxAlbumTagCount()
-    ) { mode, action, cardEnabled, tagSize, maxCount ->
-        ClassificationSettings(mode, action, cardEnabled, tagSize, maxCount)
+    ) { action, cardEnabled, tagSize, maxCount ->
+        ClassificationSettings(action, cardEnabled, tagSize, maxCount)
     }
     
     // Data class for classification settings
     private data class ClassificationSettings(
-        val mode: PhotoClassificationMode,
         val action: AlbumAddAction,
         val cardSortingEnabled: Boolean,
         val tagSize: Float,
@@ -147,8 +151,6 @@ class SettingsViewModel @Inject constructor(
         preferencesRepository.getDailyTaskEnabled(),
         preferencesRepository.getDailyTaskTarget(),
         preferencesRepository.getDailyTaskMode(),
-        preferencesRepository.getDailyReminderEnabled(),
-        preferencesRepository.getDailyReminderTime(),
         widgetSettingsFlow,
         extraSettingsFlow,
         combine(_internalState, appearanceSettingsFlow, classificationSettingsFlow) { internal, appearance, classification -> 
@@ -160,15 +162,11 @@ class SettingsViewModel @Inject constructor(
         val dailyEnabled = params[2] as Boolean
         val dailyTarget = params[3] as Int
         val dailyMode = params[4] as DailyTaskMode
-        val reminderEnabled = params[5] as Boolean
         @Suppress("UNCHECKED_CAST")
-        val reminderTime = params[6] as Pair<Int, Int>
+        val widgetSettings = params[5] as Triple<WidgetPhotoSource, Set<String>, Pair<Long?, Long?>>
+        val extraSettings = params[6] as ExtraSettings
         @Suppress("UNCHECKED_CAST")
-        val widgetSettings = params[7] as Triple<WidgetPhotoSource, Set<String>, Pair<Long?, Long?>>
-        @Suppress("UNCHECKED_CAST")
-        val extraSettings = params[8] as Triple<Boolean, Boolean, Boolean>
-        @Suppress("UNCHECKED_CAST")
-        val combined = params[9] as Triple<InternalState, Pair<ThemeMode, Float>, ClassificationSettings>
+        val combined = params[7] as Triple<InternalState, Pair<ThemeMode, Float>, ClassificationSettings>
         val internal = combined.first
         val appearanceSettings = combined.second
         val classificationSettings = combined.third
@@ -179,18 +177,16 @@ class SettingsViewModel @Inject constructor(
             dailyTaskEnabled = dailyEnabled,
             dailyTaskTarget = dailyTarget,
             dailyTaskMode = dailyMode,
-            dailyReminderEnabled = reminderEnabled,
-            dailyReminderTime = reminderTime,
+            progressNotificationEnabled = extraSettings.progressNotificationEnabled,
             widgetPhotoSource = widgetSettings.first,
             widgetCustomAlbumIds = widgetSettings.second,
             widgetStartDate = widgetSettings.third.first,
             widgetEndDate = widgetSettings.third.second,
-            cardZoomEnabled = extraSettings.first,
-            onestopEnabled = extraSettings.second,
-            experimentalEnabled = extraSettings.third,
+            cardZoomEnabled = extraSettings.cardZoomEnabled,
+            onestopEnabled = extraSettings.onestopEnabled,
+            experimentalEnabled = extraSettings.experimentalEnabled,
             themeMode = appearanceSettings.first,
             swipeSensitivity = appearanceSettings.second,
-            photoClassificationMode = classificationSettings.mode,
             albumAddAction = classificationSettings.action,
             cardSortingAlbumEnabled = classificationSettings.cardSortingEnabled,
             albumTagSize = classificationSettings.tagSize,
@@ -237,29 +233,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    fun setDailyReminderEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            preferencesRepository.setDailyReminderEnabled(enabled)
-            if (enabled) {
-                val time = preferencesRepository.getDailyReminderTime().first()
-                alarmScheduler.scheduleDailyReminder(time.first, time.second)
-            } else {
-                alarmScheduler.cancelDailyReminder()
-            }
-        }
-    }
-    
-    fun setDailyReminderTime(hour: Int, minute: Int) {
-        viewModelScope.launch {
-            preferencesRepository.setDailyReminderTime(hour, minute)
-            val enabled = preferencesRepository.getDailyReminderEnabled().first()
-            if (enabled) {
-                alarmScheduler.scheduleDailyReminder(hour, minute)
-            }
-        }
-    }
-    
-    
     fun setOnestopEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setOnestopEnabled(enabled)
@@ -269,6 +242,16 @@ class SettingsViewModel @Inject constructor(
     fun setExperimentalEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setExperimentalEnabled(enabled)
+        }
+    }
+    
+    /**
+     * Set progress notification service enabled/disabled.
+     * This controls whether the foreground service runs with status bar notification.
+     */
+    fun setProgressNotificationEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setProgressNotificationEnabled(enabled)
         }
     }
     
@@ -295,16 +278,7 @@ class SettingsViewModel @Inject constructor(
         _internalState.update { it.copy(error = null) }
     }
     
-    // ==================== PHOTO CLASSIFICATION MODE SETTINGS ====================
-    
-    /**
-     * Set photo classification mode (TAG or ALBUM).
-     */
-    fun setPhotoClassificationMode(mode: PhotoClassificationMode) {
-        viewModelScope.launch {
-            preferencesRepository.setPhotoClassificationMode(mode)
-        }
-    }
+    // ==================== ALBUM CLASSIFICATION SETTINGS ====================
     
     /**
      * Set album add action (COPY or MOVE).

@@ -2,7 +2,6 @@ package com.example.photozen.data.repository
 
 import androidx.paging.PagingData
 import com.example.photozen.data.local.entity.PhotoEntity
-import com.example.photozen.data.local.entity.PhotoWithTags
 import com.example.photozen.data.model.CropState
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.source.PhotoFilter
@@ -48,11 +47,6 @@ interface PhotoRepository {
      * Get a photo by ID as Flow for reactive updates.
      */
     fun getPhotoByIdFlow(photoId: String): Flow<PhotoEntity?>
-    
-    /**
-     * Get photo with its tags.
-     */
-    suspend fun getPhotoWithTags(photoId: String): PhotoWithTags?
     
     // ==================== READ - Lists ====================
     

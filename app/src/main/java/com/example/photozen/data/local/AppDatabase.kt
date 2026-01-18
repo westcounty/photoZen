@@ -10,7 +10,6 @@ import com.example.photozen.data.local.dao.FaceDao
 import com.example.photozen.data.local.dao.PhotoAnalysisDao
 import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.dao.PhotoLabelDao
-import com.example.photozen.data.local.dao.TagDao
 import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.local.entity.DailyStats
 import com.example.photozen.data.local.entity.FaceEntity
@@ -18,27 +17,22 @@ import com.example.photozen.data.local.entity.PersonEntity
 import com.example.photozen.data.local.entity.PhotoAnalysisEntity
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.local.entity.PhotoLabelEntity
-import com.example.photozen.data.local.entity.PhotoTagCrossRef
-import com.example.photozen.data.local.entity.TagEntity
 
 /**
  * Room Database for PicZen app.
  * 
  * Contains:
  * - PhotoEntity: Photo records with status, crop state, and metadata
- * - TagEntity: User-defined tags for organizing photos
- * - PhotoTagCrossRef: Many-to-many relationship between photos and tags
  * - DailyStats: Tracks daily sorting progress
  * - PhotoAnalysisEntity: AI analysis results (labels, embeddings, GPS)
  * - FaceEntity: Detected faces with embeddings
  * - PersonEntity: Clustered persons from face recognition
  * - PhotoLabelEntity: Photo-label associations for fast queries
+ * - AlbumBubbleEntity: User's album bubble list for quick classification
  */
 @Database(
     entities = [
         PhotoEntity::class,
-        TagEntity::class,
-        PhotoTagCrossRef::class,
         DailyStats::class,
         PhotoAnalysisEntity::class,
         FaceEntity::class,
@@ -46,7 +40,7 @@ import com.example.photozen.data.local.entity.TagEntity
         PhotoLabelEntity::class,
         AlbumBubbleEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -56,11 +50,6 @@ abstract class AppDatabase : RoomDatabase() {
      * DAO for photo operations.
      */
     abstract fun photoDao(): PhotoDao
-    
-    /**
-     * DAO for tag operations.
-     */
-    abstract fun tagDao(): TagDao
     
     /**
      * DAO for daily stats.

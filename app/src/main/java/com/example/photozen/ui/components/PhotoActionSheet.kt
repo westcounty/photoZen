@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocalOffer
+import androidx.compose.material.icons.filled.PhotoAlbum
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.Apps
@@ -564,6 +565,7 @@ fun PhotoListActionSheet(
     defaultAppPackage: String? = null,
     onSetDefaultApp: (String?) -> Unit = {},
     onDuplicatePhoto: (() -> Unit)? = null,
+    onAddToAlbum: (() -> Unit)? = null,
     sheetState: SheetState = rememberModalBottomSheetState()
 ) {
     val context = LocalContext.current
@@ -661,6 +663,20 @@ fun PhotoListActionSheet(
                         title = "复制照片",
                         subtitle = "创建副本并保留所有信息",
                         iconTint = Color(0xFF9C27B0),
+                        onClick = {
+                            it()
+                            onDismiss()
+                        }
+                    )
+                }
+                
+                // Add to album option (only for KEEP status with albums available)
+                onAddToAlbum?.let {
+                    ActionSheetItem(
+                        icon = Icons.Default.PhotoAlbum,
+                        title = "添加到相册",
+                        subtitle = "将照片加入到指定相册",
+                        iconTint = Color(0xFF2196F3),
                         onClick = {
                             it()
                             onDismiss()
