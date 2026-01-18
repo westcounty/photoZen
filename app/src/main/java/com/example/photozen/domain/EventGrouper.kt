@@ -1,6 +1,7 @@
 package com.example.photozen.domain
 
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.data.model.PhotoStatus
 import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
@@ -24,6 +25,7 @@ data class PhotoEvent(
     val isExpanded: Boolean = false
 ) {
     val photoCount: Int get() = photos.size
+    val sortedCount: Int get() = photos.count { it.status != PhotoStatus.UNSORTED }
     val durationMinutes: Long get() = (endTime - startTime) / (1000 * 60)
 }
 
@@ -56,6 +58,14 @@ class EventGrouper @Inject constructor() {
         private val monthFormatter = SimpleDateFormat("yyyy年M月", Locale.CHINA)
         private val yearFormatter = SimpleDateFormat("yyyy年", Locale.CHINA)
         private val timeFormatter = SimpleDateFormat("HH:mm", Locale.CHINA)
+        
+        /**
+         * Get effective time for a photo.
+         * Prefers dateTaken (EXIF), falls back to dateAdded * 1000 (MediaStore).
+         */
+        fun PhotoEntity.getEffectiveTime(): Long {
+            return if (dateTaken > 0) dateTaken else dateAdded * 1000
+        }
     }
     
     /**
@@ -64,8 +74,8 @@ class EventGrouper @Inject constructor() {
     fun groupPhotos(photos: List<PhotoEntity>, mode: GroupingMode): List<PhotoEvent> {
         if (photos.isEmpty()) return emptyList()
         
-        // Sort by date taken
-        val sortedPhotos = photos.sortedBy { it.dateTaken }
+        // Sort by effective time (prefers dateTaken, falls back to dateAdded)
+        val sortedPhotos = photos.sortedBy { it.getEffectiveTime() }
         
         return when (mode) {
             GroupingMode.AUTO -> groupByAuto(sortedPhotos)
@@ -116,8 +126,8 @@ class EventGrouper @Inject constructor() {
      * Determine if a new event should start based on time gap and location change.
      */
     private fun shouldStartNewEvent(lastPhoto: PhotoEntity, currentPhoto: PhotoEntity): Boolean {
-        // Check time gap
-        val timeGap = currentPhoto.dateTaken - lastPhoto.dateTaken
+        // Check time gap using effective time
+        val timeGap = currentPhoto.getEffectiveTime() - lastPhoto.getEffectiveTime()
         if (timeGap > TIME_GAP_THRESHOLD_MS) {
             return true
         }
@@ -145,7 +155,7 @@ class EventGrouper @Inject constructor() {
     private fun groupByDay(photos: List<PhotoEntity>): List<PhotoEvent> {
         val groups = photos.groupBy { photo ->
             val calendar = Calendar.getInstance()
-            calendar.timeInMillis = photo.dateTaken
+            calendar.timeInMillis = photo.getEffectiveTime()
             calendar.set(Calendar.HOUR_OF_DAY, 0)
             calendar.set(Calendar.MINUTE, 0)
             calendar.set(Calendar.SECOND, 0)
@@ -166,7 +176,7 @@ class EventGrouper @Inject constructor() {
     private fun groupByMonth(photos: List<PhotoEntity>): List<PhotoEvent> {
         val groups = photos.groupBy { photo ->
             val calendar = Calendar.getInstance()
-            calendar.timeInMillis = photo.dateTaken
+            calendar.timeInMillis = photo.getEffectiveTime()
             calendar.set(Calendar.DAY_OF_MONTH, 1)
             calendar.set(Calendar.HOUR_OF_DAY, 0)
             calendar.set(Calendar.MINUTE, 0)
@@ -188,7 +198,7 @@ class EventGrouper @Inject constructor() {
     private fun groupByYear(photos: List<PhotoEntity>): List<PhotoEvent> {
         val groups = photos.groupBy { photo ->
             val calendar = Calendar.getInstance()
-            calendar.timeInMillis = photo.dateTaken
+            calendar.timeInMillis = photo.getEffectiveTime()
             calendar.get(Calendar.YEAR)
         }
         
@@ -207,9 +217,9 @@ class EventGrouper @Inject constructor() {
         photos: List<PhotoEntity>,
         mode: GroupingMode
     ): PhotoEvent {
-        val sortedPhotos = photos.sortedBy { it.dateTaken }
-        val startTime = sortedPhotos.first().dateTaken
-        val endTime = sortedPhotos.last().dateTaken
+        val sortedPhotos = photos.sortedBy { it.getEffectiveTime() }
+        val startTime = sortedPhotos.first().getEffectiveTime()
+        val endTime = sortedPhotos.last().getEffectiveTime()
         
         // Generate title based on mode
         val title = generateTitle(startTime, endTime, mode)

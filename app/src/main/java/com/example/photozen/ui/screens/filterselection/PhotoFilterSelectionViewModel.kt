@@ -55,8 +55,8 @@ class PhotoFilterSelectionViewModel @Inject constructor(
                 // This ensures the displayed count matches what user will see in the sorter
                 val unsortedCount = photoDao.getUnsortedCountFilteredSync(
                     bucketIds = null,
-                    startDate = null,
-                    endDate = null
+                    startDateMs = null,
+                    endDateMs = null
                 )
                 _uiState.update { state ->
                     state.copy(
@@ -149,16 +149,15 @@ class PhotoFilterSelectionViewModel @Inject constructor(
                 val bucketIds = if (state.selectedAlbumIds.isEmpty()) null 
                                 else state.selectedAlbumIds.toList()
                 
-                // Convert dates from milliseconds to seconds for database query
-                // Database stores date_added in seconds (Unix timestamp)
-                val startSeconds = state.startDate?.let { it / 1000 }
-                // For end date, add 1 day (86400 seconds) to include the entire day
-                val endSeconds = state.endDate?.let { it / 1000 + 86400 }
+                // Dates are already in milliseconds
+                // For end date, extend to end of day (23:59:59.999) by adding 86400000 - 1
+                val startDateMs = state.startDate
+                val endDateMs = state.endDate?.let { it + 86400L * 1000 - 1 }
                 
                 val count = photoDao.getUnsortedCountFilteredSync(
                     bucketIds = bucketIds,
-                    startDate = startSeconds,
-                    endDate = endSeconds
+                    startDateMs = startDateMs,
+                    endDateMs = endDateMs
                 )
                 _uiState.update { it.copy(filteredPhotoCount = count) }
             } catch (e: Exception) {

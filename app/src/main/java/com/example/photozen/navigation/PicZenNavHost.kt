@@ -30,7 +30,7 @@ import com.example.photozen.ui.screens.smartgallery.PersonListScreen
 import com.example.photozen.ui.screens.smartgallery.SimilarPhotosScreen
 import com.example.photozen.ui.screens.smartgallery.SmartGalleryScreen
 import com.example.photozen.ui.screens.smartgallery.SmartSearchScreen
-import com.example.photozen.ui.screens.smartgallery.TimelineScreen
+import com.example.photozen.ui.screens.timeline.TimelineScreen
 import com.example.photozen.ui.screens.albums.AlbumBubbleScreen
 import com.example.photozen.ui.screens.albums.AlbumPhotoListScreen
 import com.example.photozen.ui.screens.tags.TagBubbleScreen
@@ -94,6 +94,9 @@ fun PicZenNavHost(
                     if (BuildConfig.ENABLE_SMART_GALLERY) {
                         navController.navigate(Screen.SmartGallery)
                     }
+                },
+                onNavigateToTimeline = {
+                    navController.navigate(Screen.Timeline)
                 }
             )
         }
@@ -204,17 +207,23 @@ fun PicZenNavHost(
                     }
                 )
             }
-            
-            composable<Screen.Timeline> {
-                TimelineScreen(
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onPhotoClick = { photoId ->
-                        navController.navigate(Screen.PhotoEditor(photoId))
-                    }
-                )
-            }
+        }
+        
+        // ==================== Timeline Screen (Independent Feature) ====================
+        // Timeline is a standalone feature that groups photos by time, not dependent on Smart Gallery
+        
+        composable<Screen.Timeline> {
+            TimelineScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onPhotoClick = { photoId ->
+                    navController.navigate(Screen.PhotoEditor(photoId))
+                },
+                onNavigateToSorter = {
+                    navController.navigate(Screen.FlowSorter())
+                }
+            )
         }
         
         // ==================== Core Photo Organization Screens ====================

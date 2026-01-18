@@ -1066,11 +1066,19 @@ data class AchievementData(
 /**
  * Custom filter session data for CUSTOM filter mode.
  * Not persisted - only valid for the current session.
+ * 
+ * @param albumIds Optional list of album bucket IDs to filter by
+ * @param startDate Start time in milliseconds (inclusive)
+ * @param endDate End time in milliseconds
+ * @param preciseMode When false (default), endDate is treated as the start of a day and
+ *                    automatically extended to include the whole day (23:59:59.999).
+ *                    When true, endDate is used exactly as provided (for precise time range filtering).
  */
 data class CustomFilterSession(
     val albumIds: List<String>? = null,
     val startDate: Long? = null,
-    val endDate: Long? = null
+    val endDate: Long? = null,
+    val preciseMode: Boolean = false
 )
 
 /**

@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwipeRight
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
@@ -108,6 +109,7 @@ fun HomeScreen(
     onNavigateToAchievements: () -> Unit,
     onNavigateToFilterSelection: (String, Int) -> Unit = { _, _ -> },
     onNavigateToSmartGallery: () -> Unit = { },
+    onNavigateToTimeline: () -> Unit = { },
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -344,6 +346,16 @@ fun HomeScreen(
                     iconTint = MaybeAmber,
                     enabled = uiState.maybeCount > 0,
                     onClick = onNavigateToLightTable
+                )
+                
+                // Timeline Card
+                ActionCard(
+                    title = "时间线",
+                    subtitle = "按时间分组浏览和整理照片",
+                    icon = Icons.Default.Timeline,
+                    iconTint = Color(0xFFEC4899), // Pink
+                    enabled = uiState.hasPhotos,
+                    onClick = onNavigateToTimeline
                 )
                 
                 // Tag/Album Bubble Card - based on classification mode

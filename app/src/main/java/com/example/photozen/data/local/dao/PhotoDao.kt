@@ -246,21 +246,22 @@ interface PhotoDao {
     
     /**
      * Get unsorted photo IDs filtered by buckets and date range.
-     * Ordered by date_added DESC.
+     * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
+     * startDateMs and endDateMs are in milliseconds.
      */
     @Query("""
         SELECT id FROM photos 
         WHERE status = 'UNSORTED' 
         AND is_virtual_copy = 0 
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
-        AND (:startDate IS NULL OR date_added >= :startDate)
-        AND (:endDate IS NULL OR date_added <= :endDate)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
         ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
     """)
     suspend fun getUnsortedPhotoIdsFiltered(
         bucketIds: List<String>?,
-        startDate: Long?,
-        endDate: Long?
+        startDateMs: Long?,
+        endDateMs: Long?
     ): List<String>
     
     /**
@@ -384,60 +385,66 @@ interface PhotoDao {
     
     /**
      * Get unsorted photos filtered by bucket IDs (optional) and date range (optional) with pagination - Date Descending.
+     * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
+     * startDateMs and endDateMs are in milliseconds.
      */
     @Query("""
         SELECT * FROM photos 
         WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
-        AND (:startDate IS NULL OR date_added >= :startDate)
-        AND (:endDate IS NULL OR date_added <= :endDate)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
         ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC 
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosFilteredPagedDesc(
         bucketIds: List<String>?,
-        startDate: Long?,
-        endDate: Long?,
+        startDateMs: Long?,
+        endDateMs: Long?,
         limit: Int, 
         offset: Int
     ): List<PhotoEntity>
     
     /**
      * Get unsorted photos filtered by bucket IDs (optional) and date range (optional) with pagination - Date Ascending.
+     * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
+     * startDateMs and endDateMs are in milliseconds.
      */
     @Query("""
         SELECT * FROM photos 
         WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
-        AND (:startDate IS NULL OR date_added >= :startDate)
-        AND (:endDate IS NULL OR date_added <= :endDate)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
         ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) ASC 
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosFilteredPagedAsc(
         bucketIds: List<String>?,
-        startDate: Long?,
-        endDate: Long?,
+        startDateMs: Long?,
+        endDateMs: Long?,
         limit: Int, 
         offset: Int
     ): List<PhotoEntity>
     
     /**
      * Get unsorted photos filtered by bucket IDs (optional) and date range (optional) with pagination - Random order.
+     * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
+     * startDateMs and endDateMs are in milliseconds.
      */
     @Query("""
         SELECT * FROM photos 
         WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
-        AND (:startDate IS NULL OR date_added >= :startDate)
-        AND (:endDate IS NULL OR date_added <= :endDate)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
         ORDER BY (ABS(CAST(SUBSTR(id, 1, 8) AS INTEGER)) * :seed) % 2147483647
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosFilteredPagedRandom(
         bucketIds: List<String>?,
-        startDate: Long?,
-        endDate: Long?,
+        startDateMs: Long?,
+        endDateMs: Long?,
         seed: Long,
         limit: Int, 
         offset: Int
@@ -445,35 +452,39 @@ interface PhotoDao {
     
     /**
      * Get count of unsorted photos filtered by bucket IDs (optional) and date range (optional).
+     * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
+     * startDateMs and endDateMs are in milliseconds.
      */
     @Query("""
         SELECT COUNT(*) FROM photos 
         WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
-        AND (:startDate IS NULL OR date_added >= :startDate)
-        AND (:endDate IS NULL OR date_added <= :endDate)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
     """)
     fun getUnsortedCountFiltered(
         bucketIds: List<String>?,
-        startDate: Long?,
-        endDate: Long?
+        startDateMs: Long?,
+        endDateMs: Long?
     ): Flow<Int>
     
     /**
      * Get count of unsorted photos filtered by bucket IDs (optional) and date range (optional).
      * Suspend version for one-time queries.
+     * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
+     * startDateMs and endDateMs are in milliseconds.
      */
     @Query("""
         SELECT COUNT(*) FROM photos 
         WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
-        AND (:startDate IS NULL OR date_added >= :startDate)
-        AND (:endDate IS NULL OR date_added <= :endDate)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
     """)
     suspend fun getUnsortedCountFilteredSync(
         bucketIds: List<String>?,
-        startDate: Long?,
-        endDate: Long?
+        startDateMs: Long?,
+        endDateMs: Long?
     ): Int
 
     /**

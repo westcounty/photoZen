@@ -138,11 +138,17 @@ class GetUnsortedPhotosUseCase @Inject constructor(
                 val bucketIds = sessionFilter?.albumIds
                 val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
                 
-                // Convert milliseconds to seconds for database comparison
-                val startSeconds = sessionFilter?.startDate?.let { it / 1000 }
-                val endSeconds = sessionFilter?.endDate?.let { it / 1000 + 86400 }
+                // Calculate effective date range in milliseconds
+                // preciseMode: use exact timestamps
+                // non-preciseMode: endDate is start of day, extend to end of day (23:59:59.999)
+                val startDateMs = sessionFilter?.startDate
+                val endDateMs = if (sessionFilter?.preciseMode == true) {
+                    sessionFilter.endDate
+                } else {
+                    sessionFilter?.endDate?.let { it + 86400L * 1000 - 1 }
+                }
                 
-                photoDao.getUnsortedPhotoIdsFiltered(safeBucketIds, startSeconds, endSeconds)
+                photoDao.getUnsortedPhotoIdsFiltered(safeBucketIds, startDateMs, endDateMs)
             }
         }
         
@@ -238,14 +244,13 @@ class GetUnsortedPhotosUseCase @Inject constructor(
     /**
      * Get a page of unsorted photos filtered by bucket IDs (optional) and date range (optional).
      * 
-     * IMPORTANT: startDate and endDate are expected in MILLISECONDS (from DatePicker),
-     * but database stores date_added in SECONDS (MediaStore format).
-     * This method handles the conversion internally.
+     * @param startDateMs Start date in milliseconds
+     * @param endDateMs End date in milliseconds (already processed for preciseMode)
      */
     suspend fun getPageFiltered(
         bucketIds: List<String>?,
-        startDate: Long?,
-        endDate: Long?,
+        startDateMs: Long?,
+        endDateMs: Long?,
         page: Int,
         sortOrder: PhotoSortOrder,
         randomSeed: Long = 0,
@@ -255,34 +260,25 @@ class GetUnsortedPhotosUseCase @Inject constructor(
         // Room workaround: pass null for empty list to avoid SQL errors or ignoring the filter logic if intended
         val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
         
-        // Convert milliseconds to seconds for database comparison
-        // Add 86400 seconds (1 day) to endDate to include the entire end day
-        val startSeconds = startDate?.let { it / 1000 }
-        val endSeconds = endDate?.let { it / 1000 + 86400 }
-        
         return when (sortOrder) {
-            PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosFilteredPagedDesc(safeBucketIds, startSeconds, endSeconds, PAGE_SIZE, offset)
-            PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosFilteredPagedAsc(safeBucketIds, startSeconds, endSeconds, PAGE_SIZE, offset)
-            PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosFilteredPagedRandom(safeBucketIds, startSeconds, endSeconds, randomSeed, PAGE_SIZE, offset)
+            PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosFilteredPagedDesc(safeBucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
+            PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosFilteredPagedAsc(safeBucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
+            PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosFilteredPagedRandom(safeBucketIds, startDateMs, endDateMs, randomSeed, PAGE_SIZE, offset)
         }
     }
     
     /**
      * Get count of unsorted photos filtered by bucket IDs (optional) and date range (optional).
      * 
-     * IMPORTANT: startDate and endDate are expected in MILLISECONDS (from DatePicker),
-     * but database stores date_added in SECONDS (MediaStore format).
-     * This method handles the conversion internally.
+     * @param startDateMs Start date in milliseconds
+     * @param endDateMs End date in milliseconds (already processed for preciseMode)
      */
     fun getCountFiltered(
         bucketIds: List<String>?,
-        startDate: Long?,
-        endDate: Long?
+        startDateMs: Long?,
+        endDateMs: Long?
     ): Flow<Int> {
         val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
-        // Convert milliseconds to seconds for database comparison
-        val startSeconds = startDate?.let { it / 1000 }
-        val endSeconds = endDate?.let { it / 1000 + 86400 }
-        return photoDao.getUnsortedCountFiltered(safeBucketIds, startSeconds, endSeconds)
+        return photoDao.getUnsortedCountFiltered(safeBucketIds, startDateMs, endDateMs)
     }
 }

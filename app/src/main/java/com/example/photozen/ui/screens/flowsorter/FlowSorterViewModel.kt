@@ -556,10 +556,16 @@ class FlowSorterViewModel @Inject constructor(
             PhotoFilterMode.CUSTOM -> {
                 val sessionFilter = params.sessionFilter
                 if (sessionFilter != null) {
+                    // Calculate effective end date based on preciseMode
+                    val effectiveEndDateMs = if (sessionFilter.preciseMode) {
+                        sessionFilter.endDate
+                    } else {
+                        sessionFilter.endDate?.let { it + 86400L * 1000 - 1 }
+                    }
                     getUnsortedPhotosUseCase.getCountFiltered(
                         sessionFilter.albumIds,
                         sessionFilter.startDate,
-                        sessionFilter.endDate
+                        effectiveEndDateMs
                     )
                 } else {
                     getUnsortedPhotosUseCase.getCount()
