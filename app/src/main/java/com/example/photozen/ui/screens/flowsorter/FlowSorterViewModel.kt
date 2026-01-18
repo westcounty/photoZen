@@ -537,6 +537,17 @@ class FlowSorterViewModel @Inject constructor(
         ) { filterMode, cameraIds, loaded, sessionFilter, sortOrder ->
             FilterParams(filterMode, cameraIds, loaded, sessionFilter, sortOrder)
         }.flatMapLatest { params ->
+            // Priority 1: If sessionFilter has preciseMode=true, use it directly
+            // This allows timeline sorting to work without changing the global filter mode
+            val sessionFilter = params.sessionFilter
+            if (sessionFilter?.preciseMode == true) {
+                return@flatMapLatest getUnsortedPhotosUseCase.getCountFiltered(
+                    sessionFilter.albumIds,
+                    sessionFilter.startDate,
+                    sessionFilter.endDate
+                )
+            }
+            
             when (params.filterMode) {
                 PhotoFilterMode.ALL -> getUnsortedPhotosUseCase.getCount()
                 PhotoFilterMode.CAMERA_ONLY -> {
@@ -558,14 +569,9 @@ class FlowSorterViewModel @Inject constructor(
                     }
                 }
             PhotoFilterMode.CUSTOM -> {
-                val sessionFilter = params.sessionFilter
                 if (sessionFilter != null) {
-                    // Calculate effective end date based on preciseMode
-                    val effectiveEndDateMs = if (sessionFilter.preciseMode) {
-                        sessionFilter.endDate
-                    } else {
-                        sessionFilter.endDate?.let { it + 86400L * 1000 - 1 }
-                    }
+                    // Calculate effective end date based on preciseMode (non-precise uses day extension)
+                    val effectiveEndDateMs = sessionFilter.endDate?.let { it + 86400L * 1000 - 1 }
                     getUnsortedPhotosUseCase.getCountFiltered(
                         sessionFilter.albumIds,
                         sessionFilter.startDate,
@@ -1528,5 +1534,12 @@ class FlowSorterViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         comboTimeoutJob?.cancel()
+        
+        // Clear session filter if it was a precise-mode filter (from timeline sorting)
+        // This ensures the temporary timeline filter doesn't persist after exiting
+        val sessionFilter = preferencesRepository.getSessionCustomFilter()
+        if (sessionFilter?.preciseMode == true) {
+            preferencesRepository.clearSessionCustomFilter()
+        }
     }
 }

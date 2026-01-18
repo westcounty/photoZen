@@ -186,17 +186,8 @@ fun AlbumPhotoListScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Phase 7.2: Status filter chips
+            // Stats card (placed above filter chips because filter doesn't affect stats)
             if (!uiState.isSelectionMode && uiState.allPhotos.isNotEmpty()) {
-                StatusFilterChips(
-                    selectedStatuses = uiState.statusFilter,
-                    onStatusToggle = { status -> viewModel.toggleStatusFilter(status) },
-                    onSelectAll = { viewModel.selectAllStatuses() }
-                )
-            }
-            
-            // Stats card
-            if (!uiState.isSelectionMode && uiState.photos.isNotEmpty()) {
                 AlbumStatsCard(
                     totalCount = uiState.totalCount,
                     sortedCount = uiState.sortedCount,
@@ -205,6 +196,15 @@ fun AlbumPhotoListScreen(
                     onStartSorting = if (uiState.totalCount > uiState.sortedCount) {
                         { onNavigateToQuickSort(bucketId) }
                     } else null
+                )
+            }
+            
+            // Phase 7.2: Status filter chips (filters the photo list below)
+            if (!uiState.isSelectionMode && uiState.allPhotos.isNotEmpty()) {
+                StatusFilterChips(
+                    selectedStatuses = uiState.statusFilter,
+                    onStatusToggle = { status -> viewModel.toggleStatusFilter(status) },
+                    onSelectAll = { viewModel.selectAllStatuses() }
                 )
             }
             

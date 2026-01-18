@@ -279,6 +279,10 @@ class TimelineViewModel @Inject constructor(
      * Sort a group of photos by setting up custom filter and triggering navigation.
      * Uses precise mode to ensure exact time range filtering.
      * 
+     * NOTE: This does NOT change the global PhotoFilterMode. The session filter
+     * with preciseMode=true is detected by FlowSorterViewModel and used directly.
+     * This preserves the user's original filter mode setting.
+     * 
      * @param startTime Start time of the event (milliseconds)
      * @param endTime End time of the event (milliseconds)
      * @param listMode Whether to navigate to list mode (for "view more" button)
@@ -286,6 +290,8 @@ class TimelineViewModel @Inject constructor(
     fun sortGroup(startTime: Long, endTime: Long, listMode: Boolean = false) {
         viewModelScope.launch {
             // Set custom filter with precise mode
+            // preciseMode=true signals to FlowSorterViewModel to use this filter
+            // without requiring PhotoFilterMode.CUSTOM
             preferencesRepository.setSessionCustomFilter(
                 CustomFilterSession(
                     albumIds = null,
@@ -295,8 +301,9 @@ class TimelineViewModel @Inject constructor(
                 )
             )
             
-            // Set filter mode to CUSTOM
-            preferencesRepository.setPhotoFilterMode(PhotoFilterMode.CUSTOM)
+            // NOTE: We intentionally do NOT set PhotoFilterMode to CUSTOM here
+            // The session filter with preciseMode=true will be detected and used
+            // by FlowSorterViewModel, preserving the user's original filter setting
             
             // Trigger navigation
             _uiState.update { 

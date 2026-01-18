@@ -1,6 +1,7 @@
 package com.example.photozen.ui.screens.timeline
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -12,6 +13,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -74,11 +76,14 @@ import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 
 /**
  * Timeline Fullscreen Viewer - 时间线全屏预览组件
@@ -110,6 +115,11 @@ fun TimelineFullscreenViewer(
     onToggleStatus: (photoId: String) -> Unit,
     onDeleteConfirmed: (photoId: String) -> Unit = {}
 ) {
+    // Handle back button/gesture to dismiss viewer instead of navigating away
+    BackHandler(enabled = true) {
+        onDismiss()
+    }
+    
     if (photos.isEmpty()) {
         onDismiss()
         return
@@ -131,6 +141,10 @@ fun TimelineFullscreenViewer(
     var showAlbumPicker by remember { mutableStateOf(false) }
     var showActionBar by remember { mutableStateOf(true) }
     var pendingDeletePhotoId by remember { mutableStateOf<String?>(null) }
+    
+    // Swipe-down to dismiss state
+    val dismissOffsetY = remember { Animatable(0f) }
+    val dismissThreshold = 200f // pixels to swipe before dismissing
     
     // Delete request launcher
     val deleteLauncher = rememberLauncherForActivityResult(
@@ -158,7 +172,43 @@ fun TimelineFullscreenViewer(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(Color.Black.copy(alpha = (1f - (dismissOffsetY.value / 500f).coerceIn(0f, 0.5f))))
+            .graphicsLayer {
+                translationY = dismissOffsetY.value
+                // Scale down slightly as user drags
+                val scale = 1f - (dismissOffsetY.value / 2000f).coerceIn(0f, 0.1f)
+                scaleX = scale
+                scaleY = scale
+            }
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onDragEnd = {
+                        scope.launch {
+                            if (dismissOffsetY.value > dismissThreshold) {
+                                // Dismiss
+                                onDismiss()
+                            } else {
+                                // Animate back to original position
+                                dismissOffsetY.animateTo(0f, animationSpec = tween(200))
+                            }
+                        }
+                    },
+                    onDragCancel = {
+                        scope.launch {
+                            dismissOffsetY.animateTo(0f, animationSpec = tween(200))
+                        }
+                    },
+                    onVerticalDrag = { _, dragAmount ->
+                        // Only allow downward drag (positive dragAmount)
+                        if (dragAmount > 0 || dismissOffsetY.value > 0) {
+                            scope.launch {
+                                val newValue = (dismissOffsetY.value + dragAmount).coerceAtLeast(0f)
+                                dismissOffsetY.snapTo(newValue)
+                            }
+                        }
+                    }
+                )
+            }
     ) {
         // Pager
         HorizontalPager(
@@ -198,17 +248,18 @@ fun TimelineFullscreenViewer(
             }
         }
         
-        // Close button (always visible)
+        // Close button (always visible) - moved down for easier touch
         IconButton(
             onClick = onDismiss,
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(16.dp)
+                .padding(top = 48.dp, end = 16.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.Close,
                 contentDescription = "关闭",
-                tint = Color.White
+                tint = Color.White,
+                modifier = Modifier.size(28.dp)
             )
         }
         
@@ -345,6 +396,7 @@ private fun TimelineActionBar(
 
 /**
  * Individual action button in the bottom bar.
+ * Optimized sizes: smaller circle (48dp), larger icon (28dp) for better visual balance.
  */
 @Composable
 private fun ActionButton(
@@ -362,13 +414,14 @@ private fun ActionButton(
             colors = ButtonDefaults.filledTonalButtonColors(
                 containerColor = color.copy(alpha = 0.2f)
             ),
-            modifier = Modifier.size(56.dp)
+            contentPadding = PaddingValues(0.dp),
+            modifier = Modifier.size(48.dp)
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
                 tint = color,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(28.dp)
             )
         }
         Spacer(modifier = Modifier.size(4.dp))

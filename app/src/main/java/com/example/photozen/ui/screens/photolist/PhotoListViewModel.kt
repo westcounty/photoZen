@@ -525,6 +525,16 @@ class PhotoListViewModel @Inject constructor(
     }
     
     /**
+     * Refresh albums list. Since albums are loaded via Flow from DAO,
+     * this is mostly a no-op as the Flow will automatically provide updates.
+     * Kept for explicit refresh triggers from UI.
+     */
+    fun refreshAlbums() {
+        // Albums are automatically refreshed via Flow from albumBubbleDao.getAll()
+        // This method exists for explicit triggers but the data should already be current
+    }
+    
+    /**
      * Add selected photos to album using default action (copy or move).
      */
     fun addSelectedToAlbum(bucketId: String) {

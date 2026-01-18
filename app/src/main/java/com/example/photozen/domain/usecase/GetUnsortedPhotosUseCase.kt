@@ -109,6 +109,9 @@ class GetUnsortedPhotosUseCase @Inject constructor(
     /**
      * Get all unsorted photo IDs for memory snapshot pagination.
      * Supports DESC (default from DB) and ASC (reversed in memory).
+     * 
+     * NOTE: If sessionFilter has preciseMode=true, it takes priority over filterMode.
+     * This allows timeline sorting to work without changing the global filter mode setting.
      */
     suspend fun getAllIds(
         filterMode: com.example.photozen.data.repository.PhotoFilterMode,
@@ -116,6 +119,22 @@ class GetUnsortedPhotosUseCase @Inject constructor(
         sessionFilter: com.example.photozen.data.repository.CustomFilterSession?,
         sortOrder: PhotoSortOrder
     ): List<String> {
+        // Priority 1: If sessionFilter has preciseMode=true, use it directly
+        // This allows timeline sorting to work without changing the global filter mode
+        if (sessionFilter?.preciseMode == true) {
+            val startDateMs = sessionFilter.startDate
+            val endDateMs = sessionFilter.endDate
+            val bucketIds = sessionFilter.albumIds
+            val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
+            
+            val ids = photoDao.getUnsortedPhotoIdsFiltered(safeBucketIds, startDateMs, endDateMs)
+            return if (sortOrder == PhotoSortOrder.DATE_ASC) {
+                ids.asReversed()
+            } else {
+                ids
+            }
+        }
+        
         val ids = when (filterMode) {
             com.example.photozen.data.repository.PhotoFilterMode.ALL -> {
                 photoDao.getUnsortedPhotoIds()
@@ -149,14 +168,9 @@ class GetUnsortedPhotosUseCase @Inject constructor(
                 val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
                 
                 // Calculate effective date range in milliseconds
-                // preciseMode: use exact timestamps
                 // non-preciseMode: endDate is start of day, extend to end of day (23:59:59.999)
                 val startDateMs = sessionFilter?.startDate
-                val endDateMs = if (sessionFilter?.preciseMode == true) {
-                    sessionFilter.endDate
-                } else {
-                    sessionFilter?.endDate?.let { it + 86400L * 1000 - 1 }
-                }
+                val endDateMs = sessionFilter?.endDate?.let { it + 86400L * 1000 - 1 }
                 
                 photoDao.getUnsortedPhotoIdsFiltered(safeBucketIds, startDateMs, endDateMs)
             }

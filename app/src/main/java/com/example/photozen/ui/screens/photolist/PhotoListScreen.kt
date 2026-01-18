@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -62,6 +63,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -70,6 +72,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -284,67 +288,76 @@ fun PhotoListScreen(
             }
         }
     ) { paddingValues ->
-        // Phase 6.1: Album Classify Mode
+        // Phase 6.1: Album Classify Mode (Fullscreen Dialog)
         if (uiState.isClassifyMode && uiState.currentClassifyPhoto != null) {
-            AlbumClassifyModeContent(
-                photo = uiState.currentClassifyPhoto!!,
-                currentIndex = uiState.classifyModeIndex,
-                totalCount = uiState.classifyModePhotos.size,
-                albums = uiState.albumBubbleList,
-                onAddToAlbum = { bucketId -> viewModel.classifyPhotoToAlbum(bucketId) },
-                onSkip = { viewModel.skipClassifyPhoto() },
-                onExit = { viewModel.exitClassifyMode() },
-                modifier = Modifier.padding(paddingValues)
-            )
-        } else {
-            Column(
+            Dialog(
+                onDismissRequest = { viewModel.exitClassifyMode() },
+                properties = DialogProperties(
+                    usePlatformDefaultWidth = false,
+                    decorFitsSystemWindows = false
+                )
+            ) {
+                AlbumClassifyModeContent(
+                    photo = uiState.currentClassifyPhoto!!,
+                    currentIndex = uiState.classifyModeIndex,
+                    totalCount = uiState.classifyModePhotos.size,
+                    albums = uiState.albumBubbleList,
+                    onAddToAlbum = { bucketId -> viewModel.classifyPhotoToAlbum(bucketId) },
+                    onSkip = { viewModel.skipClassifyPhoto() },
+                    onExit = { viewModel.exitClassifyMode() },
+                    onRefreshAlbums = { viewModel.refreshAlbums() }
+                )
+            }
+        }
+        
+        // Normal content
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            // Phase 6.1: "Classify to album" prompt card (KEEP status only)
+            if (uiState.status == PhotoStatus.KEEP && 
+                uiState.notInAlbumCount > 0 && 
+                !uiState.isSelectionMode &&
+                uiState.myAlbumBucketIds.isNotEmpty()) {
+                ClassifyToAlbumCard(
+                    count = uiState.notInAlbumCount,
+                    onClick = { viewModel.enterClassifyMode() }
+                )
+            }
+            
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues)
+                    .weight(1f)
             ) {
-                // Phase 6.1: "Classify to album" prompt card (KEEP status only)
-                if (uiState.status == PhotoStatus.KEEP && 
-                    uiState.notInAlbumCount > 0 && 
-                    !uiState.isSelectionMode &&
-                    uiState.myAlbumBucketIds.isNotEmpty()) {
-                    ClassifyToAlbumCard(
-                        count = uiState.notInAlbumCount,
-                        onClick = { viewModel.enterClassifyMode() }
-                    )
-                }
-                
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .weight(1f)
-                ) {
-                    when {
-                        uiState.isLoading -> {
-                            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                        }
-                        uiState.photos.isEmpty() -> {
-                            EmptyState(status = uiState.status, color = color)
-                        }
-                        else -> {
-                            DragSelectPhotoGrid(
-                                photos = uiState.photos,
-                                selectedIds = uiState.selectedPhotoIds,
-                                onSelectionChanged = { newSelection ->
-                                    viewModel.updateSelection(newSelection)
-                                },
-                                onPhotoClick = { photoId, _ ->
-                                    // Non-selection mode click - could open fullscreen viewer
-                                },
-                                onPhotoLongPress = { photoId, photoUri ->
-                                    // Show action sheet for single photo
-                                    selectedPhotoId = photoId
-                                    selectedPhotoUri = photoUri
-                                    showActionSheet = true
-                                },
-                                columns = uiState.gridColumns,
-                                selectionColor = color
-                            )
-                        }
+                when {
+                    uiState.isLoading -> {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    }
+                    uiState.photos.isEmpty() -> {
+                        EmptyState(status = uiState.status, color = color)
+                    }
+                    else -> {
+                        DragSelectPhotoGrid(
+                            photos = uiState.photos,
+                            selectedIds = uiState.selectedPhotoIds,
+                            onSelectionChanged = { newSelection ->
+                                viewModel.updateSelection(newSelection)
+                            },
+                            onPhotoClick = { photoId, _ ->
+                                // Non-selection mode click - could open fullscreen viewer
+                            },
+                            onPhotoLongPress = { photoId, photoUri ->
+                                // Show action sheet for single photo
+                                selectedPhotoId = photoId
+                                selectedPhotoUri = photoUri
+                                showActionSheet = true
+                            },
+                            columns = uiState.gridColumns,
+                            selectionColor = color
+                        )
                     }
                 }
             }
@@ -640,6 +653,7 @@ private fun ClassifyToAlbumCard(
 /**
  * Phase 6.1: Album classify mode content.
  * Shows one photo at a time with album selection at the bottom.
+ * Now displays in fullscreen dialog mode.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -651,113 +665,151 @@ private fun AlbumClassifyModeContent(
     onAddToAlbum: (String) -> Unit,
     onSkip: () -> Unit,
     onExit: () -> Unit,
-    modifier: Modifier = Modifier
+    onRefreshAlbums: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    var showAlbumManagerDialog by remember { mutableStateOf(false) }
     
-    Column(
-        modifier = modifier.fillMaxSize()
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
     ) {
-        // Top bar with progress and exit
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onExit) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "退出分类模式"
-                )
-            }
-            
-            Text(
-                text = "${currentIndex + 1} / $totalCount",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            
-            // Skip button
-            TextButton(onClick = onSkip) {
-                Icon(
-                    imageVector = Icons.Default.SkipNext,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("跳过")
-            }
-        }
-        
-        // Photo display
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(Uri.parse(photo.systemUri))
-                    .crossfade(true)
-                    .build(),
-                contentDescription = photo.displayName,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(16.dp))
-            )
-        }
-        
-        // Photo info
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .fillMaxSize()
+                .systemBarsPadding()
         ) {
-            Text(
-                text = photo.displayName,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1
-            )
-            Text(
-                text = "选择要添加到的相册",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        
-        // Album selection grid
-        if (albums.isEmpty()) {
+            // Top bar with progress and exit (simplified - no skip button here)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onExit) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "退出分类模式"
+                    )
+                }
+                
+                Text(
+                    text = "${currentIndex + 1} / $totalCount",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                // Placeholder to balance the layout
+                Spacer(modifier = Modifier.size(48.dp))
+            }
+            
+            // Photo display
             Box(
                 modifier = Modifier
+                    .weight(1f)
                     .fillMaxWidth()
-                    .padding(32.dp),
+                    .padding(16.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "请先在设置中添加我的相册",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(Uri.parse(photo.systemUri))
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = photo.displayName,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(16.dp))
                 )
             }
-        } else {
-            // Album buttons in a flow layout
-            FlowRow(
+            
+            // Photo info with skip button on right
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .navigationBarsPadding(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                albums.forEach { album ->
-                    FilledTonalButton(
-                        onClick = { onAddToAlbum(album.bucketId) },
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = photo.displayName,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = "选择要添加到的相册",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                // Skip button moved here for easy access
+                TextButton(onClick = onSkip) {
+                    Icon(
+                        imageVector = Icons.Default.SkipNext,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("跳过")
+                }
+            }
+            
+            // Album selection grid
+            if (albums.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "还没有添加我的相册",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        FilledTonalButton(onClick = { showAlbumManagerDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("添加相册")
+                        }
+                    }
+                }
+            } else {
+                // Album buttons in a flow layout (without + icon prefix)
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .navigationBarsPadding(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    albums.forEach { album ->
+                        FilledTonalButton(
+                            onClick = { onAddToAlbum(album.bucketId) },
+                            modifier = Modifier.height(40.dp)
+                        ) {
+                            Text(
+                                text = album.displayName,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                    
+                    // Add album button at the end
+                    OutlinedButton(
+                        onClick = { showAlbumManagerDialog = true },
                         modifier = Modifier.height(40.dp)
                     ) {
                         Icon(
@@ -766,15 +818,45 @@ private fun AlbumClassifyModeContent(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = album.displayName,
-                            maxLines = 1
-                        )
+                        Text("添加相册")
                     }
                 }
             }
+            
+            Spacer(modifier = Modifier.height(16.dp))
         }
-        
-        Spacer(modifier = Modifier.height(16.dp))
     }
+    
+    // Album manager dialog
+    if (showAlbumManagerDialog) {
+        AlbumManagerDialog(
+            onDismiss = { 
+                showAlbumManagerDialog = false
+                onRefreshAlbums()
+            }
+        )
+    }
+}
+
+/**
+ * Dialog for managing (adding) albums from classify mode.
+ */
+@Composable
+private fun AlbumManagerDialog(
+    onDismiss: () -> Unit
+) {
+    // This is a simplified dialog - in a real implementation,
+    // you would integrate with the album management system
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("管理我的相册") },
+        text = {
+            Text("请前往「我的相册」页面添加或管理相册，然后返回继续分类。")
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("知道了")
+            }
+        }
+    )
 }
