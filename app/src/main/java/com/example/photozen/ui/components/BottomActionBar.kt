@@ -131,8 +131,7 @@ fun SelectionBottomBar(
                     label = action.label,
                     color = action.color,
                     onClick = action.onClick,
-                    enabled = action.enabled,
-                    modifier = if (actions.size <= 5) Modifier.weight(1f) else Modifier
+                    enabled = action.enabled
                 )
             }
         }
