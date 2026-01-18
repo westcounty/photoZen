@@ -45,11 +45,9 @@ fun ChangelogDialog(onDismiss: () -> Unit) {
     var changelog by remember { mutableStateOf<ChangelogEntry?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     
-    // Load changelog from assets
+    // Load changelog from assets - always get the latest version
     LaunchedEffect(Unit) {
-        // Get version without flavor suffix (e.g., "1.4.1.001-explore" -> "1.4.1.001")
-        val version = BuildConfig.VERSION_NAME.substringBefore("-")
-        changelog = ChangelogParser.parseCurrentVersion(context, version)
+        changelog = ChangelogParser.parseLatestVersion(context)
         isLoading = false
     }
     
