@@ -3,15 +3,22 @@ package com.example.photozen.ui.screens.timeline
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -31,6 +38,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.example.photozen.domain.GroupingMode
 import com.example.photozen.domain.PhotoEvent
+import kotlinx.coroutines.launch
 
 /**
  * Timeline Screen - Display photos grouped by time/events.
@@ -41,17 +49,36 @@ fun TimelineScreen(
     onNavigateBack: () -> Unit,
     onPhotoClick: (String) -> Unit = {},
     onNavigateToSorter: () -> Unit = {},
+    onNavigateToSorterListMode: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: TimelineViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     
-    // Handle navigation to sorter
+    // Handle navigation to sorter (card mode)
     LaunchedEffect(uiState.navigateToSorter) {
         if (uiState.navigateToSorter) {
             onNavigateToSorter()
             viewModel.onNavigationComplete()
+        }
+    }
+    
+    // Handle navigation to sorter (list mode)
+    LaunchedEffect(uiState.navigateToSorterListMode) {
+        if (uiState.navigateToSorterListMode) {
+            onNavigateToSorterListMode()
+            viewModel.onNavigationComplete()
+        }
+    }
+    
+    // Handle scroll to index
+    LaunchedEffect(uiState.scrollToIndex) {
+        uiState.scrollToIndex?.let { index ->
+            listState.animateScrollToItem(index)
+            viewModel.clearScrollTarget()
         }
     }
     
@@ -62,6 +89,27 @@ fun TimelineScreen(
             viewModel.clearError()
         }
     }
+    
+    // Calculate current visible year-month
+    val currentYearMonth by remember {
+        derivedStateOf {
+            val firstVisibleIndex = listState.firstVisibleItemIndex
+            if (uiState.events.isNotEmpty() && firstVisibleIndex < uiState.events.size) {
+                val event = uiState.events[firstVisibleIndex]
+                val calendar = java.util.Calendar.getInstance()
+                calendar.timeInMillis = event.startTime
+                YearMonth(
+                    year = calendar.get(java.util.Calendar.YEAR),
+                    month = calendar.get(java.util.Calendar.MONTH) + 1,
+                    eventCount = 0,
+                    firstEventIndex = firstVisibleIndex
+                )
+            } else null
+        }
+    }
+    
+    // Show quick navigation for AUTO and DAY modes
+    val showQuickNav = uiState.groupingMode == GroupingMode.AUTO || uiState.groupingMode == GroupingMode.DAY
     
     Scaffold(
         modifier = modifier,
@@ -126,104 +174,159 @@ fun TimelineScreen(
             )
         }
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Grouping mode selector
-            GroupingModeSelector(
-                currentMode = uiState.groupingMode,
-                onModeSelected = viewModel::setGroupingMode
-            )
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Grouping mode selector with sort button
+                GroupingModeSelector(
+                    currentMode = uiState.groupingMode,
+                    isDescending = uiState.isDescending,
+                    onModeSelected = viewModel::setGroupingMode,
+                    onToggleSortOrder = viewModel::toggleSortOrder
+                )
+                
+                if (uiState.isLoading) {
+                    // Loading state
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator()
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("加载时间线...")
+                        }
+                    }
+                } else if (!uiState.hasEvents) {
+                    // Empty state
+                    EmptyTimelineState()
+                } else {
+                    // Event list
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(uiState.events, key = { it.id }) { event ->
+                            TimelineEventCard(
+                                event = event,
+                                isExpanded = viewModel.isEventExpanded(event.id),
+                                onToggleExpanded = { viewModel.toggleEventExpanded(event.id) },
+                                onPhotoClick = onPhotoClick,
+                                onSortGroup = { viewModel.sortGroup(event.startTime, event.endTime) },
+                                onViewMore = { viewModel.sortGroup(event.startTime, event.endTime, listMode = true) }
+                            )
+                        }
+                    }
+                }
+            }
             
-            if (uiState.isLoading) {
-                // Loading state
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator()
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("加载时间线...")
-                    }
-                }
-            } else if (!uiState.hasEvents) {
-                // Empty state
-                EmptyTimelineState()
-            } else {
-                // Event list
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(uiState.events, key = { it.id }) { event ->
-                        TimelineEventCard(
-                            event = event,
-                            isExpanded = viewModel.isEventExpanded(event.id),
-                            onToggleExpanded = { viewModel.toggleEventExpanded(event.id) },
-                            onPhotoClick = onPhotoClick,
-                            onSortGroup = { viewModel.sortGroup(event.startTime, event.endTime) }
-                        )
-                    }
-                }
+            // Year-Month Navigator (right side panel)
+            AnimatedVisibility(
+                visible = uiState.showNavigator && showQuickNav,
+                enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+                exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
+                modifier = Modifier.align(Alignment.CenterEnd)
+            ) {
+                TimelineNavigator(
+                    yearMonths = uiState.availableYearMonths,
+                    currentYearMonth = currentYearMonth,
+                    onYearMonthSelected = { year, month ->
+                        viewModel.scrollToYearMonth(year, month)
+                    },
+                    onDismiss = { viewModel.hideNavigator() }
+                )
+            }
+            
+            // Current position FAB (only for AUTO and DAY modes)
+            if (showQuickNav && uiState.hasEvents && !uiState.showNavigator) {
+                CurrentPositionFab(
+                    currentYearMonth = currentYearMonth,
+                    onClick = { viewModel.toggleNavigator() },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp)
+                )
             }
         }
     }
 }
 
 /**
- * Grouping mode selector chips.
+ * Grouping mode selector chips with sort order toggle.
  */
 @Composable
 private fun GroupingModeSelector(
     currentMode: GroupingMode,
-    onModeSelected: (GroupingMode) -> Unit
+    isDescending: Boolean,
+    onModeSelected: (GroupingMode) -> Unit,
+    onToggleSortOrder: () -> Unit
 ) {
-    LazyRow(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        items(GroupingMode.entries) { mode ->
-            FilterChip(
-                selected = mode == currentMode,
-                onClick = { onModeSelected(mode) },
-                label = {
-                    Text(
-                        when (mode) {
-                            GroupingMode.AUTO -> "智能分组"
-                            GroupingMode.DAY -> "按天"
-                            GroupingMode.MONTH -> "按月"
-                            GroupingMode.YEAR -> "按年"
+        LazyRow(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(GroupingMode.entries) { mode ->
+                FilterChip(
+                    selected = mode == currentMode,
+                    onClick = { onModeSelected(mode) },
+                    label = {
+                        Text(
+                            when (mode) {
+                                GroupingMode.AUTO -> "智能分组"
+                                GroupingMode.DAY -> "按天"
+                                GroupingMode.MONTH -> "按月"
+                                GroupingMode.YEAR -> "按年"
+                            }
+                        )
+                    },
+                    leadingIcon = if (mode == currentMode) {
+                        {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
-                    )
-                },
-                leadingIcon = if (mode == currentMode) {
-                    {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
+                    } else {
+                        {
+                            Icon(
+                                imageVector = when (mode) {
+                                    GroupingMode.AUTO -> Icons.Default.AutoAwesome
+                                    GroupingMode.DAY -> Icons.Default.Today
+                                    GroupingMode.MONTH -> Icons.Default.CalendarMonth
+                                    GroupingMode.YEAR -> Icons.Default.CalendarToday
+                                },
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
-                } else {
-                    {
-                        Icon(
-                            imageVector = when (mode) {
-                                GroupingMode.AUTO -> Icons.Default.AutoAwesome
-                                GroupingMode.DAY -> Icons.Default.Today
-                                GroupingMode.MONTH -> Icons.Default.CalendarMonth
-                                GroupingMode.YEAR -> Icons.Default.CalendarToday
-                            },
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.width(8.dp))
+        
+        // Sort order toggle button
+        FilledTonalIconButton(
+            onClick = onToggleSortOrder,
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = if (isDescending) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
+                contentDescription = if (isDescending) "最新优先" else "最早优先",
+                modifier = Modifier.size(18.dp)
             )
         }
     }
@@ -238,7 +341,8 @@ private fun TimelineEventCard(
     isExpanded: Boolean,
     onToggleExpanded: () -> Unit,
     onPhotoClick: (String) -> Unit,
-    onSortGroup: () -> Unit
+    onSortGroup: () -> Unit,
+    onViewMore: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -373,18 +477,15 @@ private fun TimelineEventCard(
                             )
                         }
                         
-                        // Show more indicator
+                        // Show more indicator - now navigates to list sorter
                         if (event.photos.size > 12) {
                             item {
                                 Box(
                                     modifier = Modifier
                                         .size(80.dp)
                                         .clip(RoundedCornerShape(6.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                                        .clickable { 
-                                            // Click to open first photo
-                                            event.photos.firstOrNull()?.let { onPhotoClick(it.id) }
-                                        },
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                                        .clickable { onViewMore() },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Column(
@@ -394,12 +495,12 @@ private fun TimelineEventCard(
                                             text = "+${event.photos.size - 12}",
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.primary
                                         )
                                         Text(
-                                            text = "更多",
+                                            text = "查看全部",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.primary
                                         )
                                     }
                                 }
@@ -443,6 +544,173 @@ private fun EmptyTimelineState() {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+/**
+ * Year-Month quick navigation panel.
+ * Displays a scrollable list of year-month options for quick jumping.
+ */
+@Composable
+private fun TimelineNavigator(
+    yearMonths: List<YearMonth>,
+    currentYearMonth: YearMonth?,
+    onYearMonthSelected: (Int, Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    // Group by year
+    val yearGroups = yearMonths.groupBy { it.year }
+    var expandedYear by remember { mutableStateOf(currentYearMonth?.year) }
+    
+    Card(
+        modifier = Modifier
+            .width(72.dp)
+            .fillMaxHeight()
+            .padding(vertical = 48.dp, horizontal = 8.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = 8.dp)
+        ) {
+            // Close button
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "关闭",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 4.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+            
+            // Year-Month list
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                yearGroups.entries.sortedByDescending { it.key }.forEach { (year, months) ->
+                    val isExpanded = expandedYear == year
+                    val isCurrentYear = currentYearMonth?.year == year
+                    
+                    // Year header
+                    Surface(
+                        onClick = { expandedYear = if (isExpanded) null else year },
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isCurrentYear) 
+                            MaterialTheme.colorScheme.primaryContainer 
+                        else 
+                            Color.Transparent,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = year.toString(),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (isCurrentYear) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isCurrentYear) 
+                                MaterialTheme.colorScheme.onPrimaryContainer 
+                            else 
+                                MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(vertical = 6.dp)
+                        )
+                    }
+                    
+                    // Month list (expanded)
+                    AnimatedVisibility(visible = isExpanded) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        ) {
+                            months.sortedByDescending { it.month }.forEach { ym ->
+                                val isCurrentMonth = currentYearMonth?.year == ym.year && 
+                                                     currentYearMonth.month == ym.month
+                                Surface(
+                                    onClick = { onYearMonthSelected(ym.year, ym.month) },
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isCurrentMonth) 
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) 
+                                    else 
+                                        Color.Transparent,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp, vertical = 1.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 4.dp, horizontal = 4.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "${ym.month}月",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = if (isCurrentMonth) 
+                                                MaterialTheme.colorScheme.primary 
+                                            else 
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text(
+                                            text = "(${ym.eventCount})",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Floating action button showing current position and opening navigator.
+ */
+@Composable
+private fun CurrentPositionFab(
+    currentYearMonth: YearMonth?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    currentYearMonth?.let { ym ->
+        ExtendedFloatingActionButton(
+            onClick = onClick,
+            modifier = modifier,
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        ) {
+            Icon(
+                imageVector = Icons.Default.DateRange,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "${ym.year}年${ym.month}月",
+                style = MaterialTheme.typography.labelLarge
             )
         }
     }

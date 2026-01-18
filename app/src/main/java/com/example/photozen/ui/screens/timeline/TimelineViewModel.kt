@@ -16,7 +16,18 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.Calendar
 import javax.inject.Inject
+
+/**
+ * Represents a year-month combination for quick navigation.
+ */
+data class YearMonth(
+    val year: Int,
+    val month: Int,
+    val eventCount: Int,
+    val firstEventIndex: Int  // Index in the events list for scrolling
+)
 
 /**
  * UI State for Timeline screen.
@@ -28,7 +39,12 @@ data class TimelineUiState(
     val totalPhotos: Int = 0,
     val expandedEventIds: Set<String> = emptySet(),
     val error: String? = null,
-    val navigateToSorter: Boolean = false
+    val navigateToSorter: Boolean = false,
+    val navigateToSorterListMode: Boolean = false,  // Navigate to sorter in list mode
+    val isDescending: Boolean = true,  // true=最新优先, false=最早优先
+    val availableYearMonths: List<YearMonth> = emptyList(),  // 可用的年月列表
+    val showNavigator: Boolean = false,  // 是否显示年月导航器
+    val scrollToIndex: Int? = null  // 要滚动到的索引
 ) {
     val hasEvents: Boolean get() = events.isNotEmpty()
     val totalEvents: Int get() = events.size
@@ -71,10 +87,17 @@ class TimelineViewModel @Inject constructor(
                         _uiState.value.groupingMode
                     )
                     
+                    // Apply sort order
+                    val sortedEvents = applySortOrder(events, _uiState.value.isDescending)
+                    
+                    // Extract year-month data for navigation
+                    val yearMonths = extractYearMonths(sortedEvents)
+                    
                     _uiState.update { state ->
                         state.copy(
-                            events = events,
+                            events = sortedEvents,
                             totalPhotos = validPhotos.size,
+                            availableYearMonths = yearMonths,
                             isLoading = false
                         )
                     }
@@ -91,6 +114,42 @@ class TimelineViewModel @Inject constructor(
     }
     
     /**
+     * Apply sort order to events list.
+     */
+    private fun applySortOrder(events: List<PhotoEvent>, isDescending: Boolean): List<PhotoEvent> {
+        return if (isDescending) {
+            events.sortedByDescending { it.startTime }
+        } else {
+            events.sortedBy { it.startTime }
+        }
+    }
+    
+    /**
+     * Extract year-month data from events for quick navigation.
+     */
+    private fun extractYearMonths(events: List<PhotoEvent>): List<YearMonth> {
+        val calendar = Calendar.getInstance()
+        val yearMonthMap = mutableMapOf<Pair<Int, Int>, MutableList<Int>>()
+        
+        events.forEachIndexed { index, event ->
+            calendar.timeInMillis = event.startTime
+            val year = calendar.get(Calendar.YEAR)
+            val month = calendar.get(Calendar.MONTH) + 1  // Calendar.MONTH is 0-based
+            val key = year to month
+            yearMonthMap.getOrPut(key) { mutableListOf() }.add(index)
+        }
+        
+        return yearMonthMap.map { (key, indices) ->
+            YearMonth(
+                year = key.first,
+                month = key.second,
+                eventCount = indices.size,
+                firstEventIndex = indices.first()
+            )
+        }.sortedWith(compareByDescending<YearMonth> { it.year }.thenByDescending { it.month })
+    }
+    
+    /**
      * Change the grouping mode and re-group photos.
      */
     fun setGroupingMode(mode: GroupingMode) {
@@ -104,10 +163,17 @@ class TimelineViewModel @Inject constructor(
                     val validPhotos = photos.filter { it.getEffectiveTime() > 0 }
                     val events = eventGrouper.groupPhotos(validPhotos, mode)
                     
+                    // Apply sort order
+                    val sortedEvents = applySortOrder(events, _uiState.value.isDescending)
+                    
+                    // Extract year-month data for navigation
+                    val yearMonths = extractYearMonths(sortedEvents)
+                    
                     _uiState.update { state ->
                         state.copy(
-                            events = events,
+                            events = sortedEvents,
                             expandedEventIds = emptySet(), // Reset expanded state
+                            availableYearMonths = yearMonths,
                             isLoading = false
                         )
                     }
@@ -120,6 +186,23 @@ class TimelineViewModel @Inject constructor(
                     ) 
                 }
             }
+        }
+    }
+    
+    /**
+     * Toggle sort order between ascending and descending.
+     */
+    fun toggleSortOrder() {
+        val newIsDescending = !_uiState.value.isDescending
+        val sortedEvents = applySortOrder(_uiState.value.events, newIsDescending)
+        val yearMonths = extractYearMonths(sortedEvents)
+        
+        _uiState.update { state ->
+            state.copy(
+                isDescending = newIsDescending,
+                events = sortedEvents,
+                availableYearMonths = yearMonths
+            )
         }
     }
     
@@ -173,8 +256,9 @@ class TimelineViewModel @Inject constructor(
      * 
      * @param startTime Start time of the event (milliseconds)
      * @param endTime End time of the event (milliseconds)
+     * @param listMode Whether to navigate to list mode (for "view more" button)
      */
-    fun sortGroup(startTime: Long, endTime: Long) {
+    fun sortGroup(startTime: Long, endTime: Long, listMode: Boolean = false) {
         viewModelScope.launch {
             // Set custom filter with precise mode
             preferencesRepository.setSessionCustomFilter(
@@ -190,7 +274,12 @@ class TimelineViewModel @Inject constructor(
             preferencesRepository.setPhotoFilterMode(PhotoFilterMode.CUSTOM)
             
             // Trigger navigation
-            _uiState.update { it.copy(navigateToSorter = true) }
+            _uiState.update { 
+                it.copy(
+                    navigateToSorter = !listMode,
+                    navigateToSorterListMode = listMode
+                ) 
+            }
         }
     }
     
@@ -198,6 +287,49 @@ class TimelineViewModel @Inject constructor(
      * Reset navigation state after navigation is complete.
      */
     fun onNavigationComplete() {
-        _uiState.update { it.copy(navigateToSorter = false) }
+        _uiState.update { 
+            it.copy(
+                navigateToSorter = false,
+                navigateToSorterListMode = false
+            ) 
+        }
+    }
+    
+    /**
+     * Toggle the year-month navigator visibility.
+     */
+    fun toggleNavigator() {
+        _uiState.update { it.copy(showNavigator = !it.showNavigator) }
+    }
+    
+    /**
+     * Hide the year-month navigator.
+     */
+    fun hideNavigator() {
+        _uiState.update { it.copy(showNavigator = false) }
+    }
+    
+    /**
+     * Scroll to a specific year-month.
+     */
+    fun scrollToYearMonth(year: Int, month: Int) {
+        val yearMonth = _uiState.value.availableYearMonths.find { 
+            it.year == year && it.month == month 
+        }
+        yearMonth?.let {
+            _uiState.update { state ->
+                state.copy(
+                    scrollToIndex = it.firstEventIndex,
+                    showNavigator = false
+                )
+            }
+        }
+    }
+    
+    /**
+     * Clear the scroll target after scrolling is complete.
+     */
+    fun clearScrollTarget() {
+        _uiState.update { it.copy(scrollToIndex = null) }
     }
 }

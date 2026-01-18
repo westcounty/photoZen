@@ -222,6 +222,9 @@ fun PicZenNavHost(
                 },
                 onNavigateToSorter = {
                     navController.navigate(Screen.FlowSorter())
+                },
+                onNavigateToSorterListMode = {
+                    navController.navigate(Screen.FlowSorter(initialListMode = true))
                 }
             )
         }

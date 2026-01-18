@@ -183,6 +183,7 @@ class FlowSorterViewModel @Inject constructor(
     private val isDailyTask: Boolean = savedStateHandle["isDailyTask"] ?: false
     private val targetCount: Int = savedStateHandle["targetCount"] ?: -1
     private val albumBucketId: String? = savedStateHandle["albumBucketId"]
+    private val initialListMode: Boolean = savedStateHandle["initialListMode"] ?: false
     
     private val _isLoading = MutableStateFlow(true)
     private val _isSyncing = MutableStateFlow(false)
@@ -196,7 +197,10 @@ class FlowSorterViewModel @Inject constructor(
     // This bypasses the combine flow delay that can cause first-swipe counter issues
     private val _sortedCountImmediate = MutableStateFlow(0)
     val sortedCountImmediate: StateFlow<Int> = _sortedCountImmediate.asStateFlow()
-    private val _viewMode = MutableStateFlow(FlowSorterViewMode.CARD)
+    // Initialize view mode based on navigation parameter
+    private val _viewMode = MutableStateFlow(
+        if (initialListMode) FlowSorterViewMode.LIST else FlowSorterViewMode.CARD
+    )
     private val _selectedPhotoIds = MutableStateFlow<Set<String>>(emptySet())
     private val _sortOrder = MutableStateFlow(PhotoSortOrder.DATE_DESC)
     private val _gridColumns = MutableStateFlow(2)
