@@ -24,6 +24,7 @@ import com.example.photozen.util.WidgetUpdater
 import com.example.photozen.data.repository.WidgetPhotoSource
 import com.example.photozen.data.repository.ThemeMode
 import com.example.photozen.data.repository.AlbumAddAction
+import com.example.photozen.data.repository.GuideRepository
 import com.example.photozen.util.StoragePermissionHelper
 
 /**
@@ -45,6 +46,7 @@ data class SettingsUiState(
     val experimentalEnabled: Boolean = false,
     val themeMode: ThemeMode = ThemeMode.DARK,
     val swipeSensitivity: Float = 1.0f,
+    val hapticFeedbackEnabled: Boolean = true,  // Phase 3-7: 震动反馈开关
     // Album classification settings
     val albumAddAction: AlbumAddAction = AlbumAddAction.MOVE,
     val cardSortingAlbumEnabled: Boolean = false,
@@ -71,7 +73,8 @@ class SettingsViewModel @Inject constructor(
     private val widgetUpdater: WidgetUpdater,
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val photoRepository: PhotoRepository,
-    private val storagePermissionHelper: StoragePermissionHelper
+    private val storagePermissionHelper: StoragePermissionHelper,
+    val guideRepository: GuideRepository
 ) : ViewModel() {
     
     private val _internalState = MutableStateFlow(InternalState())
@@ -121,11 +124,12 @@ class SettingsViewModel @Inject constructor(
         ExtraSettings(cardZoom, onestop, experimental, progressNotification)
     }
     
-    // Combine appearance and swipe settings
+    // Combine appearance and swipe settings (Phase 3-7: 添加震动反馈)
     private val appearanceSettingsFlow = combine(
         preferencesRepository.getThemeMode(),
-        preferencesRepository.getSwipeSensitivity()
-    ) { themeMode, sensitivity -> Pair(themeMode, sensitivity) }
+        preferencesRepository.getSwipeSensitivity(),
+        preferencesRepository.getHapticFeedbackEnabled()
+    ) { themeMode, sensitivity, hapticEnabled -> Triple(themeMode, sensitivity, hapticEnabled) }
     
     // Combine album classification settings
     private val classificationSettingsFlow = combine(
@@ -166,7 +170,7 @@ class SettingsViewModel @Inject constructor(
         val widgetSettings = params[5] as Triple<WidgetPhotoSource, Set<String>, Pair<Long?, Long?>>
         val extraSettings = params[6] as ExtraSettings
         @Suppress("UNCHECKED_CAST")
-        val combined = params[7] as Triple<InternalState, Pair<ThemeMode, Float>, ClassificationSettings>
+        val combined = params[7] as Triple<InternalState, Triple<ThemeMode, Float, Boolean>, ClassificationSettings>
         val internal = combined.first
         val appearanceSettings = combined.second
         val classificationSettings = combined.third
@@ -187,6 +191,7 @@ class SettingsViewModel @Inject constructor(
             experimentalEnabled = extraSettings.experimentalEnabled,
             themeMode = appearanceSettings.first,
             swipeSensitivity = appearanceSettings.second,
+            hapticFeedbackEnabled = appearanceSettings.third,  // Phase 3-7
             albumAddAction = classificationSettings.action,
             cardSortingAlbumEnabled = classificationSettings.cardSortingEnabled,
             albumTagSize = classificationSettings.tagSize,
@@ -271,6 +276,16 @@ class SettingsViewModel @Inject constructor(
     fun setSwipeSensitivity(sensitivity: Float) {
         viewModelScope.launch {
             preferencesRepository.setSwipeSensitivity(sensitivity)
+        }
+    }
+    
+    /**
+     * Set haptic feedback enabled state.
+     * Phase 3-7: 震动反馈开关
+     */
+    fun setHapticFeedbackEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setHapticFeedbackEnabled(enabled)
         }
     }
     

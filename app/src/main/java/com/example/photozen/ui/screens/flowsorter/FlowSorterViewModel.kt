@@ -15,6 +15,7 @@ import com.example.photozen.data.repository.CustomFilterSession
 import com.example.photozen.data.repository.PhotoClassificationMode
 import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.PreferencesRepository
+import com.example.photozen.data.repository.StatsRepository
 import com.example.photozen.data.source.MediaStoreDataSource
 import com.example.photozen.domain.usecase.AlbumOperationsUseCase
 import com.example.photozen.domain.usecase.GetDailyTaskStatusUseCase
@@ -24,6 +25,11 @@ import com.example.photozen.domain.usecase.SortPhotoUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
 import com.example.photozen.util.StoragePermissionHelper
 import com.example.photozen.util.WidgetUpdater
+import com.example.photozen.data.repository.GuideRepository
+import com.example.photozen.data.repository.FilterPresetRepository
+import com.example.photozen.domain.model.FilterConfig
+import com.example.photozen.domain.model.FilterPreset
+import com.example.photozen.domain.model.FilterType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -39,6 +45,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -118,6 +125,7 @@ data class FlowSorterUiState(
     val isDailyTaskComplete: Boolean = false,
     val cardZoomEnabled: Boolean = true,
     val swipeSensitivity: Float = 1.0f,
+    val hapticFeedbackEnabled: Boolean = true,  // Phase 3-7
     // Album mode support
     val cardSortingAlbumEnabled: Boolean = false,
     val albumBubbleList: List<AlbumBubbleEntity> = emptyList(),
@@ -177,7 +185,10 @@ class FlowSorterViewModel @Inject constructor(
     private val widgetUpdater: WidgetUpdater,
     private val albumBubbleDao: AlbumBubbleDao,
     private val albumOperationsUseCase: AlbumOperationsUseCase,
-    private val storagePermissionHelper: StoragePermissionHelper
+    private val storagePermissionHelper: StoragePermissionHelper,
+    val guideRepository: GuideRepository,
+    private val filterPresetRepository: FilterPresetRepository,
+    private val statsRepository: StatsRepository
 ) : ViewModel() {
     
     private val isDailyTask: Boolean = savedStateHandle["isDailyTask"] ?: false
@@ -197,6 +208,25 @@ class FlowSorterViewModel @Inject constructor(
     // This bypasses the combine flow delay that can cause first-swipe counter issues
     private val _sortedCountImmediate = MutableStateFlow(0)
     val sortedCountImmediate: StateFlow<Int> = _sortedCountImmediate.asStateFlow()
+    
+    // ==================== 筛选状态 ====================
+    
+    private val _filterConfig = MutableStateFlow(FilterConfig.EMPTY)
+    val filterConfig: StateFlow<FilterConfig> = _filterConfig.asStateFlow()
+    
+    val filterPresets: StateFlow<List<FilterPreset>> = 
+        filterPresetRepository.getPresets()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    
+    /** 相册名称映射（用于 FilterChipRow） */
+    val albumNames: StateFlow<Map<String, String>> = albumBubbleDao.getAll()
+        .map { list -> list.associate { it.bucketId to it.displayName } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+    
+    /** 可选相册列表（用于 FilterBottomSheet） */
+    val albumBubblesForFilter: StateFlow<List<AlbumBubbleEntity>> = albumBubbleDao.getAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    
     // Initialize view mode based on navigation parameter
     private val _viewMode = MutableStateFlow(
         if (initialListMode) FlowSorterViewMode.LIST else FlowSorterViewMode.CARD
@@ -644,10 +674,11 @@ class FlowSorterViewModel @Inject constructor(
             preferencesRepository.getPhotoFilterMode(), 
             _cameraAlbumsLoaded, 
             preferencesRepository.getCardZoomEnabled(),
-            preferencesRepository.getSwipeSensitivity()
-        ) { mode, loaded, zoom, sensitivity -> 
-            // Use Pair of Pairs for 4 values: ((mode, loaded), (zoom, sensitivity))
-            Pair(Pair(mode, loaded), Pair(zoom, sensitivity))
+            preferencesRepository.getSwipeSensitivity(),
+            preferencesRepository.getHapticFeedbackEnabled()  // Phase 3-7
+        ) { mode, loaded, zoom, sensitivity, haptic -> 
+            // Use Pair of Pairs for 5 values: ((mode, loaded), (zoom, sensitivity, haptic))
+            Pair(Pair(mode, loaded), Triple(zoom, sensitivity, haptic))
         },
         if (isDailyTask) getDailyTaskStatusUseCase() else flowOf(null)
     ) { values ->
@@ -664,7 +695,7 @@ class FlowSorterViewModel @Inject constructor(
         val viewMode = values[6] as FlowSorterViewMode
         val selectionAndAlbum = values[7] as SelectionAndAlbumState
         @Suppress("UNCHECKED_CAST")
-        val prefsState = values[8] as Pair<Pair<PhotoFilterMode, Boolean>, Pair<Boolean, Float>>
+        val prefsState = values[8] as Pair<Pair<PhotoFilterMode, Boolean>, Triple<Boolean, Float, Boolean>>
         val dailyStatus = values[9] as com.example.photozen.domain.usecase.DailyTaskStatus?
         
         val error = combined.first
@@ -678,6 +709,7 @@ class FlowSorterViewModel @Inject constructor(
         val cameraLoaded = prefsState.first.second
         val cardZoomEnabled = prefsState.second.first
         val swipeSensitivity = prefsState.second.second
+        val hapticFeedbackEnabled = prefsState.second.third  // Phase 3-7
         
         var isDailyComplete = false
         var dailyCurrent = 0
@@ -746,6 +778,7 @@ class FlowSorterViewModel @Inject constructor(
             isDailyTaskComplete = isDailyComplete,
             cardZoomEnabled = cardZoomEnabled,
             swipeSensitivity = swipeSensitivity,
+            hapticFeedbackEnabled = hapticFeedbackEnabled,  // Phase 3-7
             // Album mode
             cardSortingAlbumEnabled = albumState.cardSortingAlbumEnabled,
             albumBubbleList = albumState.albumBubbleList,
@@ -860,6 +893,59 @@ class FlowSorterViewModel @Inject constructor(
         }
     }
     
+    // ==================== 筛选操作 ====================
+    
+    /**
+     * 应用筛选配置
+     */
+    fun applyFilter(config: FilterConfig) {
+        _filterConfig.value = config
+        
+        // 保存为最近使用
+        viewModelScope.launch {
+            filterPresetRepository.saveLastFilterConfig(config)
+        }
+        // 重新加载照片
+        loadInitialPhotos()
+    }
+    
+    /**
+     * 清除指定类型的筛选条件
+     */
+    fun clearFilter(type: FilterType) {
+        val newConfig = when (type) {
+            FilterType.ALBUM -> _filterConfig.value.clearAlbumFilter()
+            FilterType.DATE -> _filterConfig.value.clearDateFilter()
+        }
+        applyFilter(newConfig)
+    }
+    
+    /**
+     * 清除所有筛选条件
+     */
+    fun clearAllFilters() {
+        applyFilter(FilterConfig.EMPTY)
+    }
+    
+    /**
+     * 保存筛选预设
+     */
+    fun saveFilterPreset(name: String) {
+        viewModelScope.launch {
+            val preset = FilterPreset.create(name, _filterConfig.value)
+            filterPresetRepository.savePreset(preset)
+        }
+    }
+    
+    /**
+     * 删除筛选预设
+     */
+    fun deleteFilterPreset(presetId: String) {
+        viewModelScope.launch {
+            filterPresetRepository.deletePreset(presetId)
+        }
+    }
+    
     /**
      * Sync photos from MediaStore.
      */
@@ -908,6 +994,8 @@ class FlowSorterViewModel @Inject constructor(
                 _lastAction.value = SortAction(photoId, PhotoStatus.KEEP)
                 preferencesRepository.incrementSortedCount()
                 preferencesRepository.incrementKeepCount()
+                // Record to stats repository for detailed statistics
+                statsRepository.recordKeep()
                 // Update widget immediately after sorting
                 widgetUpdater.updateDailyProgressWidgets()
             } catch (e: Exception) {
@@ -940,6 +1028,8 @@ class FlowSorterViewModel @Inject constructor(
                 _lastAction.value = SortAction(photoId, PhotoStatus.TRASH)
                 preferencesRepository.incrementSortedCount()
                 preferencesRepository.incrementTrashCount()
+                // Record to stats repository for detailed statistics
+                statsRepository.recordTrash()
                 // Update widget immediately after sorting
                 widgetUpdater.updateDailyProgressWidgets()
             } catch (e: Exception) {
@@ -972,6 +1062,8 @@ class FlowSorterViewModel @Inject constructor(
                 _lastAction.value = SortAction(photoId, PhotoStatus.MAYBE)
                 preferencesRepository.incrementSortedCount()
                 preferencesRepository.incrementMaybeCount()
+                // Record to stats repository for detailed statistics
+                statsRepository.recordMaybe()
                 // Update widget immediately after sorting
                 widgetUpdater.updateDailyProgressWidgets()
             } catch (e: Exception) {
@@ -1100,6 +1192,8 @@ class FlowSorterViewModel @Inject constructor(
                 _counters.value = _counters.value.copy(keep = _counters.value.keep + 1)
                 preferencesRepository.incrementSortedCount()
                 preferencesRepository.incrementKeepCount()
+                // Record to stats repository for detailed statistics
+                statsRepository.recordKeep()
                 
                 // Get album info and actual path
                 val album = _albumBubbleList.value.find { it.bucketId == bucketId }
@@ -1372,6 +1466,8 @@ class FlowSorterViewModel @Inject constructor(
                 sortPhotoUseCase.batchUpdateStatus(selectedIds, PhotoStatus.KEEP)
                 _counters.value = _counters.value.copy(keep = _counters.value.keep + selectedIds.size)
                 preferencesRepository.incrementSortedCount(selectedIds.size)
+                // Record to stats repository for detailed statistics
+                statsRepository.recordKeep(selectedIds.size)
             } catch (e: Exception) {
                 _error.value = "批量操作失败: ${e.message}"
             }
@@ -1395,6 +1491,8 @@ class FlowSorterViewModel @Inject constructor(
                 sortPhotoUseCase.batchUpdateStatus(selectedIds, PhotoStatus.TRASH)
                 _counters.value = _counters.value.copy(trash = _counters.value.trash + selectedIds.size)
                 preferencesRepository.incrementSortedCount(selectedIds.size)
+                // Record to stats repository for detailed statistics
+                statsRepository.recordTrash(selectedIds.size)
             } catch (e: Exception) {
                 _error.value = "批量操作失败: ${e.message}"
             }
@@ -1418,6 +1516,8 @@ class FlowSorterViewModel @Inject constructor(
                 sortPhotoUseCase.batchUpdateStatus(selectedIds, PhotoStatus.MAYBE)
                 _counters.value = _counters.value.copy(maybe = _counters.value.maybe + selectedIds.size)
                 preferencesRepository.incrementSortedCount(selectedIds.size)
+                // Record to stats repository for detailed statistics
+                statsRepository.recordMaybe(selectedIds.size)
             } catch (e: Exception) {
                 _error.value = "批量操作失败: ${e.message}"
             }

@@ -103,12 +103,26 @@ import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.ui.components.AlbumPickerBottomSheet
+import com.example.photozen.ui.components.ConfirmDeleteSheet
+import com.example.photozen.ui.components.DeleteType
 import com.example.photozen.ui.components.DragSelectPhotoGrid
+import com.example.photozen.ui.components.EmptyStates
+import com.example.photozen.ui.components.GuideTooltip
+import com.example.photozen.ui.components.ArrowDirection
 import com.example.photozen.ui.components.PhotoListActionSheet
+import com.example.photozen.ui.guide.rememberGuideState
+import com.example.photozen.domain.model.GuideKey
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import com.example.photozen.ui.components.openImageWithApp
+import com.example.photozen.ui.components.SelectionTopBar
+import com.example.photozen.ui.state.UiEvent
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.SnackbarResult
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -134,6 +148,40 @@ fun PhotoListScreen(
     // Single photo album picker state (for long-press add to album)
     var showSinglePhotoAlbumPicker by remember { mutableStateOf(false) }
     var singlePhotoIdForAlbum by remember { mutableStateOf<String?>(null) }
+    
+    // Phase 3-9: 删除确认弹窗状态
+    var showDeleteConfirmSheet by remember { mutableStateOf(false) }
+    
+    // 长按引导状态
+    val longPressGuide = rememberGuideState(
+        guideKey = GuideKey.PHOTO_LIST_LONG_PRESS,
+        guideRepository = viewModel.guideRepository
+    )
+    var gridBounds by remember { mutableStateOf<Rect?>(null) }
+    
+    // 处理 UI 事件（撤销等）
+    LaunchedEffect(Unit) {
+        viewModel.uiEvent.collect { event ->
+            when (event) {
+                is UiEvent.ShowSnackbar -> {
+                    val result = snackbarHostState.showSnackbar(
+                        message = event.message,
+                        actionLabel = event.actionLabel,
+                        duration = event.duration
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        event.onAction?.invoke()
+                    }
+                }
+                else -> { /* 其他事件暂不处理 */ }
+            }
+        }
+    }
+    
+    // BackHandler 处理返回键退出选择模式
+    BackHandler(enabled = uiState.isSelectionMode) {
+        viewModel.exitSelectionMode()
+    }
     
     LaunchedEffect(uiState.message) {
         uiState.message?.let { message ->
@@ -162,14 +210,19 @@ fun PhotoListScreen(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = {
-                    if (uiState.isSelectionMode) {
-                        Text(
-                            text = "已选择 ${uiState.selectedCount} 张",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                    } else {
+            if (uiState.isSelectionMode) {
+                // 使用统一的选择模式顶栏
+                SelectionTopBar(
+                    selectedCount = uiState.selectedCount,
+                    totalCount = uiState.photos.size,
+                    onClose = { viewModel.exitSelectionMode() },
+                    onSelectAll = { viewModel.selectAll() },
+                    onDeselectAll = { viewModel.deselectAll() }
+                )
+            } else {
+                // 普通模式顶栏
+                TopAppBar(
+                    title = {
                         Column {
                             Text(text = title, style = MaterialTheme.typography.titleLarge)
                             Text(
@@ -178,31 +231,16 @@ fun PhotoListScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = handleBack) {
-                        Icon(
-                            imageVector = if (uiState.isSelectionMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = if (uiState.isSelectionMode) "取消" else "返回"
-                        )
-                    }
-                },
-                actions = {
-                    if (uiState.isSelectionMode) {
-                        // Select all / Deselect all
-                        TextButton(
-                            onClick = {
-                                if (uiState.allSelected) {
-                                    viewModel.deselectAll()
-                                } else {
-                                    viewModel.selectAll()
-                                }
-                            }
-                        ) {
-                            Text(if (uiState.allSelected) "取消全选" else "全选")
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回"
+                            )
                         }
-                    } else {
+                    },
+                    actions = {
                         // Compare mode button for MAYBE status
                         if (uiState.status == PhotoStatus.MAYBE && uiState.photos.isNotEmpty()) {
                             IconButton(onClick = onNavigateToLightTable) {
@@ -265,12 +303,12 @@ fun PhotoListScreen(
                                 )
                             }
                         }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
+            }
         },
         bottomBar = {
             // Selection mode bottom bar
@@ -295,7 +333,8 @@ fun PhotoListScreen(
                     } else null,
                     onMoveToKeep = if (uiState.status != PhotoStatus.KEEP) {{ viewModel.moveSelectedToKeep() }} else null,
                     onMoveToMaybe = if (uiState.status != PhotoStatus.MAYBE) {{ viewModel.moveSelectedToMaybe() }} else null,
-                    onMoveToTrash = if (uiState.status != PhotoStatus.TRASH) {{ viewModel.moveSelectedToTrash() }} else null,
+                    // Phase 3-9: 显示删除确认弹窗
+                    onMoveToTrash = if (uiState.status != PhotoStatus.TRASH) {{ showDeleteConfirmSheet = true }} else null,
                     onResetToUnsorted = { viewModel.resetSelectedToUnsorted() },
                     onAddToAlbum = if (uiState.canBatchAlbum) {{ viewModel.showAlbumDialog() }} else null
                 )
@@ -351,27 +390,62 @@ fun PhotoListScreen(
                         CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                     }
                     uiState.photos.isEmpty() -> {
-                        EmptyState(status = uiState.status, color = color)
+                        // 根据状态显示对应的空状态
+                        when (uiState.status) {
+                            PhotoStatus.KEEP -> EmptyStates.NoKeep(modifier = Modifier.fillMaxSize())
+                            PhotoStatus.MAYBE -> EmptyStates.NoMaybe(modifier = Modifier.fillMaxSize())
+                            PhotoStatus.TRASH -> EmptyStates.EmptyTrash(modifier = Modifier.fillMaxSize())
+                            PhotoStatus.UNSORTED -> EmptyStates.AllSorted(
+                                onRefresh = { /* Already sorted, no action needed */ },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                     else -> {
-                        DragSelectPhotoGrid(
-                            photos = uiState.photos,
-                            selectedIds = uiState.selectedPhotoIds,
-                            onSelectionChanged = { newSelection ->
-                                viewModel.updateSelection(newSelection)
-                            },
-                            onPhotoClick = { photoId, _ ->
-                                // Non-selection mode click - could open fullscreen viewer
-                            },
-                            onPhotoLongPress = { photoId, photoUri ->
-                                // Show action sheet for single photo
-                                selectedPhotoId = photoId
-                                selectedPhotoUri = photoUri
-                                showActionSheet = true
-                            },
-                            columns = uiState.gridColumns,
-                            selectionColor = color
-                        )
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            DragSelectPhotoGrid(
+                                photos = uiState.photos,
+                                selectedIds = uiState.selectedPhotoIds,
+                                onSelectionChanged = { newSelection ->
+                                    viewModel.updateSelection(newSelection)
+                                },
+                                onPhotoClick = { photoId, _ ->
+                                    // Non-selection mode click - could open fullscreen viewer
+                                },
+                                onPhotoLongPress = { photoId, photoUri ->
+                                    // Show action sheet for single photo
+                                    selectedPhotoId = photoId
+                                    selectedPhotoUri = photoUri
+                                    showActionSheet = true
+                                },
+                                columns = uiState.gridColumns,
+                                selectionColor = color,
+                                modifier = Modifier.onGloballyPositioned { coordinates ->
+                                    if (gridBounds == null && coordinates.size.width > 0) {
+                                        gridBounds = coordinates.boundsInRoot()
+                                    }
+                                }
+                            )
+                            
+                            // 长按引导（仅在非选择模式下且有照片时显示）
+                            if (!uiState.isSelectionMode && uiState.photos.isNotEmpty()) {
+                                GuideTooltip(
+                                    visible = longPressGuide.shouldShow,
+                                    message = "📱 长按选择\n长按照片进入多选模式\n可拖动批量选择",
+                                    targetBounds = gridBounds?.let { bounds ->
+                                        // 指向网格第一张照片的位置
+                                        Rect(
+                                            left = bounds.left + 16f,
+                                            top = bounds.top + 16f,
+                                            right = bounds.left + 116f,
+                                            bottom = bounds.top + 116f
+                                        )
+                                    },
+                                    arrowDirection = ArrowDirection.UP,
+                                    onDismiss = longPressGuide.dismiss
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -453,6 +527,20 @@ fun PhotoListScreen(
                 showSinglePhotoAlbumPicker = false
                 singlePhotoIdForAlbum = null
             }
+        )
+    }
+    
+    // Phase 3-9: 移入回收站确认弹窗
+    if (showDeleteConfirmSheet) {
+        val selectedPhotos = uiState.photos.filter { it.id in uiState.selectedPhotoIds }
+        ConfirmDeleteSheet(
+            photos = selectedPhotos,
+            deleteType = DeleteType.MOVE_TO_TRASH,
+            onConfirm = {
+                showDeleteConfirmSheet = false
+                viewModel.moveSelectedToTrash()
+            },
+            onDismiss = { showDeleteConfirmSheet = false }
         )
     }
 }
@@ -602,46 +690,6 @@ private fun BottomBarActionItem(
     }
 }
 
-@Composable
-private fun EmptyState(status: PhotoStatus, color: Color) {
-    val iconAndText: Pair<androidx.compose.ui.graphics.vector.ImageVector, String> = when (status) {
-        PhotoStatus.KEEP -> Icons.Default.Favorite to "没有保留的照片"
-        PhotoStatus.TRASH -> Icons.Default.Delete to "回收站为空"
-        PhotoStatus.MAYBE -> Icons.Default.QuestionMark to "没有待定的照片"
-        PhotoStatus.UNSORTED -> Icons.Default.Check to "所有照片已整理完成"
-    }
-    val icon = iconAndText.first
-    val text = iconAndText.second
-    
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .size(80.dp)
-                .clip(CircleShape)
-                .background(color.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, null, tint = color, modifier = Modifier.size(40.dp))
-        }
-        Text(
-            text = text,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 16.dp)
-        )
-        Text(
-            text = "长按照片可进行操作",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp)
-        )
-    }
-}
 
 /**
  * Phase 6.1: Card prompting user to classify photos to albums.

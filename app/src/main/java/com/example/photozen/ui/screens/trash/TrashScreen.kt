@@ -63,7 +63,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,10 +82,15 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.ui.components.ConfirmDeleteSheet
+import com.example.photozen.ui.components.DeleteType
 import com.example.photozen.ui.components.DragSelectPhotoGrid
+import com.example.photozen.ui.components.EmptyStates
+import com.example.photozen.ui.components.SelectionTopBar
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
+import androidx.activity.compose.BackHandler
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -95,6 +102,9 @@ fun TrashScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val haptic = LocalHapticFeedback.current
+    
+    // Phase 3-9: 删除确认弹窗状态
+    var showDeleteConfirmSheet by remember { mutableStateOf(false) }
     
     // Launcher for system delete request
     val deleteLauncher = rememberLauncherForActivityResult(
@@ -120,54 +130,49 @@ fun TrashScreen(
         }
     }
     
-    // Handle back press in selection mode
-    val handleBack: () -> Unit = {
-        if (uiState.isSelectionMode) {
-            viewModel.clearSelection()
-        } else {
-            onNavigateBack()
-        }
+    // BackHandler 处理返回键退出选择模式
+    BackHandler(enabled = uiState.isSelectionMode) {
+        viewModel.clearSelection()
     }
     
     Scaffold(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = if (uiState.isSelectionMode) "已选择 ${uiState.selectedCount} 项" else "回收站",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        if (!uiState.isSelectionMode) {
+            if (uiState.isSelectionMode) {
+                // 使用统一的选择模式顶栏
+                SelectionTopBar(
+                    selectedCount = uiState.selectedCount,
+                    totalCount = uiState.photos.size,
+                    onClose = { viewModel.clearSelection() },
+                    onSelectAll = { viewModel.selectAll() },
+                    onDeselectAll = { viewModel.clearSelection() }
+                )
+            } else {
+                // 普通模式顶栏
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                text = "回收站",
+                                style = MaterialTheme.typography.titleLarge
+                            )
                             Text(
                                 text = "${uiState.photos.size} 张照片",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = handleBack) {
-                        Icon(
-                            if (uiState.isSelectionMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
-                            "返回"
-                        )
-                    }
-                },
-                actions = {
-                    if (uiState.isSelectionMode) {
-                        // Select all / Deselect all
-                        TextButton(
-                            onClick = {
-                                if (uiState.allSelected) viewModel.clearSelection() else viewModel.selectAll()
-                            }
-                        ) {
-                            Text(if (uiState.allSelected) "取消全选" else "全选")
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                "返回"
+                            )
                         }
-                    } else {
+                    },
+                    actions = {
                         // Grid columns toggle
                         if (uiState.photos.isNotEmpty()) {
                             IconButton(onClick = { viewModel.cycleGridColumns() }) {
@@ -194,12 +199,12 @@ fun TrashScreen(
                                 )
                             }
                         }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
+            }
         },
         bottomBar = {
             if (uiState.isSelectionMode && uiState.selectedCount > 0) {
@@ -207,7 +212,8 @@ fun TrashScreen(
                     onRestore = { viewModel.restoreSelected() },
                     onKeep = { viewModel.keepSelected() },
                     onMaybe = { viewModel.maybeSelected() },
-                    onDelete = { viewModel.requestPermanentDelete() },
+                    // Phase 3-9: 显示删除确认弹窗
+                    onDelete = { showDeleteConfirmSheet = true },
                     isDeleting = uiState.isDeleting
                 )
             }
@@ -223,7 +229,7 @@ fun TrashScreen(
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 }
                 uiState.photos.isEmpty() -> {
-                    EmptyTrashState()
+                    EmptyStates.EmptyTrash(modifier = Modifier.fillMaxSize())
                 }
                 else -> {
                     DragSelectPhotoGrid(
@@ -244,6 +250,21 @@ fun TrashScreen(
                 }
             }
         }
+    }
+    
+    // Phase 3-9: 永久删除确认弹窗
+    if (showDeleteConfirmSheet) {
+        val selectedPhotos = uiState.photos.filter { it.id in uiState.selectedIds }
+        ConfirmDeleteSheet(
+            photos = selectedPhotos,
+            deleteType = DeleteType.PERMANENT_DELETE,
+            onConfirm = {
+                showDeleteConfirmSheet = false
+                viewModel.requestPermanentDelete()
+            },
+            onDismiss = { showDeleteConfirmSheet = false },
+            isLoading = uiState.isDeleting
+        )
     }
 }
 
@@ -352,39 +373,3 @@ private fun TrashBottomBarActionItem(
     }
 }
 
-@Composable
-private fun EmptyTrashState() {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .size(80.dp)
-                .clip(CircleShape)
-                .background(TrashRed.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                Icons.Default.Delete,
-                null,
-                tint = TrashRed,
-                modifier = Modifier.size(40.dp)
-            )
-        }
-        Text(
-            text = "回收站为空",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 16.dp)
-        )
-        Text(
-            text = "整理时向左滑动的照片会显示在这里",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp, start = 32.dp, end = 32.dp)
-        )
-    }
-}

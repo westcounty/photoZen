@@ -34,6 +34,7 @@ import com.example.photozen.ui.screens.smartgallery.SmartSearchScreen
 import com.example.photozen.ui.screens.timeline.TimelineScreen
 import com.example.photozen.ui.screens.albums.AlbumBubbleScreen
 import com.example.photozen.ui.screens.albums.AlbumPhotoListScreen
+import com.example.photozen.ui.screens.stats.StatsScreen
 import com.example.photozen.ui.screens.trash.TrashScreen
 import com.example.photozen.ui.screens.workflow.WorkflowScreen
 
@@ -63,6 +64,85 @@ fun PicZenNavHost(
         startDestination = startDestination,
         modifier = modifier
     ) {
+        // ==================== Phase 1-C: 主 Tab 路由 ====================
+        // 当启用底部导航时，这些路由作为主 Tab 的目的地
+        // 与 Screen.Home 等保持兼容，都可以正常工作
+        
+        composable(MainDestination.Home.route) {
+            // 底部导航模式的首页
+            HomeScreen(
+                onNavigateToFlowSorter = { isDaily, target ->
+                    navController.navigate(Screen.FlowSorter(isDailyTask = isDaily, targetCount = target))
+                },
+                onNavigateToLightTable = {
+                    navController.navigate(Screen.LightTable)
+                },
+                onNavigateToPhotoList = { status ->
+                    navController.navigate(Screen.PhotoList(status.name))
+                },
+                onNavigateToTrash = {
+                    navController.navigate(Screen.Trash)
+                },
+                onNavigateToWorkflow = { isDaily, target ->
+                    navController.navigate(Screen.Workflow(isDailyTask = isDaily, targetCount = target))
+                },
+                onNavigateToAchievements = {
+                    navController.navigate(Screen.Achievements)
+                },
+                onNavigateToFilterSelection = { mode, target ->
+                    navController.navigate(Screen.PhotoFilterSelection(mode = mode, targetCount = target))
+                },
+                onNavigateToSmartGallery = {
+                    if (BuildConfig.ENABLE_SMART_GALLERY) {
+                        navController.navigate(Screen.SmartGallery)
+                    }
+                },
+                onNavigateToStats = {
+                    navController.navigate(Screen.Stats)
+                }
+                // 注意：移除了 onNavigateToSettings、onNavigateToTimeline、onNavigateToAlbumBubble
+                // 这些由底部导航栏处理
+            )
+        }
+        
+        composable(MainDestination.Timeline.route) {
+            // 底部导航模式的时间线
+            TimelineScreen(
+                // 移除 onNavigateBack（由底部导航处理）
+                onPhotoClick = { photoId ->
+                    navController.navigate(Screen.PhotoEditor(photoId))
+                },
+                onNavigateToSorter = {
+                    navController.navigate(Screen.FlowSorter())
+                },
+                onNavigateToSorterListMode = {
+                    navController.navigate(Screen.FlowSorter(initialListMode = true))
+                }
+            )
+        }
+        
+        composable(MainDestination.Albums.route) {
+            // 底部导航模式的相册
+            AlbumBubbleScreen(
+                // 移除 onNavigateBack（由底部导航处理）
+                onNavigateToAlbumPhotos = { bucketId, albumName ->
+                    navController.navigate(Screen.AlbumPhotoList(bucketId, albumName))
+                },
+                onNavigateToQuickSort = { bucketId ->
+                    navController.navigate(Screen.FlowSorter(albumBucketId = bucketId))
+                }
+            )
+        }
+        
+        composable(MainDestination.Settings.route) {
+            // 底部导航模式的设置
+            SettingsScreen(
+                // 移除 onNavigateBack（由底部导航处理）
+            )
+        }
+        
+        // ==================== 原有 Screen 路由（保持向后兼容）====================
+        
         composable<Screen.Home> {
             HomeScreen(
                 onNavigateToFlowSorter = { isDaily, target ->
@@ -101,6 +181,9 @@ fun PicZenNavHost(
                 },
                 onNavigateToTimeline = {
                     navController.navigate(Screen.Timeline)
+                },
+                onNavigateToStats = {
+                    navController.navigate(Screen.Stats)
                 }
             )
         }
@@ -337,6 +420,14 @@ fun PicZenNavHost(
         
         composable<Screen.Achievements> {
             AchievementsScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+        
+        composable<Screen.Stats> {
+            StatsScreen(
                 onNavigateBack = {
                     navController.popBackStack()
                 }

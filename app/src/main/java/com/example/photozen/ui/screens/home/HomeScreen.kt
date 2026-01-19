@@ -2,11 +2,14 @@ package com.example.photozen.ui.screens.home
 
 import android.Manifest
 import android.os.Build
+import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import com.example.photozen.BuildConfig
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -85,30 +89,55 @@ import com.example.photozen.data.repository.DailyTaskMode
 import com.example.photozen.domain.usecase.DailyTaskStatus
 import com.example.photozen.ui.components.AchievementSummaryCard
 import com.example.photozen.ui.components.ChangelogDialog
+import com.example.photozen.ui.components.MiniStatsCard
+import com.example.photozen.ui.components.DailyTaskDisplayStatus
+import com.example.photozen.ui.components.HomeDesignTokens
+import com.example.photozen.ui.components.HomeDailyTask
+import com.example.photozen.ui.components.HomeMainAction
+import com.example.photozen.ui.components.HomeQuickActions
 import com.example.photozen.ui.components.QuickStartSheet
+import com.example.photozen.ui.components.SortModeBottomSheet
 import com.example.photozen.ui.components.generateAchievements
+import com.example.photozen.ui.components.GuideTooltip
+import com.example.photozen.ui.components.ArrowDirection
+import com.example.photozen.ui.guide.rememberGuideState
+import com.example.photozen.domain.model.GuideKey
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
+import com.example.photozen.ui.util.FeatureFlags
 
 /**
  * Home Screen - Entry point for PicZen app.
  * Shows statistics and navigation to main features.
+ * 
+ * Phase 1-C: 部分导航回调由底部导航处理，标记为可选参数：
+ * - onNavigateToSettings (由底部导航 Settings Tab 处理)
+ * - onNavigateToTimeline (由底部导航 Timeline Tab 处理)
+ * - onNavigateToAlbumBubble (由底部导航 Albums Tab 处理)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onNavigateToFlowSorter: (Boolean, Int) -> Unit,
     onNavigateToLightTable: () -> Unit,
-    onNavigateToSettings: () -> Unit,
     onNavigateToPhotoList: (PhotoStatus) -> Unit,
     onNavigateToTrash: () -> Unit,
     onNavigateToWorkflow: (Boolean, Int) -> Unit,
-    onNavigateToAlbumBubble: () -> Unit,
     onNavigateToAchievements: () -> Unit,
     onNavigateToFilterSelection: (String, Int) -> Unit = { _, _ -> },
     onNavigateToSmartGallery: () -> Unit = { },
-    onNavigateToTimeline: () -> Unit = { },
+    // Phase 1-C: 以下参数标记为可选，由底部导航处理
+    onNavigateToSettings: () -> Unit = {},
+    onNavigateToTimeline: () -> Unit = {},
+    onNavigateToAlbumBubble: () -> Unit = {},
+    // Phase 3: 统计页面入口
+    onNavigateToStats: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -211,172 +240,57 @@ fun HomeScreen(
             )
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Loading state
-            AnimatedVisibility(
-                visible = uiState.isLoading,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                LoadingCard()
-            }
-            
-            // Action Cards
-            if (!uiState.isLoading) {
-                // Compact stats header
-                if (uiState.hasPhotos) {
-                    CompactStatsHeader(
-                        unsortedCount = uiState.unsortedCount,
-                        sortedCount = uiState.sortedCount
-                    )
-                }
-                
-                // Daily Task Card - Now the PRIMARY prominent card at top
-                if (uiState.dailyTaskStatus?.isEnabled == true) {
-                    PrimaryDailyTaskCard(
-                        status = uiState.dailyTaskStatus!!,
-                        onStartClick = {
-                            val mode = uiState.dailyTaskStatus!!.mode
-                            val target = uiState.dailyTaskStatus!!.target
-                            if (mode == DailyTaskMode.FLOW) {
-                                if (uiState.needsFilterSelection) {
-                                    onNavigateToFilterSelection("workflow_daily", target)
-                                } else {
-                                    onNavigateToWorkflow(true, target)
-                                }
+        // Phase 1-D: Feature Flag 控制新旧布局
+        if (FeatureFlags.USE_NEW_HOME_LAYOUT) {
+            NewHomeLayout(
+                uiState = uiState,
+                paddingValues = paddingValues,
+                onStartSorting = { viewModel.showSortModeSheet() },
+                onNavigateToLightTable = onNavigateToLightTable,
+                onNavigateToTrash = onNavigateToTrash,
+                onNavigateToAchievements = onNavigateToAchievements,
+                onStartDailyTask = {
+                    val status = uiState.dailyTaskStatus
+                    if (status != null) {
+                        val mode = status.mode
+                        val target = status.target
+                        if (mode == DailyTaskMode.FLOW) {
+                            if (uiState.needsFilterSelection) {
+                                onNavigateToFilterSelection("workflow_daily", target)
                             } else {
-                                if (uiState.needsFilterSelection) {
-                                    onNavigateToFilterSelection("flow_daily", target)
-                                } else {
-                                    onNavigateToFlowSorter(true, target)
-                                }
+                                onNavigateToWorkflow(true, target)
+                            }
+                        } else {
+                            if (uiState.needsFilterSelection) {
+                                onNavigateToFilterSelection("flow_daily", target)
+                            } else {
+                                onNavigateToFlowSorter(true, target)
                             }
                         }
-                    )
-                }
-                
-                // Smart Gallery Card - Only shown when:
-                // 1. BuildConfig.ENABLE_SMART_GALLERY is true (compile-time flag)
-                // 2. Experimental features are enabled in settings (runtime flag)
-                if (BuildConfig.ENABLE_SMART_GALLERY) {
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = uiState.experimentalEnabled,
-                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
-                        exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut()
-                    ) {
-                        SmartGalleryCard(
-                            onClick = onNavigateToSmartGallery,
-                            personCount = uiState.smartGalleryPersonCount,
-                            labelCount = uiState.smartGalleryLabelCount,
-                            gpsPhotoCount = uiState.smartGalleryGpsPhotoCount,
-                            analysisProgress = uiState.smartGalleryAnalysisProgress,
-                            isAnalyzing = uiState.smartGalleryIsAnalyzing
-                        )
                     }
-                }
-            }
-            
-            // Quick Stats Row - clickable
-            if (!uiState.isLoading && uiState.hasPhotos) {
-                QuickStatsRow(
-                    uiState = uiState,
-                    onKeepClick = { onNavigateToPhotoList(PhotoStatus.KEEP) },
-                    onTrashClick = { onNavigateToTrash() },
-                    onMaybeClick = { onNavigateToPhotoList(PhotoStatus.MAYBE) }
-                )
-            }
-            
-            // Action Cards
-            if (!uiState.isLoading) {
-                // Quick Action: Flow Sorter (standalone)
-                ActionCard(
-                    title = "快速整理",
-                    subtitle = if (uiState.unsortedCount > 0) {
-                        "${uiState.unsortedCount} 张照片待整理"
-                    } else {
-                        "所有照片已整理完成"
-                    },
-                    icon = Icons.Default.SwipeRight,
-                    iconTint = MaterialTheme.colorScheme.primary,
-                    enabled = uiState.unsortedCount > 0,
-                    onClick = {
-                        if (uiState.needsFilterSelection) {
-                            onNavigateToFilterSelection("flow", -1)
-                        } else {
-                            onNavigateToFlowSorter(false, -1)
-                        }
-                    }
-                )
-                
-                // Light Table Card
-                ActionCard(
-                    title = "照片对比",
-                    subtitle = if (uiState.maybeCount > 0) {
-                        "${uiState.maybeCount} 张待定照片可对比"
-                    } else {
-                        "没有待定照片"
-                    },
-                    icon = Icons.AutoMirrored.Filled.CompareArrows,
-                    iconTint = MaybeAmber,
-                    enabled = uiState.maybeCount > 0,
-                    onClick = onNavigateToLightTable
-                )
-                
-                // Timeline Card
-                ActionCard(
-                    title = "时间线",
-                    subtitle = "按时间分组浏览和整理照片",
-                    icon = Icons.Default.Timeline,
-                    iconTint = Color(0xFFEC4899), // Pink
-                    enabled = uiState.hasPhotos,
-                    onClick = onNavigateToTimeline
-                )
-                
-                // Album Bubble Card
-                ActionCard(
-                    title = "我的相册",
-                    subtitle = "可视化管理我的相册",
-                    icon = Icons.Default.Collections,
-                    iconTint = Color(0xFF4FC3F7), // Light Blue
-                    enabled = true,
-                    onClick = onNavigateToAlbumBubble
-                )
-                
-                // Achievement Card
-                val achievements = generateAchievements(uiState.achievementData)
-                AchievementSummaryCard(
-                    achievements = achievements,
-                    onClick = onNavigateToAchievements
-                )
-            }
-            
-            // Empty state
-            if (!uiState.isLoading && !uiState.hasPhotos && uiState.hasPermission) {
-                EmptyStateCard()
-            }
-            
-            // Permission denied state
-            if (!uiState.hasPermission && !uiState.isLoading) {
-                PermissionDeniedCard(
-                    onRequestPermission = {
-                        val permissions = mutableListOf<String>()
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
-                            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-                        } else {
-                            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-                        }
-                        permissionLauncher.launch(permissions.toTypedArray())
-                    }
-                )
-            }
+                },
+                onNavigateToSmartGallery = onNavigateToSmartGallery,
+                onNavigateToStats = onNavigateToStats,  // Phase 3
+                permissionLauncher = permissionLauncher,
+                guideRepository = viewModel.guideRepository
+            )
+        } else {
+            LegacyHomeLayout(
+                uiState = uiState,
+                paddingValues = paddingValues,
+                onNavigateToFlowSorter = onNavigateToFlowSorter,
+                onNavigateToLightTable = onNavigateToLightTable,
+                onNavigateToPhotoList = onNavigateToPhotoList,
+                onNavigateToTrash = onNavigateToTrash,
+                onNavigateToWorkflow = onNavigateToWorkflow,
+                onNavigateToAchievements = onNavigateToAchievements,
+                onNavigateToFilterSelection = onNavigateToFilterSelection,
+                onNavigateToSmartGallery = onNavigateToSmartGallery,
+                onNavigateToTimeline = onNavigateToTimeline,
+                onNavigateToAlbumBubble = onNavigateToAlbumBubble,
+                onNavigateToStats = onNavigateToStats,  // Phase 3
+                permissionLauncher = permissionLauncher
+            )
         }
     }
     
@@ -405,7 +319,374 @@ fun HomeScreen(
             }
         )
     }
+    
+    // Phase 1-D: 整理模式选择弹窗
+    if (uiState.showSortModeSheet) {
+        SortModeBottomSheet(
+            onDismiss = { viewModel.hideSortModeSheet() },
+            onQuickSortSelected = { onNavigateToFlowSorter(false, -1) },
+            onWorkflowSelected = { onNavigateToWorkflow(false, -1) },
+            unsortedCount = uiState.unsortedCount,
+            needsFilterSelection = uiState.needsFilterSelection,
+            onFilterSelectionRequired = { mode ->
+                onNavigateToFilterSelection(mode, -1)
+            }
+        )
+    }
 }
+
+// ==================== Phase 1-D: 新首页布局 ====================
+
+/**
+ * 新首页布局 - Phase 1-D
+ * 
+ * 采用分层卡片设计：主操作区 + 快捷入口 + 每日任务 + 智能画廊 + 成就预览
+ * 
+ * ## 设计变化
+ * 
+ * - 合并"快速整理"和"一站式整理"为统一的"开始整理"按钮
+ * - 移除时间线、相册入口（由底部导航处理）
+ * - 每日任务改为可折叠卡片
+ */
+@Composable
+private fun NewHomeLayout(
+    uiState: HomeUiState,
+    paddingValues: PaddingValues,
+    onStartSorting: () -> Unit,
+    onNavigateToLightTable: () -> Unit,
+    onNavigateToTrash: () -> Unit,
+    onNavigateToAchievements: () -> Unit,
+    onStartDailyTask: () -> Unit,
+    onNavigateToSmartGallery: () -> Unit,
+    onNavigateToStats: () -> Unit,  // Phase 3: 统计页面入口
+    permissionLauncher: ManagedActivityResultLauncher<Array<String>, Map<String, Boolean>>,
+    guideRepository: com.example.photozen.data.repository.GuideRepository
+) {
+    // 开始按钮引导状态
+    val startButtonGuide = rememberGuideState(
+        guideKey = GuideKey.HOME_START_BUTTON,
+        guideRepository = guideRepository
+    )
+    var mainActionBounds by remember { mutableStateOf<Rect?>(null) }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues)
+            .verticalScroll(rememberScrollState())
+            .padding(HomeDesignTokens.SectionSpacing),
+        verticalArrangement = Arrangement.spacedBy(HomeDesignTokens.SectionSpacing)
+    ) {
+        // 加载状态
+        AnimatedVisibility(
+            visible = uiState.isLoading,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            LoadingCard()
+        }
+        
+        if (!uiState.isLoading) {
+            // 1. 主操作区（带引导）
+            Box {
+                HomeMainAction(
+                    unsortedCount = uiState.unsortedCount,
+                    onStartClick = onStartSorting,
+                    enabled = uiState.unsortedCount > 0,
+                    modifier = Modifier.onGloballyPositioned { coordinates ->
+                        mainActionBounds = coordinates.boundsInRoot()
+                    }
+                )
+                
+                // 开始按钮引导
+                GuideTooltip(
+                    visible = startButtonGuide.shouldShow && uiState.unsortedCount > 0,
+                    message = "🚀 点击开始\n从这里开始整理你的照片",
+                    targetBounds = mainActionBounds,
+                    arrowDirection = ArrowDirection.UP,
+                    onDismiss = startButtonGuide.dismiss
+                )
+            }
+            
+            // 2. 快捷入口（仅对比和回收站）
+            HomeQuickActions(
+                onCompareClick = onNavigateToLightTable,
+                onTrashClick = onNavigateToTrash,
+                maybeCount = uiState.maybeCount,
+                trashCount = uiState.trashCount
+            )
+            
+            // 3. 每日任务（如果启用）
+            if (uiState.dailyTaskStatus?.isEnabled == true) {
+                HomeDailyTask(
+                    status = DailyTaskDisplayStatus(
+                        current = uiState.dailyTaskStatus!!.current,
+                        target = uiState.dailyTaskStatus!!.target,
+                        isEnabled = true,
+                        isCompleted = uiState.dailyTaskStatus!!.isCompleted
+                    ),
+                    onStartClick = onStartDailyTask
+                )
+            }
+            
+            // 4. 智能画廊（实验功能）
+            if (BuildConfig.ENABLE_SMART_GALLERY) {
+                AnimatedVisibility(
+                    visible = uiState.experimentalEnabled,
+                    enter = fadeIn() + expandVertically(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    SmartGalleryCard(
+                        onClick = onNavigateToSmartGallery,
+                        personCount = uiState.smartGalleryPersonCount,
+                        labelCount = uiState.smartGalleryLabelCount,
+                        gpsPhotoCount = uiState.smartGalleryGpsPhotoCount,
+                        analysisProgress = uiState.smartGalleryAnalysisProgress,
+                        isAnalyzing = uiState.smartGalleryIsAnalyzing
+                    )
+                }
+            }
+            
+            // 5. 整理统计入口
+            MiniStatsCard(
+                totalSorted = uiState.statsSummary.totalSorted,
+                weekSorted = uiState.statsSummary.weekSorted,
+                consecutiveDays = uiState.statsSummary.consecutiveDays,
+                onClick = onNavigateToStats
+            )
+            
+            // 6. 成就预览
+            val achievements = generateAchievements(uiState.achievementData)
+            AchievementSummaryCard(
+                achievements = achievements,
+                onClick = onNavigateToAchievements
+            )
+        }
+        
+        // 空状态
+        if (!uiState.isLoading && !uiState.hasPhotos && uiState.hasPermission) {
+            EmptyStateCard()
+        }
+        
+        // 权限拒绝状态
+        if (!uiState.hasPermission && !uiState.isLoading) {
+            PermissionDeniedCard(
+                onRequestPermission = {
+                    val permissions = mutableListOf<String>()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+                        permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                    }
+                    permissionLauncher.launch(permissions.toTypedArray())
+                }
+            )
+        }
+    }
+}
+
+// ==================== 旧首页布局（保留向后兼容） ====================
+
+/**
+ * 旧首页布局 - 向后兼容
+ * 
+ * 保留原有布局，当 FeatureFlags.USE_NEW_HOME_LAYOUT = false 时使用
+ */
+@Composable
+private fun LegacyHomeLayout(
+    uiState: HomeUiState,
+    paddingValues: PaddingValues,
+    onNavigateToFlowSorter: (Boolean, Int) -> Unit,
+    onNavigateToLightTable: () -> Unit,
+    onNavigateToPhotoList: (PhotoStatus) -> Unit,
+    onNavigateToTrash: () -> Unit,
+    onNavigateToWorkflow: (Boolean, Int) -> Unit,
+    onNavigateToAchievements: () -> Unit,
+    onNavigateToFilterSelection: (String, Int) -> Unit,
+    onNavigateToSmartGallery: () -> Unit,
+    onNavigateToTimeline: () -> Unit,
+    onNavigateToAlbumBubble: () -> Unit,
+    onNavigateToStats: () -> Unit,  // Phase 3: 统计页面入口
+    permissionLauncher: ManagedActivityResultLauncher<Array<String>, Map<String, Boolean>>
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Loading state
+        AnimatedVisibility(
+            visible = uiState.isLoading,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            LoadingCard()
+        }
+        
+        // Action Cards
+        if (!uiState.isLoading) {
+            // Compact stats header
+            if (uiState.hasPhotos) {
+                CompactStatsHeader(
+                    unsortedCount = uiState.unsortedCount,
+                    sortedCount = uiState.sortedCount
+                )
+            }
+            
+            // Daily Task Card - Now the PRIMARY prominent card at top
+            if (uiState.dailyTaskStatus?.isEnabled == true) {
+                PrimaryDailyTaskCard(
+                    status = uiState.dailyTaskStatus!!,
+                    onStartClick = {
+                        val mode = uiState.dailyTaskStatus!!.mode
+                        val target = uiState.dailyTaskStatus!!.target
+                        if (mode == DailyTaskMode.FLOW) {
+                            if (uiState.needsFilterSelection) {
+                                onNavigateToFilterSelection("workflow_daily", target)
+                            } else {
+                                onNavigateToWorkflow(true, target)
+                            }
+                        } else {
+                            if (uiState.needsFilterSelection) {
+                                onNavigateToFilterSelection("flow_daily", target)
+                            } else {
+                                onNavigateToFlowSorter(true, target)
+                            }
+                        }
+                    }
+                )
+            }
+            
+            // Smart Gallery Card - Only shown when:
+            // 1. BuildConfig.ENABLE_SMART_GALLERY is true (compile-time flag)
+            // 2. Experimental features are enabled in settings (runtime flag)
+            if (BuildConfig.ENABLE_SMART_GALLERY) {
+                AnimatedVisibility(
+                    visible = uiState.experimentalEnabled,
+                    enter = fadeIn() + expandVertically(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    SmartGalleryCard(
+                        onClick = onNavigateToSmartGallery,
+                        personCount = uiState.smartGalleryPersonCount,
+                        labelCount = uiState.smartGalleryLabelCount,
+                        gpsPhotoCount = uiState.smartGalleryGpsPhotoCount,
+                        analysisProgress = uiState.smartGalleryAnalysisProgress,
+                        isAnalyzing = uiState.smartGalleryIsAnalyzing
+                    )
+                }
+            }
+        }
+        
+        // Quick Stats Row - clickable
+        if (!uiState.isLoading && uiState.hasPhotos) {
+            QuickStatsRow(
+                uiState = uiState,
+                onKeepClick = { onNavigateToPhotoList(PhotoStatus.KEEP) },
+                onTrashClick = { onNavigateToTrash() },
+                onMaybeClick = { onNavigateToPhotoList(PhotoStatus.MAYBE) }
+            )
+        }
+        
+        // Action Cards
+        if (!uiState.isLoading) {
+            // Quick Action: Flow Sorter (standalone)
+            ActionCard(
+                title = "快速整理",
+                subtitle = if (uiState.unsortedCount > 0) {
+                    "${uiState.unsortedCount} 张照片待整理"
+                } else {
+                    "所有照片已整理完成"
+                },
+                icon = Icons.Default.SwipeRight,
+                iconTint = MaterialTheme.colorScheme.primary,
+                enabled = uiState.unsortedCount > 0,
+                onClick = {
+                    if (uiState.needsFilterSelection) {
+                        onNavigateToFilterSelection("flow", -1)
+                    } else {
+                        onNavigateToFlowSorter(false, -1)
+                    }
+                }
+            )
+            
+            // Light Table Card
+            ActionCard(
+                title = "照片对比",
+                subtitle = if (uiState.maybeCount > 0) {
+                    "${uiState.maybeCount} 张待定照片可对比"
+                } else {
+                    "没有待定照片"
+                },
+                icon = Icons.AutoMirrored.Filled.CompareArrows,
+                iconTint = MaybeAmber,
+                enabled = uiState.maybeCount > 0,
+                onClick = onNavigateToLightTable
+            )
+            
+            // Timeline Card
+            ActionCard(
+                title = "时间线",
+                subtitle = "按时间分组浏览和整理照片",
+                icon = Icons.Default.Timeline,
+                iconTint = Color(0xFFEC4899), // Pink
+                enabled = uiState.hasPhotos,
+                onClick = onNavigateToTimeline
+            )
+            
+            // Album Bubble Card
+            ActionCard(
+                title = "我的相册",
+                subtitle = "可视化管理我的相册",
+                icon = Icons.Default.Collections,
+                iconTint = Color(0xFF4FC3F7), // Light Blue
+                enabled = true,
+                onClick = onNavigateToAlbumBubble
+            )
+            
+            // Stats Card
+            MiniStatsCard(
+                totalSorted = uiState.statsSummary.totalSorted,
+                weekSorted = uiState.statsSummary.weekSorted,
+                consecutiveDays = uiState.statsSummary.consecutiveDays,
+                onClick = onNavigateToStats
+            )
+            
+            // Achievement Card
+            val achievements = generateAchievements(uiState.achievementData)
+            AchievementSummaryCard(
+                achievements = achievements,
+                onClick = onNavigateToAchievements
+            )
+        }
+        
+        // Empty state
+        if (!uiState.isLoading && !uiState.hasPhotos && uiState.hasPermission) {
+            EmptyStateCard()
+        }
+        
+        // Permission denied state
+        if (!uiState.hasPermission && !uiState.isLoading) {
+            PermissionDeniedCard(
+                onRequestPermission = {
+                    val permissions = mutableListOf<String>()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+                        permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                    }
+                    permissionLauncher.launch(permissions.toTypedArray())
+                }
+            )
+        }
+    }
+}
+
+// ==================== Helper Composables ====================
 
 /**
  * Compact stats header - Small display of unsorted/sorted counts.

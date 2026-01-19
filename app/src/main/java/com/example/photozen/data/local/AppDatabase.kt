@@ -10,6 +10,7 @@ import com.example.photozen.data.local.dao.FaceDao
 import com.example.photozen.data.local.dao.PhotoAnalysisDao
 import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.dao.PhotoLabelDao
+import com.example.photozen.data.local.dao.SortingRecordDao
 import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.local.entity.DailyStats
 import com.example.photozen.data.local.entity.FaceEntity
@@ -17,6 +18,7 @@ import com.example.photozen.data.local.entity.PersonEntity
 import com.example.photozen.data.local.entity.PhotoAnalysisEntity
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.local.entity.PhotoLabelEntity
+import com.example.photozen.data.local.entity.SortingRecordEntity
 
 /**
  * Room Database for PicZen app.
@@ -38,9 +40,10 @@ import com.example.photozen.data.local.entity.PhotoLabelEntity
         FaceEntity::class,
         PersonEntity::class,
         PhotoLabelEntity::class,
-        AlbumBubbleEntity::class
+        AlbumBubbleEntity::class,
+        SortingRecordEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -75,6 +78,11 @@ abstract class AppDatabase : RoomDatabase() {
      * DAO for album bubble list operations.
      */
     abstract fun albumBubbleDao(): AlbumBubbleDao
+    
+    /**
+     * DAO for sorting record operations (整理统计).
+     */
+    abstract fun sortingRecordDao(): SortingRecordDao
     
     companion object {
         const val DATABASE_NAME = "piczen_database"

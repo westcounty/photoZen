@@ -37,20 +37,30 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.domain.GroupingMode
 import com.example.photozen.domain.PhotoEvent
+import com.example.photozen.ui.components.EmptyStates
+import com.example.photozen.ui.components.TimelineEventPhotoRow
+import com.example.photozen.ui.components.SelectionTopBar
+import com.example.photozen.ui.util.FeatureFlags
+import androidx.activity.compose.BackHandler
 import kotlinx.coroutines.launch
 
 /**
  * Timeline Screen - Display photos grouped by time/events.
+ * 
+ * Phase 1-C: 作为底部导航主 Tab 之一
+ * - onNavigateBack 标记为可选（由底部导航处理切换）
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TimelineScreen(
-    onNavigateBack: () -> Unit,
     onPhotoClick: (String) -> Unit = {},
     onNavigateToSorter: () -> Unit = {},
     onNavigateToSorterListMode: () -> Unit = {},
+    // Phase 1-C: 底部导航模式不需要返回按钮
+    onNavigateBack: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: TimelineViewModel = hiltViewModel()
 ) {
@@ -97,6 +107,14 @@ fun TimelineScreen(
         }
     }
     
+    // Show messages (Phase 1-B)
+    LaunchedEffect(uiState.message) {
+        uiState.message?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearMessage()
+        }
+    }
+    
     // Calculate current visible year-month
     val currentYearMonth by remember {
         derivedStateOf {
@@ -119,75 +137,95 @@ fun TimelineScreen(
     // Show quick navigation for AUTO and DAY modes
     val showQuickNav = uiState.groupingMode == GroupingMode.AUTO || uiState.groupingMode == GroupingMode.DAY
     
+    // BackHandler 处理返回键退出选择模式
+    BackHandler(enabled = uiState.isSelectionMode) {
+        viewModel.clearSelection()
+    }
+    
     Scaffold(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Timeline,
-                            contentDescription = null,
-                            tint = Color(0xFFEC4899)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "时间线",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        if (uiState.totalPhotos > 0) {
+            if (uiState.isSelectionMode) {
+                // 使用统一的选择模式顶栏
+                SelectionTopBar(
+                    selectedCount = uiState.selectedCount,
+                    totalCount = uiState.totalPhotos,
+                    onClose = { viewModel.clearSelection() },
+                    onSelectAll = { viewModel.selectAll() },
+                    onDeselectAll = { viewModel.clearSelection() }
+                )
+            } else {
+                // 普通模式顶栏
+                TopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Timeline,
+                                contentDescription = null,
+                                tint = Color(0xFFEC4899)
+                            )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer
-                            ) {
-                                Text(
-                                    text = "${uiState.totalPhotos}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            Text(
+                                text = "时间线",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (uiState.totalPhotos > 0) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer
+                                ) {
+                                    Text(
+                                        text = "${uiState.totalPhotos}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    navigationIcon = {
+                        // Phase 1-C: 底部导航模式不显示返回按钮
+                        if (!FeatureFlags.USE_BOTTOM_NAV) {
+                            IconButton(onClick = onNavigateBack) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "返回"
                                 )
                             }
                         }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
-                },
-                actions = {
-                    // Sort order toggle button
-                    IconButton(onClick = viewModel::toggleSortOrder) {
-                        Icon(
-                            imageVector = if (uiState.isDescending) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
-                            contentDescription = if (uiState.isDescending) "最新优先" else "最早优先"
-                        )
-                    }
-                    
-                    // Expand/Collapse all button
-                    if (uiState.hasEvents) {
-                        val allExpanded = uiState.expandedEventIds.size == uiState.events.size
-                        IconButton(
-                            onClick = {
-                                if (allExpanded) viewModel.collapseAll() else viewModel.expandAll()
-                            }
-                        ) {
+                    },
+                    actions = {
+                        // Sort order toggle button
+                        IconButton(onClick = viewModel::toggleSortOrder) {
                             Icon(
-                                imageVector = if (allExpanded) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore,
-                                contentDescription = if (allExpanded) "折叠全部" else "展开全部"
+                                imageVector = if (uiState.isDescending) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
+                                contentDescription = if (uiState.isDescending) "最新优先" else "最早优先"
                             )
                         }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                        
+                        // Expand/Collapse all button
+                        if (uiState.hasEvents) {
+                            val allExpanded = uiState.expandedEventIds.size == uiState.events.size
+                            IconButton(
+                                onClick = {
+                                    if (allExpanded) viewModel.collapseAll() else viewModel.expandAll()
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = if (allExpanded) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore,
+                                    contentDescription = if (allExpanded) "折叠全部" else "展开全部"
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
+            }
         }
     ) { paddingValues ->
         Box(
@@ -216,7 +254,10 @@ fun TimelineScreen(
                     }
                 } else if (!uiState.hasEvents) {
                     // Empty state
-                    EmptyTimelineState()
+                    EmptyStates.EmptyTimeline(
+                        onGoSort = onNavigateToSorter,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 } else {
                     // Event list
                     LazyColumn(
@@ -229,6 +270,9 @@ fun TimelineScreen(
                             TimelineEventCard(
                                 event = event,
                                 isExpanded = viewModel.isEventExpanded(event.id),
+                                // Phase 1-B: 选择模式参数
+                                isSelectionMode = uiState.isSelectionMode,
+                                selectedIds = uiState.selectedPhotoIds,
                                 onToggleExpanded = { viewModel.toggleEventExpanded(event.id) },
                                 onPhotoClick = { photoId ->
                                     // Open fullscreen preview with current event's photos
@@ -237,12 +281,37 @@ fun TimelineScreen(
                                     fullscreenStartIndex = if (clickedIndex >= 0) clickedIndex else 0
                                     showFullscreen = true
                                 },
+                                // Phase 1-B: 长按进入选择模式
+                                onPhotoLongPress = { photoId ->
+                                    if (FeatureFlags.USE_UNIFIED_GESTURE) {
+                                        viewModel.enterSelectionMode(photoId)
+                                    }
+                                },
+                                // Phase 1-B: 选择模式下切换选中状态
+                                onSelectionToggle = { photoId ->
+                                    viewModel.togglePhotoSelection(photoId)
+                                },
                                 onSortGroup = { viewModel.sortGroup(event.startTime, event.endTime) },
                                 onViewMore = { viewModel.sortGroup(event.startTime, event.endTime, listMode = true) }
                             )
                         }
                     }
                 }
+            }
+            
+            // Phase 1-B: 选择模式底部操作栏
+            AnimatedVisibility(
+                visible = uiState.isSelectionMode && uiState.selectedCount > 0,
+                enter = slideInHorizontally(initialOffsetX = { -it }) + fadeIn(),
+                exit = slideOutHorizontally(targetOffsetX = { -it }) + fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                TimelineSelectionBottomBar(
+                    selectedCount = uiState.selectedCount,
+                    onKeep = { viewModel.batchUpdateStatus(PhotoStatus.KEEP) },
+                    onMaybe = { viewModel.batchUpdateStatus(PhotoStatus.MAYBE) },
+                    onTrash = { viewModel.batchUpdateStatus(PhotoStatus.TRASH) }
+                )
             }
             
             // Year-Month Navigator (right side panel)
@@ -405,13 +474,19 @@ private fun GroupingModeSelector(
 
 /**
  * Timeline event card with expandable photo grid.
+ * 
+ * Phase 1-B: 支持选择模式
  */
 @Composable
 private fun TimelineEventCard(
     event: PhotoEvent,
     isExpanded: Boolean,
+    isSelectionMode: Boolean = false,
+    selectedIds: Set<String> = emptySet(),
     onToggleExpanded: () -> Unit,
     onPhotoClick: (String) -> Unit,
+    onPhotoLongPress: (String) -> Unit = {},
+    onSelectionToggle: (String) -> Unit = {},
     onSortGroup: () -> Unit,
     onViewMore: () -> Unit
 ) {
@@ -532,47 +607,63 @@ private fun TimelineEventCard(
                     )
                     
                     // Photo grid (show max 12 photos in collapsed view)
-                    val displayPhotos = event.photos.take(12)
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        items(displayPhotos) { photo ->
-                            AsyncImage(
-                                model = photo.systemUri,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(80.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .clickable { onPhotoClick(photo.id) }
-                            )
-                        }
-                        
-                        // Show more indicator - now navigates to list sorter
-                        if (event.photos.size > 12) {
-                            item {
-                                Box(
+                    // Phase 1-B: 使用 Feature Flag 控制新旧实现
+                    if (FeatureFlags.USE_UNIFIED_GESTURE) {
+                        // 新实现：使用 TimelineEventPhotoRow（支持长按选择）
+                        TimelineEventPhotoRow(
+                            photos = event.photos,
+                            selectedIds = selectedIds,
+                            isSelectionMode = isSelectionMode,
+                            onPhotoClick = onPhotoClick,
+                            onPhotoLongPress = onPhotoLongPress,
+                            onSelectionToggle = onSelectionToggle,
+                            maxDisplay = 12,
+                            onViewMore = if (event.photos.size > 12) onViewMore else null
+                        )
+                    } else {
+                        // 旧实现：保留原有代码
+                        val displayPhotos = event.photos.take(12)
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            items(displayPhotos) { photo ->
+                                AsyncImage(
+                                    model = photo.systemUri,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
                                     modifier = Modifier
                                         .size(80.dp)
                                         .clip(RoundedCornerShape(6.dp))
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
-                                        .clickable { onViewMore() },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally
+                                        .clickable { onPhotoClick(photo.id) }
+                                )
+                            }
+                            
+                            // Show more indicator - now navigates to list sorter
+                            if (event.photos.size > 12) {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(80.dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                                            .clickable { onViewMore() },
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Text(
-                                            text = "+${event.photos.size - 12}",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            text = "查看全部",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Text(
+                                                text = "+${event.photos.size - 12}",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            Text(
+                                                text = "查看全部",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -580,42 +671,6 @@ private fun TimelineEventCard(
                     }
                 }
             }
-        }
-    }
-}
-
-/**
- * Empty state when no photos with dates.
- */
-@Composable
-private fun EmptyTimelineState() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(32.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.PhotoAlbum,
-                contentDescription = null,
-                modifier = Modifier.size(80.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            Text(
-                text = "暂无照片",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "您的照片库为空，或照片没有拍摄日期信息。\n导入照片后将自动按时间分组显示。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
         }
     }
 }
@@ -781,6 +836,108 @@ private fun CurrentPositionFab(
                 text = "${ym.year}年${ym.month}月",
                 style = MaterialTheme.typography.labelLarge
             )
+        }
+    }
+}
+
+/**
+ * Phase 1-B: 时间线选择模式底部操作栏
+ * 
+ * 提供批量标记照片状态的操作按钮。
+ * 
+ * @param selectedCount 选中的照片数量
+ * @param onKeep 标记为保留
+ * @param onMaybe 标记为待定
+ * @param onTrash 标记为删除
+ */
+@Composable
+private fun TimelineSelectionBottomBar(
+    selectedCount: Int,
+    onKeep: () -> Unit,
+    onMaybe: () -> Unit,
+    onTrash: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shadowElevation = 8.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 保留
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onKeep)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "保留",
+                    tint = Color(0xFF22C55E),  // KeepGreen
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "保留",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            
+            // 待定
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onMaybe)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.HelpOutline,
+                    contentDescription = "待定",
+                    tint = Color(0xFFFBBF24),  // MaybeAmber
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "待定",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            
+            // 删除
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onTrash)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "删除",
+                    tint = Color(0xFFEF4444),  // TrashRed
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "删除",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
         }
     }
 }

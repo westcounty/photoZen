@@ -98,6 +98,13 @@ sealed interface Screen {
     data object Achievements : Screen
     
     /**
+     * Stats screen - displays sorting statistics, calendar heatmap, and streak.
+     * Phase 3 feature for tracking sorting progress over time.
+     */
+    @Serializable
+    data object Stats : Screen
+    
+    /**
      * Photo Filter Selection screen - choose albums and date range for custom filtering.
      * @param mode The sorting mode: "flow", "workflow", "flow_daily", "workflow_daily"
      * @param isDailyTask Whether this is a daily task session

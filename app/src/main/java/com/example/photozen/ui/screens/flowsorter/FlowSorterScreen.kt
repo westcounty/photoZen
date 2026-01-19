@@ -91,8 +91,20 @@ import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.ui.components.ComboOverlay
 import com.example.photozen.ui.components.FullscreenPhotoViewer
+import com.example.photozen.ui.components.GuideTooltip
+import com.example.photozen.ui.components.ArrowDirection
+import com.example.photozen.ui.components.GuideStepInfo
 import com.example.photozen.ui.components.SelectableStaggeredPhotoGrid
+import com.example.photozen.ui.guide.rememberGuideSequenceState
+import com.example.photozen.domain.model.GuideKey
 import com.example.photozen.ui.theme.KeepGreen
+import com.example.photozen.ui.components.FilterButton
+import com.example.photozen.ui.components.FilterChipRow
+import com.example.photozen.ui.components.FilterBottomSheet
+import com.example.photozen.domain.model.FilterType
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
 import com.example.photozen.ui.util.rememberHapticFeedbackManager
@@ -128,7 +140,15 @@ fun FlowSorterScreen(
     val sortedCountImmediate by viewModel.sortedCountImmediate.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val hapticManager = rememberHapticFeedbackManager()
+    // Phase 3-7: 使用设置中的震动反馈开关
+    val hapticManager = rememberHapticFeedbackManager(uiState.hapticFeedbackEnabled)
+    
+    // 筛选相关状态
+    val filterConfig by viewModel.filterConfig.collectAsState()
+    val filterPresets by viewModel.filterPresets.collectAsState()
+    val albumNames by viewModel.albumNames.collectAsState()
+    val albumsForFilter by viewModel.albumBubblesForFilter.collectAsState()
+    var showFilterSheet by remember { mutableStateOf(false) }
     
     // Fullscreen viewer state
     var fullscreenPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
@@ -208,6 +228,12 @@ fun FlowSorterScreen(
                                 )
                             }
                         } else {
+                            // 筛选按钮
+                            FilterButton(
+                                activeFilterCount = filterConfig.activeFilterCount,
+                                onClick = { showFilterSheet = true }
+                            )
+                            
                             // Sort order button - distinct icons for each mode
                             IconButton(onClick = { viewModel.cycleSortOrder() }) {
                                 Icon(
@@ -295,6 +321,15 @@ fun FlowSorterScreen(
                     .fillMaxSize()
                     .padding(paddingValues)
             ) {
+                // 筛选条件 Chip 行
+                FilterChipRow(
+                    config = filterConfig,
+                    albumNames = albumNames,
+                    onEditFilter = { showFilterSheet = true },
+                    onClearFilter = viewModel::clearFilter,
+                    onClearAll = viewModel::clearAllFilters
+                )
+                
                 // Main content
                 FlowSorterContent(
                     isWorkflowMode = false,
@@ -304,6 +339,20 @@ fun FlowSorterScreen(
                 )
             }
         }
+    }
+    
+    // 筛选面板
+    if (showFilterSheet) {
+        FilterBottomSheet(
+            currentConfig = filterConfig,
+            presets = filterPresets,
+            albums = albumsForFilter,
+            onConfigChange = viewModel::applyFilter,
+            onSavePreset = viewModel::saveFilterPreset,
+            onApplyPreset = { viewModel.applyFilter(it.config) },
+            onDeletePreset = viewModel::deleteFilterPreset,
+            onDismiss = { showFilterSheet = false }
+        )
     }
 }
 
@@ -326,7 +375,8 @@ fun FlowSorterContent(
     viewModel: FlowSorterViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val hapticManager = rememberHapticFeedbackManager()
+    // Phase 3-7: 使用设置中的震动反馈开关
+    val hapticManager = rememberHapticFeedbackManager(uiState.hapticFeedbackEnabled)
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     
@@ -449,6 +499,13 @@ fun FlowSorterContent(
                     }
                     else -> {
                         // Card stack with combo overlay
+                        // 引导序列状态
+                        val guideSequence = rememberGuideSequenceState(
+                            guideKeys = GuideKey.flowSorterSequence,
+                            guideRepository = viewModel.guideRepository
+                        )
+                        var cardBounds by remember { mutableStateOf<Rect?>(null) }
+                        
                         Box(modifier = Modifier.fillMaxSize()) {
                             CardStack(
                                 uiState = uiState,
@@ -477,7 +534,10 @@ fun FlowSorterContent(
                                     onPhotoSorted?.invoke(photoId, PhotoStatus.MAYBE, combo)
                                 },
                                 // When album tags are shown, move photo info to the image itself
-                                showInfoOnImage = uiState.cardSortingAlbumEnabled
+                                showInfoOnImage = uiState.cardSortingAlbumEnabled,
+                                modifier = Modifier.onGloballyPositioned { coordinates ->
+                                    cardBounds = coordinates.boundsInRoot()
+                                }
                             )
                             
                             // Combo overlay
@@ -508,6 +568,28 @@ fun FlowSorterContent(
                                           uiState.currentPhoto != null,
                                 modifier = Modifier.align(Alignment.BottomCenter)
                             )
+                            
+                            // 滑动引导层
+                            guideSequence.currentGuide?.let { guide ->
+                                val (message, _) = when (guide) {
+                                    GuideKey.SWIPE_RIGHT -> "👉 右滑保留\n喜欢的照片向右滑动" to cardBounds
+                                    GuideKey.SWIPE_LEFT -> "👈 左滑删除\n不需要的照片向左滑动" to cardBounds
+                                    GuideKey.SWIPE_UP -> "👆 上滑待定\n犹豫的照片向上滑动，稍后对比" to cardBounds
+                                    else -> return@let
+                                }
+                                
+                                GuideTooltip(
+                                    visible = true,
+                                    message = message,
+                                    targetBounds = cardBounds,
+                                    arrowDirection = ArrowDirection.UP,
+                                    stepInfo = GuideStepInfo(
+                                        current = guideSequence.currentStep,
+                                        total = guideSequence.totalSteps
+                                    ),
+                                    onDismiss = guideSequence.dismissCurrent
+                                )
+                            }
                         }
                     }
                 }
@@ -808,16 +890,19 @@ private fun CardStack(
     onSwipeRight: (String) -> Unit,
     onSwipeUp: (String) -> Unit,
     onSwipeDown: (String) -> Unit,
-    showInfoOnImage: Boolean = false
+    showInfoOnImage: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
     SwipeableCardStack(
         photos = uiState.photos,
         swipeSensitivity = uiState.swipeSensitivity,
+        hapticFeedbackEnabled = uiState.hapticFeedbackEnabled,  // Phase 3-7
         onSwipeLeft = onSwipeLeft,
         onSwipeRight = onSwipeRight,
         onSwipeUp = onSwipeUp,
         onSwipeDown = onSwipeDown,
-        showInfoOnImage = showInfoOnImage
+        showInfoOnImage = showInfoOnImage,
+        modifier = modifier
     )
 }
 

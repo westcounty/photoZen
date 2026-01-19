@@ -18,6 +18,9 @@ import com.example.photozen.data.local.dao.PhotoLabelDao
 import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.GetUnsortedPhotosUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
+import com.example.photozen.data.repository.GuideRepository
+import com.example.photozen.data.repository.StatsRepository
+import com.example.photozen.data.repository.StatsSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -63,7 +66,11 @@ data class HomeUiState(
     val smartGalleryIsAnalyzing: Boolean = false,
     // Changelog and Quick Start
     val shouldShowChangelog: Boolean = false,
-    val shouldShowQuickStart: Boolean = false
+    val shouldShowQuickStart: Boolean = false,
+    // Phase 1-D: 整理模式选择弹窗状态
+    val showSortModeSheet: Boolean = false,
+    // Phase 3: 整理统计摘要
+    val statsSummary: StatsSummary = StatsSummary.EMPTY
 ) {
     val sortedCount: Int
         get() = keepCount + trashCount + maybeCount
@@ -110,7 +117,9 @@ class HomeViewModel @Inject constructor(
     private val faceDao: FaceDao,
     private val photoLabelDao: PhotoLabelDao,
     private val photoAnalysisDao: PhotoAnalysisDao,
-    private val photoDao: com.example.photozen.data.local.dao.PhotoDao
+    private val photoDao: com.example.photozen.data.local.dao.PhotoDao,
+    val guideRepository: GuideRepository,
+    private val statsRepository: StatsRepository
 ) : ViewModel() {
     
     private val _hasPermission = MutableStateFlow(false)
@@ -126,6 +135,12 @@ class HomeViewModel @Inject constructor(
     // Changelog and Quick Start dialog states
     private val _shouldShowChangelog = MutableStateFlow(false)
     private val _shouldShowQuickStart = MutableStateFlow(false)
+    
+    // Phase 1-D: 整理模式选择弹窗状态
+    private val _showSortModeSheet = MutableStateFlow(false)
+    
+    // Phase 3: 整理统计摘要
+    private val _statsSummary = MutableStateFlow(StatsSummary.EMPTY)
     
     /**
      * Get filtered unsorted count based on filter mode.
@@ -379,9 +394,11 @@ class HomeViewModel @Inject constructor(
      */
     private val dialogStatesFlow: Flow<DialogStates> = combine(
         _shouldShowChangelog,
-        _shouldShowQuickStart
-    ) { showChangelog, showQuickStart ->
-        DialogStates(showChangelog, showQuickStart)
+        _shouldShowQuickStart,
+        _showSortModeSheet,
+        _statsSummary
+    ) { showChangelog, showQuickStart, showSortModeSheet, statsSummary ->
+        DialogStates(showChangelog, showQuickStart, showSortModeSheet, statsSummary)
     }
     
     /**
@@ -420,7 +437,11 @@ class HomeViewModel @Inject constructor(
             smartGalleryIsAnalyzing = false,
             // Dialog states
             shouldShowChangelog = dialogStates.showChangelog,
-            shouldShowQuickStart = dialogStates.showQuickStart
+            shouldShowQuickStart = dialogStates.showQuickStart,
+            // Phase 1-D: 整理模式选择弹窗
+            showSortModeSheet = dialogStates.showSortModeSheet,
+            // Phase 3: 整理统计摘要
+            statsSummary = dialogStates.statsSummary
         )
     }.stateIn(
         scope = viewModelScope,
@@ -463,7 +484,9 @@ class HomeViewModel @Inject constructor(
     
     private data class DialogStates(
         val showChangelog: Boolean,
-        val showQuickStart: Boolean
+        val showQuickStart: Boolean,
+        val showSortModeSheet: Boolean,
+        val statsSummary: StatsSummary
     )
     
     init {
@@ -478,6 +501,31 @@ class HomeViewModel @Inject constructor(
         // Check if we should show changelog or quick start
         viewModelScope.launch {
             checkVersionDialogs()
+        }
+        // Load stats summary for home page display
+        viewModelScope.launch {
+            loadStatsSummary()
+        }
+    }
+    
+    /**
+     * Load stats summary from StatsRepository.
+     */
+    private suspend fun loadStatsSummary() {
+        try {
+            val summary = statsRepository.getStatsSummary()
+            _statsSummary.value = summary
+        } catch (e: Exception) {
+            // Stats loading failure doesn't affect main functionality
+        }
+    }
+    
+    /**
+     * Refresh stats summary (call after sorting operations).
+     */
+    fun refreshStatsSummary() {
+        viewModelScope.launch {
+            loadStatsSummary()
         }
     }
     
@@ -650,5 +698,21 @@ class HomeViewModel @Inject constructor(
      */
     fun clearError() {
         _error.value = null
+    }
+    
+    // ==================== Phase 1-D: 整理模式选择 ====================
+    
+    /**
+     * 显示整理模式选择弹窗
+     */
+    fun showSortModeSheet() {
+        _showSortModeSheet.value = true
+    }
+    
+    /**
+     * 隐藏整理模式选择弹窗
+     */
+    fun hideSortModeSheet() {
+        _showSortModeSheet.value = false
     }
 }

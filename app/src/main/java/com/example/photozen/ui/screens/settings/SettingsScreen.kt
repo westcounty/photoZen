@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -44,6 +45,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.photozen.data.repository.DailyTaskMode
 import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.ui.components.ChangelogDialog
+import com.example.photozen.ui.components.CollapsibleSettingsGroup
+import com.example.photozen.ui.components.EnhancedSettingsItem
+import com.example.photozen.ui.components.SwitchSettingsItem
+import com.example.photozen.ui.components.ValueSettingsItem
+import com.example.photozen.ui.util.FeatureFlags
+import com.example.photozen.domain.model.GuideKey
 import kotlinx.coroutines.delay
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -70,11 +77,15 @@ import androidx.compose.material.icons.filled.CalendarMonth
 /**
  * Settings Screen - App preferences and achievements.
  * Refactored to use a menu-based structure.
+ * 
+ * Phase 1-C: 作为底部导航主 Tab 之一
+ * - onNavigateBack 标记为可选（由底部导航处理切换）
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    onNavigateBack: () -> Unit,
+    // Phase 1-C: 底部导航模式不需要返回按钮
+    onNavigateBack: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
@@ -104,6 +115,9 @@ fun SettingsScreen(
     var showDailyTaskDialog by remember { mutableStateOf(false) }
     var showFilterDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showResetGuideDialog by remember { mutableStateOf(false) }
+    val guideCompletedCount by viewModel.guideRepository.getCompletedCount().collectAsState(initial = 0)
+    val scope = rememberCoroutineScope()
     var showChangelogDialog by remember { mutableStateOf(false) }
     var showAcknowledgementDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -124,11 +138,14 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text("设置") },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
+                    // Phase 1-C: 底部导航模式不显示返回按钮
+                    if (!FeatureFlags.USE_BOTTOM_NAV) {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回"
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -142,85 +159,146 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Function Settings
-            SettingsSectionHeader("功能设置")
+            Spacer(modifier = Modifier.height(4.dp))
             
-            SettingsMenuItem(
-                icon = Icons.Default.Assignment,
-                title = "每日整理任务",
-                subtitle = if (uiState.dailyTaskEnabled) "已开启 · 目标 ${uiState.dailyTaskTarget}" else "已关闭",
-                onClick = { showDailyTaskDialog = true }
-            )
-            
-            SettingsMenuItem(
-                icon = Icons.Default.PhotoLibrary,
-                title = "待整理照片范围",
-                subtitle = when (uiState.photoFilterMode) {
-                    PhotoFilterMode.ALL -> "整理全部照片"
-                    PhotoFilterMode.CAMERA_ONLY -> "仅整理相机照片"
-                    PhotoFilterMode.EXCLUDE_CAMERA -> "排除相机照片"
-                    PhotoFilterMode.CUSTOM -> "每次整理前选择"
-                },
-                onClick = { showFilterDialog = true }
-            )
-            
-            // Theme Settings
-            SettingsMenuItem(
-                icon = Icons.Default.Palette,
-                title = "外观样式",
-                subtitle = when (uiState.themeMode) {
-                    com.example.photozen.data.repository.ThemeMode.DARK -> "深色模式"
-                    com.example.photozen.data.repository.ThemeMode.LIGHT -> "浅色模式"
-                    com.example.photozen.data.repository.ThemeMode.SYSTEM -> "跟随系统"
-                },
-                onClick = { showThemeDialog = true }
-            )
-            
-            // Quick Album Classification Settings
-            SettingsMenuItem(
-                icon = Icons.Default.PhotoAlbum,
-                title = "快速相册分类设置",
-                subtitle = "配置相册分类的相关选项",
-                onClick = { showClassificationModeDialog = true }
-            )
-            
-            // Swipe Sensitivity Settings
-            SwipeSensitivitySetting(
-                sensitivity = uiState.swipeSensitivity,
-                onSensitivityChange = { viewModel.setSwipeSensitivity(it) }
-            )
-            
-            // 实验性功能开关仅在 explore 分支显示
-            // main 分支隐藏此开关，专注于照片整理功能
-            if (BuildConfig.SHOW_EXPERIMENTAL_SETTINGS) {
-                SettingsSwitchItem(
-                    icon = Icons.Default.Science,
-                    title = "实验性功能",
-                    subtitle = "AI相关功能，施工中，不确定在您的手机上是什么样",
-                    checked = uiState.experimentalEnabled,
-                    onCheckedChange = { viewModel.setExperimentalEnabled(it) }
+            // ==================== 功能设置分组（默认展开）====================
+            CollapsibleSettingsGroup(
+                title = "功能设置",
+                icon = Icons.Default.Tune,
+                initialExpanded = true
+            ) {
+                // 每日整理任务
+                ValueSettingsItem(
+                    icon = Icons.Default.Assignment,
+                    title = "每日整理任务",
+                    value = if (uiState.dailyTaskEnabled) "目标 ${uiState.dailyTaskTarget}" else "已关闭",
+                    subtitle = if (uiState.dailyTaskEnabled) "养成整理好习惯" else null,
+                    onClick = { showDailyTaskDialog = true }
+                )
+                
+                // 待整理照片范围
+                ValueSettingsItem(
+                    icon = Icons.Default.PhotoLibrary,
+                    title = "待整理照片范围",
+                    value = when (uiState.photoFilterMode) {
+                        PhotoFilterMode.ALL -> "全部"
+                        PhotoFilterMode.CAMERA_ONLY -> "仅相机"
+                        PhotoFilterMode.EXCLUDE_CAMERA -> "排除相机"
+                        PhotoFilterMode.CUSTOM -> "自定义"
+                    },
+                    onClick = { showFilterDialog = true }
+                )
+                
+                // 滑动灵敏度
+                SwipeSensitivitySettingCompact(
+                    sensitivity = uiState.swipeSensitivity,
+                    onSensitivityChange = { viewModel.setSwipeSensitivity(it) }
+                )
+                
+                // Phase 3-7: 震动反馈开关
+                SwitchSettingsItem(
+                    icon = Icons.Default.Vibration,
+                    title = "震动反馈",
+                    subtitle = "滑动操作时提供触觉反馈",
+                    checked = uiState.hapticFeedbackEnabled,
+                    onCheckedChange = { viewModel.setHapticFeedbackEnabled(it) }
                 )
             }
             
-            Spacer(modifier = Modifier.height(24.dp))
+            // ==================== 外观与显示分组（默认展开）====================
+            CollapsibleSettingsGroup(
+                title = "外观与显示",
+                icon = Icons.Default.Palette,
+                initialExpanded = true
+            ) {
+                // 外观样式
+                ValueSettingsItem(
+                    icon = Icons.Default.DarkMode,
+                    title = "外观样式",
+                    value = when (uiState.themeMode) {
+                        com.example.photozen.data.repository.ThemeMode.DARK -> "深色"
+                        com.example.photozen.data.repository.ThemeMode.LIGHT -> "浅色"
+                        com.example.photozen.data.repository.ThemeMode.SYSTEM -> "跟随系统"
+                    },
+                    onClick = { showThemeDialog = true }
+                )
+                
+                // 实验性功能开关仅在 explore 分支显示
+                if (BuildConfig.SHOW_EXPERIMENTAL_SETTINGS) {
+                    SwitchSettingsItem(
+                        icon = Icons.Default.Science,
+                        title = "实验性功能",
+                        subtitle = "AI 相关功能（开发中）",
+                        checked = uiState.experimentalEnabled,
+                        onCheckedChange = { viewModel.setExperimentalEnabled(it) }
+                    )
+                }
+            }
             
-            // Acknowledgement Card - Flat display
-            AcknowledgementCard(
-                onHeartClick = { showAcknowledgementDialog = true }
-            )
+            // ==================== 相册设置分组（默认折叠）====================
+            CollapsibleSettingsGroup(
+                title = "相册设置",
+                icon = Icons.Default.PhotoAlbum,
+                initialExpanded = false
+            ) {
+                // 快速相册分类设置
+                EnhancedSettingsItem(
+                    icon = Icons.Default.Category,
+                    title = "快速相册分类",
+                    subtitle = if (uiState.cardSortingAlbumEnabled) "已开启" else "已关闭",
+                    onClick = { showClassificationModeDialog = true }
+                )
+            }
             
-            Spacer(modifier = Modifier.height(16.dp))
+            // ==================== 帮助与关于分组（默认折叠）====================
+            CollapsibleSettingsGroup(
+                title = "帮助与关于",
+                icon = Icons.Default.Info,
+                initialExpanded = false
+            ) {
+                // 使用引导
+                EnhancedSettingsItem(
+                    icon = Icons.Default.Help,
+                    title = "使用引导",
+                    subtitle = if (guideCompletedCount > 0) 
+                        "已完成 $guideCompletedCount/${viewModel.guideRepository.totalGuideCount}" 
+                    else 
+                        "查看操作指南",
+                    onClick = { showResetGuideDialog = true }
+                )
+                
+                // 版本更新日志
+                EnhancedSettingsItem(
+                    icon = Icons.Default.NewReleases,
+                    title = "版本更新日志",
+                    subtitle = "v${BuildConfig.VERSION_NAME}",
+                    onClick = { showChangelogDialog = true }
+                )
+                
+                // 关于 PhotoZen
+                EnhancedSettingsItem(
+                    icon = Icons.Default.AutoAwesome,
+                    title = "关于 PhotoZen",
+                    subtitle = "了解更多功能",
+                    onClick = { showAboutDialog = true }
+                )
+                
+                // 开源致谢
+                EnhancedSettingsItem(
+                    icon = Icons.Default.Favorite,
+                    title = "开源致谢",
+                    subtitle = "感谢早期体验者",
+                    onClick = { showAcknowledgementDialog = true },
+                    iconTint = Color(0xFFE91E63)
+                )
+            }
             
-            // About Card - Flat display
-            AboutCard(
-                onInfoClick = { showAboutDialog = true },
-                onVersionClick = { showChangelogDialog = true }
-            )
+            Spacer(modifier = Modifier.height(8.dp))
             
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Feedback Link
+            // 意见反馈（独立显示）
             FeedbackLink()
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -267,6 +345,39 @@ fun SettingsScreen(
         AboutDialog(
             onDismiss = { showAboutDialog = false },
             onVersionClick = { showChangelogDialog = true }
+        )
+    }
+    
+    // 重置引导对话框
+    if (showResetGuideDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetGuideDialog = false },
+            icon = {
+                Icon(Icons.Default.Refresh, contentDescription = null)
+            },
+            title = {
+                Text("重置使用引导")
+            },
+            text = {
+                Text("重置后，下次进入相关页面时将重新显示操作引导。\n\n当前已完成 $guideCompletedCount 个引导。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            viewModel.guideRepository.resetAllGuides()
+                        }
+                        showResetGuideDialog = false
+                    }
+                ) {
+                    Text("重置")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetGuideDialog = false }) {
+                    Text("取消")
+                }
+            }
         )
     }
     
@@ -1660,6 +1771,78 @@ private fun SwipeSensitivitySetting(
         
         Row(
             modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "灵敏",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Slider(
+                value = sensitivity,
+                onValueChange = onSensitivityChange,
+                valueRange = 0.5f..1.5f,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+            )
+            Text(
+                text = "不灵敏",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/**
+ * Compact swipe sensitivity setting for use within CollapsibleSettingsGroup.
+ */
+@Composable
+private fun SwipeSensitivitySettingCompact(
+    sensitivity: Float,
+    onSensitivityChange: (Float) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.TouchApp,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = "滑动灵敏度",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+            Text(
+                text = when {
+                    sensitivity <= 0.6f -> "非常灵敏"
+                    sensitivity <= 0.8f -> "灵敏"
+                    sensitivity <= 1.1f -> "正常"
+                    sensitivity <= 1.3f -> "不灵敏"
+                    else -> "非常不灵敏"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(4.dp))
+        
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 40.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(

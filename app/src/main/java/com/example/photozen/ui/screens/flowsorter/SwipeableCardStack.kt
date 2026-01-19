@@ -54,6 +54,7 @@ private const val PRELOAD_MAX_SIZE = 1200
 fun SwipeableCardStack(
     photos: List<PhotoEntity>,
     swipeSensitivity: Float = 1.0f,
+    hapticFeedbackEnabled: Boolean = true,  // Phase 3-7: 震动反馈开关
     onSwipeLeft: (String) -> Unit,
     onSwipeRight: (String) -> Unit,
     onSwipeUp: (String) -> Unit,
@@ -112,6 +113,7 @@ fun SwipeableCardStack(
                     photo = photo,
                     isTopCard = isTopCard,
                     swipeSensitivity = swipeSensitivity,
+                    hapticFeedbackEnabled = hapticFeedbackEnabled,  // Phase 3-7
                     showInfoOnImage = showInfoOnImage,
                     onSwipeLeft = { onSwipeLeft(photo.id) },
                     onSwipeRight = { onSwipeRight(photo.id) },

@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
@@ -15,7 +16,10 @@ import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.repository.ThemeMode
 import com.example.photozen.navigation.PicZenNavHost
 import com.example.photozen.navigation.Screen
+import com.example.photozen.ui.MainScaffold
+import com.example.photozen.ui.state.SnackbarManager
 import com.example.photozen.ui.theme.PicZenTheme
+import com.example.photozen.ui.util.FeatureFlags
 import com.example.photozen.util.ShareData
 import com.example.photozen.util.ShareHandler
 import com.example.photozen.util.ShareMode
@@ -36,6 +40,10 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var preferencesRepository: PreferencesRepository
     
+    // Phase 3-8: 全局 Snackbar 管理器
+    @Inject
+    lateinit var snackbarManager: SnackbarManager
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -54,23 +62,47 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val navController = rememberNavController()
                     
-                    // Determine start destination based on share data
-                    val startDestination: Screen = if (shareData != null) {
+                    // 判断是否是 Share Intent
+                    if (shareData != null) {
+                        // Share 场景：不使用底部导航，直接进入 Share 页面
                         val urisJson = shareData.uris.joinToString(",") { it.toString() }
-                        when (shareData.mode) {
+                        val startDestination: Screen = when (shareData.mode) {
                             ShareMode.COPY -> Screen.ShareCopy(urisJson)
                             ShareMode.COMPARE -> Screen.ShareCompare(urisJson)
                         }
+                        PicZenNavHost(
+                            navController = navController,
+                            startDestination = startDestination,
+                            onFinish = { finish() },
+                            modifier = Modifier.fillMaxSize()
+                        )
                     } else {
-                        Screen.Home
+                        // 正常启动：根据 Feature Flag 决定是否使用底部导航
+                        if (FeatureFlags.USE_BOTTOM_NAV) {
+                            // 新实现：使用 MainScaffold（带底部导航）
+                            // Phase 3-8: 传递全局 SnackbarManager
+                            MainScaffold(
+                                navController = navController,
+                                snackbarManager = snackbarManager
+                            ) { paddingValues ->
+                                PicZenNavHost(
+                                    navController = navController,
+                                    startDestination = Screen.Home,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(paddingValues)
+                                )
+                            }
+                        } else {
+                            // 旧实现：直接使用 PicZenNavHost（无底部导航）
+                            PicZenNavHost(
+                                navController = navController,
+                                startDestination = Screen.Home,
+                                onFinish = { finish() },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
-                    
-                    PicZenNavHost(
-                        navController = navController,
-                        startDestination = startDestination,
-                        onFinish = { finish() },
-                        modifier = Modifier.fillMaxSize()
-                    )
                 }
             }
         }

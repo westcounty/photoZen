@@ -17,17 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Help
-import androidx.compose.material.icons.filled.HelpOutline
-import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -55,10 +45,11 @@ import coil3.compose.AsyncImage
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import com.example.photozen.data.local.entity.PhotoEntity
-import com.example.photozen.ui.theme.KeepGreen
-import com.example.photozen.ui.theme.MaybeAmber
-import com.example.photozen.ui.theme.TrashRed
+import com.example.photozen.ui.components.EdgeGlowOverlay
+import com.example.photozen.ui.components.GlowingDirectionIndicator
+import com.example.photozen.ui.components.SwipeIndicatorDirection
 import com.example.photozen.util.OfflineGeocoder
+import kotlin.math.abs
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -228,8 +219,16 @@ fun PhotoCard(
                 )
             }
             
-            // Swipe indicator overlays
-            SwipeIndicatorOverlay(
+            // 边缘发光效果 (Phase 3-6)
+            EdgeGlowOverlay(
+                swipeProgressX = swipeProgress,
+                swipeProgressY = swipeProgressY,
+                hasReachedThreshold = hasReachedThreshold,
+                modifier = Modifier.fillMaxSize()
+            )
+            
+            // Swipe indicator overlays (增强版)
+            EnhancedSwipeIndicatorOverlay(
                 swipeDirection = swipeDirection,
                 swipeProgressX = swipeProgress,
                 swipeProgressY = swipeProgressY,
@@ -474,121 +473,73 @@ private fun PhotoInfoOverlayCompact(
 }
 
 /**
- * Displays swipe direction indicators with animated opacity.
- * All indicators are centered at top of the photo for better visibility.
- * Icon only, no text label.
- * Shows different icons based on whether threshold has been reached.
+ * 增强版滑动方向指示器 (Phase 3-6)
+ * 
+ * 使用 GlowingDirectionIndicator 替代原来的简单图标，特性：
+ * - 带发光光晕效果
+ * - 脉冲动画（到达阈值时）
+ * - 平滑的进入/退出动画
  * 
  * Gesture mapping:
  * - LEFT/RIGHT → Keep (Green) - Heart icons
- * - UP → Trash (Red) - Delete icons
+ * - UP → Trash (Red) - Delete icons  
  * - DOWN → Maybe (Amber) - Help icons
  */
 @Composable
-private fun SwipeIndicatorOverlay(
+private fun EnhancedSwipeIndicatorOverlay(
     swipeDirection: SwipeDirection,
     swipeProgressX: Float,
     swipeProgressY: Float,
     hasReachedThreshold: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    // Consistent alpha for all indicators (0.85 = clearly visible)
-    val indicatorAlpha = 0.85f
+    // 转换 SwipeDirection 为 SwipeIndicatorDirection
+    val indicatorDirection = when (swipeDirection) {
+        SwipeDirection.LEFT -> SwipeIndicatorDirection.LEFT
+        SwipeDirection.RIGHT -> SwipeIndicatorDirection.RIGHT
+        SwipeDirection.UP -> SwipeIndicatorDirection.UP
+        SwipeDirection.DOWN -> SwipeIndicatorDirection.DOWN
+        SwipeDirection.NONE -> SwipeIndicatorDirection.NONE
+    }
     
-    // Scale animation when reaching threshold
-    val iconScale by animateFloatAsState(
-        targetValue = if (hasReachedThreshold) 1.2f else 1.0f,
-        label = "iconScale"
-    )
+    // 计算进度
+    val progress = when (indicatorDirection) {
+        SwipeIndicatorDirection.LEFT, SwipeIndicatorDirection.RIGHT -> abs(swipeProgressX)
+        SwipeIndicatorDirection.UP, SwipeIndicatorDirection.DOWN -> abs(swipeProgressY)
+        SwipeIndicatorDirection.NONE -> 0f
+    }
     
     Box(modifier = modifier) {
-        // Keep indicator (right swipe) - Green with heart icon
-        if (swipeDirection == SwipeDirection.RIGHT || (swipeDirection == SwipeDirection.NONE && swipeProgressX > 0.1f)) {
-            SwipeIndicatorIcon(
-                icon = if (hasReachedThreshold) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                color = KeepGreen,
-                alpha = indicatorAlpha,
-                scale = iconScale,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 80.dp)
-            )
-        }
-        
-        // Keep indicator (left swipe) - Green (same as right)
-        if (swipeDirection == SwipeDirection.LEFT || (swipeDirection == SwipeDirection.NONE && swipeProgressX < -0.1f)) {
-            SwipeIndicatorIcon(
-                icon = if (hasReachedThreshold) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                color = KeepGreen,
-                alpha = indicatorAlpha,
-                scale = iconScale,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 80.dp)
-            )
-        }
-        
-        // Trash indicator (up swipe) - Red with delete icon
-        if (swipeDirection == SwipeDirection.UP) {
-            SwipeIndicatorIcon(
-                icon = if (hasReachedThreshold) Icons.Default.Delete else Icons.Default.DeleteOutline,
-                color = TrashRed,
-                alpha = indicatorAlpha,
-                scale = iconScale,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 80.dp)
-            )
-        }
-        
-        // Maybe indicator (down swipe) - Amber with help icon
-        if (swipeDirection == SwipeDirection.DOWN) {
-            SwipeIndicatorIcon(
-                icon = if (hasReachedThreshold) Icons.Default.Help else Icons.Default.HelpOutline,
-                color = MaybeAmber,
-                alpha = indicatorAlpha,
-                scale = iconScale,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 80.dp)
-            )
-        }
-    }
-}
-
-/**
- * Individual swipe indicator icon (no text label).
- * Supports scale animation for threshold feedback.
- */
-@Composable
-private fun SwipeIndicatorIcon(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    color: Color,
-    scale: Float = 1.0f,
-    alpha: Float,
-    modifier: Modifier = Modifier
-) {
-    val iconSize = (64 * scale).dp
-    val innerIconSize = (32 * scale).dp
-    
-    Box(
-        modifier = modifier
-            .graphicsLayer { 
-                this.alpha = alpha
-                scaleX = scale
-                scaleY = scale
+        // 使用发光方向指示器
+        if (indicatorDirection != SwipeIndicatorDirection.NONE || progress > 0.1f) {
+            // 根据实际进度选择显示的方向
+            val displayDirection = when {
+                indicatorDirection != SwipeIndicatorDirection.NONE -> indicatorDirection
+                swipeProgressX > 0.1f -> SwipeIndicatorDirection.RIGHT
+                swipeProgressX < -0.1f -> SwipeIndicatorDirection.LEFT
+                swipeProgressY < -0.1f -> SwipeIndicatorDirection.UP
+                swipeProgressY > 0.1f -> SwipeIndicatorDirection.DOWN
+                else -> SwipeIndicatorDirection.NONE
             }
-            .size(iconSize)
-            .clip(CircleShape)
-            .background(color.copy(alpha = 0.9f)),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(innerIconSize)
-        )
+            
+            val displayProgress = when (displayDirection) {
+                SwipeIndicatorDirection.LEFT, SwipeIndicatorDirection.RIGHT -> abs(swipeProgressX)
+                SwipeIndicatorDirection.UP, SwipeIndicatorDirection.DOWN -> abs(swipeProgressY)
+                SwipeIndicatorDirection.NONE -> 0f
+            }
+            
+            if (displayDirection != SwipeIndicatorDirection.NONE) {
+                GlowingDirectionIndicator(
+                    direction = displayDirection,
+                    progress = displayProgress,
+                    hasReachedThreshold = hasReachedThreshold,
+                    size = 64.dp,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 72.dp)
+                )
+            }
+        }
     }
 }
 

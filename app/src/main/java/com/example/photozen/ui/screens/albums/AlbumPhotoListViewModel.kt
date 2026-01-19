@@ -273,6 +273,21 @@ class AlbumPhotoListViewModel @Inject constructor(
     }
     
     /**
+     * Update selection state (用于 DragSelectPhotoGrid 回调).
+     * 
+     * 当用户通过拖动选择多张照片时，DragSelectPhotoGrid 会调用此方法
+     * 更新整个选中集合。
+     * 
+     * @param newSelection 新的选中照片 ID 集合
+     */
+    fun updateSelection(newSelection: Set<String>) {
+        _uiState.update { it.copy(
+            selectedIds = newSelection,
+            isSelectionMode = newSelection.isNotEmpty()
+        )}
+    }
+    
+    /**
      * Move selected photos to another album.
      */
     fun moveSelectedToAlbum(targetBucketId: String) {

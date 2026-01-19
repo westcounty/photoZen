@@ -56,10 +56,16 @@ data class TimelineUiState(
     val isDescending: Boolean = true,  // true=最新优先, false=最早优先
     val availableYearMonths: List<YearMonth> = emptyList(),  // 可用的年月列表
     val showNavigator: Boolean = false,  // 是否显示年月导航器
-    val scrollToIndex: Int? = null  // 要滚动到的索引
+    val scrollToIndex: Int? = null,  // 要滚动到的索引
+    // Phase 1-B: 选择模式状态
+    val isSelectionMode: Boolean = false,
+    val selectedPhotoIds: Set<String> = emptySet(),
+    val message: String? = null  // 操作提示消息
 ) {
     val hasEvents: Boolean get() = events.isNotEmpty()
     val totalEvents: Int get() = events.size
+    /** 选中的照片数量 */
+    val selectedCount: Int get() = selectedPhotoIds.size
 }
 
 /**
@@ -363,6 +369,126 @@ class TimelineViewModel @Inject constructor(
      */
     fun clearScrollTarget() {
         _uiState.update { it.copy(scrollToIndex = null) }
+    }
+    
+    // ==================== Phase 1-B: Selection Mode ====================
+    
+    /**
+     * 进入选择模式并选中指定照片
+     * 
+     * 当用户长按照片时调用此方法。
+     * 
+     * @param photoId 要选中的照片ID
+     */
+    fun enterSelectionMode(photoId: String) {
+        _uiState.update { it.copy(
+            isSelectionMode = true,
+            selectedPhotoIds = setOf(photoId)
+        )}
+    }
+    
+    /**
+     * 切换照片的选中状态
+     * 
+     * 选择模式下点击照片时调用。
+     * 如果选中数量变为0，自动退出选择模式。
+     * 
+     * @param photoId 照片ID
+     */
+    fun togglePhotoSelection(photoId: String) {
+        _uiState.update { state ->
+            val newSelection = if (photoId in state.selectedPhotoIds) {
+                state.selectedPhotoIds - photoId
+            } else {
+                state.selectedPhotoIds + photoId
+            }
+            state.copy(
+                selectedPhotoIds = newSelection,
+                isSelectionMode = newSelection.isNotEmpty()
+            )
+        }
+    }
+    
+    /**
+     * 清除所有选择并退出选择模式
+     */
+    fun clearSelection() {
+        _uiState.update { it.copy(
+            isSelectionMode = false,
+            selectedPhotoIds = emptySet()
+        )}
+    }
+    
+    /**
+     * 全选所有照片
+     */
+    fun selectAll() {
+        _uiState.update { state ->
+            val allPhotoIds = state.events.flatMap { event -> 
+                event.photos.map { it.id } 
+            }.toSet()
+            state.copy(
+                selectedPhotoIds = allPhotoIds,
+                isSelectionMode = true
+            )
+        }
+    }
+    
+    /**
+     * 全选指定事件中的所有照片
+     * 
+     * @param event 照片事件
+     */
+    fun selectAllInEvent(event: PhotoEvent) {
+        _uiState.update { state ->
+            val newSelection = state.selectedPhotoIds + event.photos.map { it.id }
+            state.copy(
+                selectedPhotoIds = newSelection,
+                isSelectionMode = true
+            )
+        }
+    }
+    
+    /**
+     * 批量更新选中照片的状态
+     * 
+     * @param status 目标状态
+     */
+    fun batchUpdateStatus(status: PhotoStatus) {
+        viewModelScope.launch {
+            val selectedIds = _uiState.value.selectedPhotoIds.toList()
+            if (selectedIds.isEmpty()) return@launch
+            
+            when (status) {
+                PhotoStatus.KEEP -> {
+                    selectedIds.forEach { sortPhotoUseCase.keepPhoto(it) }
+                    _uiState.update { it.copy(message = "已标记 ${selectedIds.size} 张为保留") }
+                }
+                PhotoStatus.MAYBE -> {
+                    selectedIds.forEach { sortPhotoUseCase.maybePhoto(it) }
+                    _uiState.update { it.copy(message = "已标记 ${selectedIds.size} 张为待定") }
+                }
+                PhotoStatus.TRASH -> {
+                    selectedIds.forEach { sortPhotoUseCase.trashPhoto(it) }
+                    _uiState.update { it.copy(message = "已标记 ${selectedIds.size} 张为删除") }
+                }
+                PhotoStatus.UNSORTED -> {
+                    // 重置为未筛选
+                    selectedIds.forEach { photoDao.updateStatus(it, PhotoStatus.UNSORTED) }
+                    _uiState.update { it.copy(message = "已重置 ${selectedIds.size} 张为未筛选") }
+                }
+            }
+            
+            // 清除选择
+            clearSelection()
+        }
+    }
+    
+    /**
+     * 清除消息
+     */
+    fun clearMessage() {
+        _uiState.update { it.copy(message = null) }
     }
     
     // ==================== Photo Operations for Fullscreen Viewer ====================

@@ -17,6 +17,13 @@ import com.example.photozen.domain.usecase.AlbumOperationsUseCase
 import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.MovePhotoResult
 import com.example.photozen.domain.usecase.SortPhotoUseCase
+import com.example.photozen.data.repository.GuideRepository
+import com.example.photozen.ui.state.UndoManager
+import com.example.photozen.ui.state.UiEvent
+import com.example.photozen.domain.model.UndoAction
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -101,8 +108,14 @@ class PhotoListViewModel @Inject constructor(
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val photoDao: PhotoDao,
     private val albumBubbleDao: AlbumBubbleDao,
-    private val albumOperationsUseCase: AlbumOperationsUseCase
+    private val albumOperationsUseCase: AlbumOperationsUseCase,
+    val guideRepository: GuideRepository,
+    private val undoManager: UndoManager
 ) : ViewModel() {
+    
+    // UI 事件流
+    private val _uiEvent = MutableSharedFlow<UiEvent>()
+    val uiEvent: SharedFlow<UiEvent> = _uiEvent.asSharedFlow()
     
     private val statusName: String = savedStateHandle.get<String>("statusName") ?: "UNSORTED"
     private val status: PhotoStatus = try {
@@ -377,104 +390,75 @@ class PhotoListViewModel @Inject constructor(
     }
     
     /**
-     * Move selected photos to Keep.
+     * 批量更新选中照片状态（带撤销支持）
      */
-    fun moveSelectedToKeep() {
-        val selectedIds = _internalState.value.selectedPhotoIds
+    private fun batchUpdateStatus(newStatus: PhotoStatus) {
+        val selectedIds = _internalState.value.selectedPhotoIds.toList()
         if (selectedIds.isEmpty()) return
         
         viewModelScope.launch {
             try {
-                selectedIds.forEach { photoId ->
-                    sortPhotoUseCase.keepPhoto(photoId)
+                // 1. 记录原始状态
+                val previousStatus = selectedIds.associateWith { id ->
+                    photoDao.getById(id)?.status ?: status
                 }
+                
+                // 2. 执行更新
+                when (newStatus) {
+                    PhotoStatus.KEEP -> selectedIds.forEach { sortPhotoUseCase.keepPhoto(it) }
+                    PhotoStatus.TRASH -> selectedIds.forEach { sortPhotoUseCase.trashPhoto(it) }
+                    PhotoStatus.MAYBE -> selectedIds.forEach { sortPhotoUseCase.maybePhoto(it) }
+                    PhotoStatus.UNSORTED -> selectedIds.forEach { sortPhotoUseCase.resetPhoto(it) }
+                }
+                
+                // 3. 记录可撤销操作
+                val action = UndoAction.StatusChange(selectedIds, previousStatus, newStatus)
+                undoManager.recordAction(action)
+                
+                // 4. 清空选择
                 _internalState.update { 
                     it.copy(
-                        message = "已将 ${selectedIds.size} 张照片移至保留",
                         selectedPhotoIds = emptySet(),
                         isSelectionMode = false
                     )
                 }
+                
+                // 5. 发送 Snackbar 事件
+                _uiEvent.emit(UiEvent.ShowSnackbar(
+                    message = action.getDescription(),
+                    actionLabel = "撤销",
+                    onAction = {
+                        val result = undoManager.undo()
+                        if (result.isSuccess && result.getOrDefault(false)) {
+                            _uiEvent.emit(UiEvent.ShowSnackbar("已撤销"))
+                        }
+                    }
+                ))
             } catch (e: Exception) {
-                _internalState.update { it.copy(message = "操作失败") }
+                _uiEvent.emit(UiEvent.ShowSnackbar("操作失败"))
             }
         }
     }
+    
+    /**
+     * Move selected photos to Keep.
+     */
+    fun moveSelectedToKeep() = batchUpdateStatus(PhotoStatus.KEEP)
     
     /**
      * Move selected photos to Trash.
      */
-    fun moveSelectedToTrash() {
-        val selectedIds = _internalState.value.selectedPhotoIds
-        if (selectedIds.isEmpty()) return
-        
-        viewModelScope.launch {
-            try {
-                selectedIds.forEach { photoId ->
-                    sortPhotoUseCase.trashPhoto(photoId)
-                }
-                _internalState.update { 
-                    it.copy(
-                        message = "已将 ${selectedIds.size} 张照片移至回收站",
-                        selectedPhotoIds = emptySet(),
-                        isSelectionMode = false
-                    )
-                }
-            } catch (e: Exception) {
-                _internalState.update { it.copy(message = "操作失败") }
-            }
-        }
-    }
+    fun moveSelectedToTrash() = batchUpdateStatus(PhotoStatus.TRASH)
     
     /**
      * Move selected photos to Maybe.
      */
-    fun moveSelectedToMaybe() {
-        val selectedIds = _internalState.value.selectedPhotoIds
-        if (selectedIds.isEmpty()) return
-        
-        viewModelScope.launch {
-            try {
-                selectedIds.forEach { photoId ->
-                    sortPhotoUseCase.maybePhoto(photoId)
-                }
-                _internalState.update { 
-                    it.copy(
-                        message = "已将 ${selectedIds.size} 张照片标记为待定",
-                        selectedPhotoIds = emptySet(),
-                        isSelectionMode = false
-                    )
-                }
-            } catch (e: Exception) {
-                _internalState.update { it.copy(message = "操作失败") }
-            }
-        }
-    }
+    fun moveSelectedToMaybe() = batchUpdateStatus(PhotoStatus.MAYBE)
     
     /**
      * Reset selected photos to Unsorted.
      */
-    fun resetSelectedToUnsorted() {
-        val selectedIds = _internalState.value.selectedPhotoIds
-        if (selectedIds.isEmpty()) return
-        
-        viewModelScope.launch {
-            try {
-                selectedIds.forEach { photoId ->
-                    sortPhotoUseCase.resetPhoto(photoId)
-                }
-                _internalState.update { 
-                    it.copy(
-                        message = "已将 ${selectedIds.size} 张照片恢复为未整理",
-                        selectedPhotoIds = emptySet(),
-                        isSelectionMode = false
-                    )
-                }
-            } catch (e: Exception) {
-                _internalState.update { it.copy(message = "操作失败") }
-            }
-        }
-    }
+    fun resetSelectedToUnsorted() = batchUpdateStatus(PhotoStatus.UNSORTED)
     
     /**
      * Duplicate a photo, preserving all EXIF metadata and timestamps.

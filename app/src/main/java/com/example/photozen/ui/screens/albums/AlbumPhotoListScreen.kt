@@ -50,9 +50,17 @@ import coil3.request.crossfade
 import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.ui.components.ConfirmDeleteSheet
+import com.example.photozen.ui.components.DeleteType
+import com.example.photozen.ui.components.DragSelectPhotoGrid
+import com.example.photozen.ui.components.DragSelectPhotoGridDefaults
+import com.example.photozen.ui.components.EmptyStates
 import com.example.photozen.ui.components.PhotoStatusBadge
 import com.example.photozen.ui.components.shareImage
+import com.example.photozen.ui.util.FeatureFlags
+import com.example.photozen.ui.components.SelectionTopBar
 import com.example.photozen.ui.theme.KeepGreen
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.text.style.TextAlign
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
@@ -91,6 +99,9 @@ fun AlbumPhotoListScreen(
     var showAlbumPicker by remember { mutableStateOf(false) }
     var pickerMode by remember { mutableStateOf("move") }  // "move" or "copy"
     
+    // Phase 3-9: 删除确认弹窗状态
+    var showDeleteConfirmSheet by remember { mutableStateOf(false) }
+    
     // Delete confirmation launcher
     val deleteResultLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
@@ -115,49 +126,51 @@ fun AlbumPhotoListScreen(
         }
     }
     
+    // BackHandler 处理返回键退出选择模式
+    BackHandler(enabled = uiState.isSelectionMode) {
+        viewModel.clearSelection()
+    }
+    
     Scaffold(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = if (uiState.isSelectionMode) "已选择 ${uiState.selectedCount} 张" else albumName,
-                            style = MaterialTheme.typography.titleLarge,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (!uiState.isSelectionMode) {
+            if (uiState.isSelectionMode) {
+                // 使用统一的选择模式顶栏
+                SelectionTopBar(
+                    selectedCount = uiState.selectedCount,
+                    totalCount = uiState.photos.size,
+                    onClose = { viewModel.clearSelection() },
+                    onSelectAll = { viewModel.selectAll() },
+                    onDeselectAll = { viewModel.clearSelection() }
+                )
+            } else {
+                // 普通模式顶栏
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                text = albumName,
+                                style = MaterialTheme.typography.titleLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             Text(
                                 text = "${uiState.totalCount} 张照片",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        if (uiState.isSelectionMode) {
-                            viewModel.clearSelection()
-                        } else {
-                            onNavigateBack()
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回"
+                            )
                         }
-                    }) {
-                        Icon(
-                            imageVector = if (uiState.isSelectionMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = if (uiState.isSelectionMode) "取消选择" else "返回"
-                        )
-                    }
-                },
-                actions = {
-                    if (uiState.isSelectionMode) {
-                        // Select all
-                        IconButton(onClick = { viewModel.selectAll() }) {
-                            Icon(Icons.Default.SelectAll, contentDescription = "全选")
-                        }
-                    } else {
+                    },
+                    actions = {
                         // Refresh
                         IconButton(onClick = { viewModel.refresh() }) {
                             Icon(Icons.Default.Refresh, contentDescription = "刷新")
@@ -175,8 +188,8 @@ fun AlbumPhotoListScreen(
                             )
                         }
                     }
-                }
-            )
+                )
+            }
         }
     ) { paddingValues ->
         Column(
@@ -215,35 +228,72 @@ fun AlbumPhotoListScreen(
                         )
                     }
                     uiState.photos.isEmpty() -> {
-                        EmptyAlbumContent()
+                        EmptyStates.EmptyAlbum(
+                            albumName = albumName,
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
                     else -> {
-                        PhotoGrid(
-                            photos = uiState.photos,
-                            columnCount = when (uiState.viewMode) {
-                                AlbumPhotoListViewMode.GRID_1 -> 1
-                                AlbumPhotoListViewMode.GRID_2 -> 2
-                                AlbumPhotoListViewMode.GRID_3 -> 3
-                                AlbumPhotoListViewMode.GRID_4 -> 4
-                            },
-                            isSelectionMode = uiState.isSelectionMode,
-                            selectedIds = uiState.selectedIds,
-                            onPhotoClick = { index ->
-                                if (uiState.isSelectionMode) {
-                                    viewModel.togglePhotoSelection(uiState.photos[index].id)
-                                } else {
-                                    fullscreenStartIndex = index
-                                    showFullscreen = true
+                        // Phase 1-B: 使用 Feature Flag 控制手势实现
+                        if (FeatureFlags.USE_UNIFIED_GESTURE) {
+                            // 新实现：使用 DragSelectPhotoGrid（支持拖动批量选择）
+                            DragSelectPhotoGrid(
+                                photos = uiState.photos,
+                                selectedIds = uiState.selectedIds,
+                                onSelectionChanged = { newSelection ->
+                                    viewModel.updateSelection(newSelection)
+                                },
+                                onPhotoClick = { photoId, index ->
+                                    if (uiState.isSelectionMode) {
+                                        viewModel.togglePhotoSelection(photoId)
+                                    } else {
+                                        fullscreenStartIndex = index
+                                        showFullscreen = true
+                                    }
+                                },
+                                onPhotoLongPress = { photoId, photoUri ->
+                                    // 长按不动时已经选中，此回调用于额外操作（如显示提示）
+                                },
+                                columns = when (uiState.viewMode) {
+                                    AlbumPhotoListViewMode.GRID_1 -> 1
+                                    AlbumPhotoListViewMode.GRID_2 -> 2
+                                    AlbumPhotoListViewMode.GRID_3 -> 3
+                                    AlbumPhotoListViewMode.GRID_4 -> 4
+                                },
+                                selectionColor = MaterialTheme.colorScheme.primary,
+                                enableDragSelect = true,
+                                config = DragSelectPhotoGridDefaults.AlbumConfig,
+                                showStatusBadge = true
+                            )
+                        } else {
+                            // 旧实现：保留现有代码
+                            PhotoGrid(
+                                photos = uiState.photos,
+                                columnCount = when (uiState.viewMode) {
+                                    AlbumPhotoListViewMode.GRID_1 -> 1
+                                    AlbumPhotoListViewMode.GRID_2 -> 2
+                                    AlbumPhotoListViewMode.GRID_3 -> 3
+                                    AlbumPhotoListViewMode.GRID_4 -> 4
+                                },
+                                isSelectionMode = uiState.isSelectionMode,
+                                selectedIds = uiState.selectedIds,
+                                onPhotoClick = { index ->
+                                    if (uiState.isSelectionMode) {
+                                        viewModel.togglePhotoSelection(uiState.photos[index].id)
+                                    } else {
+                                        fullscreenStartIndex = index
+                                        showFullscreen = true
+                                    }
+                                },
+                                onPhotoLongClick = { index ->
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (!uiState.isSelectionMode) {
+                                        // Enter selection mode and select this photo
+                                        viewModel.enterSelectionMode(uiState.photos[index].id)
+                                    }
                                 }
-                            },
-                            onPhotoLongClick = { index ->
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                if (!uiState.isSelectionMode) {
-                                    // Enter selection mode and select this photo
-                                    viewModel.enterSelectionMode(uiState.photos[index].id)
-                                }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -291,24 +341,8 @@ fun AlbumPhotoListScreen(
                             }
                         }
                     },
-                    onDelete = {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                            val uris = viewModel.getSelectedPhotoUris()
-                            if (uris.isNotEmpty()) {
-                                try {
-                                    val deleteRequest = MediaStore.createDeleteRequest(
-                                        context.contentResolver,
-                                        uris
-                                    )
-                                    deleteResultLauncher.launch(
-                                        IntentSenderRequest.Builder(deleteRequest.intentSender).build()
-                                    )
-                                } catch (e: Exception) {
-                                    // Handle error
-                                }
-                            }
-                        }
-                    }
+                    // Phase 3-9: 显示删除确认弹窗
+                    onDelete = { showDeleteConfirmSheet = true }
                 )
             }
         }
@@ -339,6 +373,35 @@ fun AlbumPhotoListScreen(
         )
     }
     
+    // Phase 3-9: 永久删除确认弹窗
+    if (showDeleteConfirmSheet) {
+        val selectedPhotos = uiState.photos.filter { it.id in uiState.selectedIds }
+        ConfirmDeleteSheet(
+            photos = selectedPhotos,
+            deleteType = DeleteType.PERMANENT_DELETE,
+            onConfirm = {
+                showDeleteConfirmSheet = false
+                // 使用 MediaStore API 进行永久删除
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    val uris = viewModel.getSelectedPhotoUris()
+                    if (uris.isNotEmpty()) {
+                        try {
+                            val deleteRequest = MediaStore.createDeleteRequest(
+                                context.contentResolver,
+                                uris
+                            )
+                            deleteResultLauncher.launch(
+                                IntentSenderRequest.Builder(deleteRequest.intentSender).build()
+                            )
+                        } catch (e: Exception) {
+                            // Handle error
+                        }
+                    }
+                }
+            },
+            onDismiss = { showDeleteConfirmSheet = false }
+        )
+    }
 }
 
 @Composable
@@ -419,35 +482,6 @@ private fun AlbumStatsCard(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun EmptyAlbumContent() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.PhotoLibrary,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "相册为空",
-            style = MaterialTheme.typography.titleMedium
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "这个相册还没有照片",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 

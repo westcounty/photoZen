@@ -57,17 +57,22 @@ import com.example.photozen.ui.components.bubble.BubbleGraphView
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
+import com.example.photozen.ui.util.FeatureFlags
 
 /**
  * Album Bubble Screen - Visualizes user's album bubble list.
  * Similar to TagBubbleScreen but for albums.
+ * 
+ * Phase 1-C: 作为底部导航主 Tab 之一
+ * - onNavigateBack 标记为可选（由底部导航处理切换）
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumBubbleScreen(
-    onNavigateBack: () -> Unit,
     onNavigateToAlbumPhotos: (String, String) -> Unit,
     onNavigateToQuickSort: (String) -> Unit,
+    // Phase 1-C: 底部导航模式不需要返回按钮
+    onNavigateBack: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: AlbumBubbleViewModel = hiltViewModel()
 ) {
@@ -133,11 +138,14 @@ fun AlbumBubbleScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
+                    // Phase 1-C: 底部导航模式不显示返回按钮
+                    if (!FeatureFlags.USE_BOTTOM_NAV) {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回"
+                            )
+                        }
                     }
                 },
                 actions = {

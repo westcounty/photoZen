@@ -20,11 +20,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.ui.util.HapticFeedbackManager
+import com.example.photozen.ui.util.SwipeHapticDirection
+import com.example.photozen.ui.util.rememberHapticFeedbackManager
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -71,6 +72,7 @@ fun SwipeablePhotoCard(
     photo: PhotoEntity,
     isTopCard: Boolean = true,
     swipeSensitivity: Float = 1.0f,
+    hapticFeedbackEnabled: Boolean = true,  // Phase 3-7: 震动反馈开关
     onSwipeLeft: () -> Unit,
     onSwipeRight: () -> Unit,
     onSwipeUp: () -> Unit,
@@ -80,7 +82,8 @@ fun SwipeablePhotoCard(
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
-    val haptic = LocalHapticFeedback.current
+    // Phase 3-7: 使用设置中的震动反馈开关
+    val hapticManager = rememberHapticFeedbackManager(hapticFeedbackEnabled)
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
     
@@ -176,7 +179,8 @@ fun SwipeablePhotoCard(
                 detectDragGestures(
                     onDragStart = {
                         if (!currentIsTopCard || hasTriggeredSwipe) return@detectDragGestures
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        // Phase 3-7: 使用 HapticFeedbackManager 的拖动开始反馈
+                        hapticManager.performDragStart()
                         // Reset threshold states
                         hasReachedThresholdRight = false
                         hasReachedThresholdLeft = false
@@ -197,7 +201,8 @@ fun SwipeablePhotoCard(
                             // CRITICAL: Call callback AFTER animation completes to prevent flash
                             reachedUp -> {
                                 hasTriggeredSwipe = true
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                // Phase 3-7: 使用方向感知的操作完成反馈
+                                hapticManager.performActionComplete(SwipeHapticDirection.TRASH)
                                 scope.launch {
                                     offsetY.animateTo(-screenHeightPx * 1.5f, tween(150))
                                     onSwipeUp()  // Callback after animation
@@ -206,7 +211,7 @@ fun SwipeablePhotoCard(
                             // Swipe down → Maybe
                             reachedDown -> {
                                 hasTriggeredSwipe = true
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                hapticManager.performActionComplete(SwipeHapticDirection.MAYBE)
                                 scope.launch {
                                     offsetY.animateTo(screenHeightPx * 0.6f, tween(200))
                                     onSwipeDown()  // Callback after animation
@@ -215,7 +220,7 @@ fun SwipeablePhotoCard(
                             // Swipe right → Keep
                             reachedRight -> {
                                 hasTriggeredSwipe = true
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                hapticManager.performActionComplete(SwipeHapticDirection.KEEP)
                                 scope.launch {
                                     offsetX.animateTo(screenWidthPx * 1.5f, tween(150))
                                     onSwipeRight()  // Callback after animation
@@ -224,7 +229,7 @@ fun SwipeablePhotoCard(
                             // Swipe left → Keep
                             reachedLeft -> {
                                 hasTriggeredSwipe = true
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                hapticManager.performActionComplete(SwipeHapticDirection.KEEP)
                                 scope.launch {
                                     offsetX.animateTo(-screenWidthPx * 1.5f, tween(150))
                                     onSwipeLeft()  // Callback after animation
@@ -264,34 +269,39 @@ fun SwipeablePhotoCard(
                             offsetY.snapTo(offsetY.value + dragAmount.y)
                         }
                         
-                        // Check for threshold crossing (for UI feedback, no haptic)
+                        // Check for threshold crossing (for UI and haptic feedback)
                         // Use currentThreshold* to always use latest sensitivity values
                         val newReachedRight = offsetX.value > currentThresholdRight
                         val newReachedLeft = offsetX.value < -currentThresholdLeft
                         val newReachedUp = offsetY.value < -currentThresholdUp && abs(offsetY.value) > abs(offsetX.value)
                         val newReachedDown = offsetY.value > currentThresholdDown && abs(offsetY.value) > abs(offsetX.value)
                         
-                        // Update threshold states (used for visual feedback)
+                        // Phase 3-7: 达到临界点时触发震动反馈（只在首次达到时触发）
+                        // Update threshold states (used for visual and haptic feedback)
                         if (newReachedRight && !hasReachedThresholdRight) {
                             hasReachedThresholdRight = true
+                            hapticManager.performThresholdReached(SwipeHapticDirection.KEEP)
                         } else if (!newReachedRight) {
                             hasReachedThresholdRight = false
                         }
                         
                         if (newReachedLeft && !hasReachedThresholdLeft) {
                             hasReachedThresholdLeft = true
+                            hapticManager.performThresholdReached(SwipeHapticDirection.KEEP)
                         } else if (!newReachedLeft) {
                             hasReachedThresholdLeft = false
                         }
                         
                         if (newReachedUp && !hasReachedThresholdUp) {
                             hasReachedThresholdUp = true
+                            hapticManager.performThresholdReached(SwipeHapticDirection.TRASH)
                         } else if (!newReachedUp) {
                             hasReachedThresholdUp = false
                         }
                         
                         if (newReachedDown && !hasReachedThresholdDown) {
                             hasReachedThresholdDown = true
+                            hapticManager.performThresholdReached(SwipeHapticDirection.MAYBE)
                         } else if (!newReachedDown) {
                             hasReachedThresholdDown = false
                         }

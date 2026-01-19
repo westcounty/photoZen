@@ -1,5 +1,43 @@
 package com.example.photozen.ui.components
 
+/**
+ * PhotoZen 照片列表手势规范 v1.0
+ * ================================
+ * 
+ * 所有照片列表页面必须遵循以下手势规范：
+ * 
+ * ## 1. 点击 (Tap)
+ * - 非选择模式：进入全屏预览
+ * - 选择模式：切换该照片的选中状态
+ * 
+ * ## 2. 长按不移动 (Long Press without Drag)
+ * - 选中当前照片
+ * - 进入选择模式
+ * - 显示底部操作栏
+ * - 触发震动反馈 (HapticFeedbackType.LongPress, ~50ms)
+ * 
+ * ## 3. 长按 + 拖动 (Long Press + Drag)
+ * - 从长按位置开始批量选择
+ * - 拖动经过的所有照片都被选中（范围选择）
+ * - 自动滚动（当拖动到网格边缘时）
+ * - 每新增一个选中项触发震动反馈 (HapticFeedbackType.TextHandleMove, ~20ms)
+ * 
+ * ## 4. 退出选择模式
+ * - 点击顶栏关闭按钮
+ * - 按返回键
+ * - 取消所有选择（选中数归零时自动退出）
+ * 
+ * ## 5. 使用页面
+ * - PhotoListScreen (已使用)
+ * - TrashScreen (已使用)
+ * - AlbumPhotoListScreen (Phase 1-B 改造)
+ * - TimelineScreen (Phase 1-B 改造，使用简化版本 TimelineEventPhotoRow)
+ * 
+ * @see DragSelectConfig 拖动选择配置
+ * @see DragSelectPhotoGridDefaults 预设配置
+ * @see TimelineEventPhotoRow 时间线照片行组件（简化版，仅支持长按选择）
+ */
+
 import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -51,9 +89,73 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.data.model.PhotoStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+
+// ==================== 配置类 ====================
+
+/**
+ * 拖动选择配置
+ * 
+ * 定义 DragSelectPhotoGrid 的行为参数，可用于针对不同场景进行微调。
+ * 
+ * @property hapticEnabled 是否启用震动反馈
+ * @property autoScrollEnabled 是否启用自动滚动（拖动到边缘时）
+ * @property autoScrollThresholdDp 触发自动滚动的边缘距离（dp）
+ * @property autoScrollSpeed 自动滚动速度
+ * @property dragThresholdDp 区分"长按不动"和"拖动选择"的移动阈值（dp）
+ */
+data class DragSelectConfig(
+    val hapticEnabled: Boolean = true,
+    val autoScrollEnabled: Boolean = true,
+    val autoScrollThresholdDp: Float = 80f,
+    val autoScrollSpeed: Float = 10f,
+    val dragThresholdDp: Float = 10f
+)
+
+/**
+ * DragSelectPhotoGrid 预设配置对象
+ * 
+ * 提供针对不同场景优化的预设配置。
+ */
+object DragSelectPhotoGridDefaults {
+    /**
+     * 标准配置 - 适用于大多数照片网格
+     * 
+     * 启用所有功能：震动反馈、自动滚动、拖动选择
+     */
+    val StandardConfig = DragSelectConfig()
+    
+    /**
+     * 相册配置 - 与标准配置相同
+     * 
+     * 用于 AlbumPhotoListScreen
+     */
+    val AlbumConfig = StandardConfig
+    
+    /**
+     * 时间线配置 - 禁用自动滚动
+     * 
+     * 时间线使用水平布局，不适合垂直自动滚动
+     */
+    val TimelineConfig = DragSelectConfig(
+        autoScrollEnabled = false
+    )
+    
+    /**
+     * 紧凑配置 - 更小的拖动阈值
+     * 
+     * 适用于小尺寸网格或需要更灵敏响应的场景
+     */
+    val CompactConfig = DragSelectConfig(
+        dragThresholdDp = 6f,
+        autoScrollThresholdDp = 60f
+    )
+}
+
+// ==================== 组件 ====================
 
 /**
  * Photo grid with drag-to-select functionality.
@@ -74,6 +176,8 @@ import kotlinx.coroutines.launch
  * @param selectionColor Color for selection indicator
  * @param enableDragSelect Whether drag-to-select is enabled
  * @param gridState LazyStaggeredGridState for external control
+ * @param config 拖动选择配置，用于自定义行为参数
+ * @param showStatusBadge 是否显示照片状态徽章（非选择模式时）
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -87,7 +191,9 @@ fun DragSelectPhotoGrid(
     columns: Int = 2,
     selectionColor: Color = MaterialTheme.colorScheme.primary,
     enableDragSelect: Boolean = true,
-    gridState: LazyStaggeredGridState = rememberLazyStaggeredGridState()
+    gridState: LazyStaggeredGridState = rememberLazyStaggeredGridState(),
+    config: DragSelectConfig = DragSelectPhotoGridDefaults.StandardConfig,
+    showStatusBadge: Boolean = false
 ) {
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
@@ -108,14 +214,14 @@ fun DragSelectPhotoGrid(
     var autoScrollDirection by remember { mutableStateOf(0) } // -1: up, 0: none, 1: down
     
     // Threshold for distinguishing "long press without move" vs "drag select"
-    val dragThreshold = with(density) { 10.dp.toPx() }
+    val dragThreshold = with(density) { config.dragThresholdDp.dp.toPx() }
     
-    // Auto-scroll threshold in pixels
-    val scrollThreshold = with(density) { 80.dp.toPx() }
-    val scrollSpeed = 10f
+    // Auto-scroll threshold in pixels (from config)
+    val scrollThreshold = with(density) { config.autoScrollThresholdDp.dp.toPx() }
+    val scrollSpeed = config.autoScrollSpeed
     
-    // Auto-scroll effect
-    if (autoScrollDirection != 0 && isDragging) {
+    // Auto-scroll effect (only if enabled in config)
+    if (config.autoScrollEnabled && autoScrollDirection != 0 && isDragging) {
         coroutineScope.launch {
             while (isActive && autoScrollDirection != 0 && isDragging) {
                 gridState.animateScrollBy(scrollSpeed * autoScrollDirection)
@@ -184,7 +290,9 @@ fun DragSelectPhotoGrid(
                                     }
                                     onSelectionChanged(newSelection)
                                     
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (config.hapticEnabled) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    }
                                 }
                             },
                             onDrag = { change, dragAmount ->
@@ -214,7 +322,9 @@ fun DragSelectPhotoGrid(
                                     val newSelection = selectRange(dragStartIndex, dragCurrentIndex)
                                     if (newSelection != selectedIds) {
                                         onSelectionChanged(newSelection)
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        if (config.hapticEnabled) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        }
                                     }
                                 }
                             },
@@ -270,6 +380,8 @@ fun DragSelectPhotoGrid(
                     isSelectionMode = selectedIds.isNotEmpty() || isDragging,
                     selectionColor = selectionColor,
                     enableLongPressOnItem = !enableDragSelect, // Only handle long press on item when drag select is disabled
+                    showStatusBadge = showStatusBadge,
+                    hapticEnabled = config.hapticEnabled,
                     onClick = {
                         if (selectedIds.isNotEmpty()) {
                             // Toggle selection
@@ -298,6 +410,8 @@ fun DragSelectPhotoGrid(
  * 
  * @param enableLongPressOnItem If true, long press is handled by this item.
  *        If false, long press is handled by the parent grid (for drag select).
+ * @param showStatusBadge 是否显示照片状态徽章（非选择模式时）
+ * @param hapticEnabled 是否启用震动反馈
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -307,6 +421,8 @@ private fun DragSelectPhotoItem(
     isSelectionMode: Boolean,
     selectionColor: Color,
     enableLongPressOnItem: Boolean,
+    showStatusBadge: Boolean,
+    hapticEnabled: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit
 ) {
@@ -335,12 +451,14 @@ private fun DragSelectPhotoItem(
                     )
                 } else Modifier
             )
-            .pointerInput(enableLongPressOnItem) {
+            .pointerInput(enableLongPressOnItem, hapticEnabled) {
                 detectTapGestures(
                     onTap = { onClick() },
                     onLongPress = if (enableLongPressOnItem) {
                         {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (hapticEnabled) {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
                             onLongPress()
                         }
                     } else null
@@ -365,6 +483,17 @@ private fun DragSelectPhotoItem(
                 modifier = Modifier
                     .matchParentSize()
                     .background(selectionColor.copy(alpha = 0.2f))
+            )
+        }
+        
+        // Photo status badge (top-left, only show when not in selection mode)
+        if (showStatusBadge && !isSelectionMode && photo.status != PhotoStatus.UNSORTED) {
+            PhotoStatusBadge(
+                status = photo.status,
+                size = 20.dp,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp)
             )
         }
         

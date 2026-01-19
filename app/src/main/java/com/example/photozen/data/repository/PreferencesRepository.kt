@@ -123,6 +123,9 @@ class PreferencesRepository @Inject constructor(
         // Swipe sensitivity settings (1.0 = default, 0.5 = very sensitive, 1.5 = less sensitive)
         val KEY_SWIPE_SENSITIVITY = androidx.datastore.preferences.core.floatPreferencesKey("swipe_sensitivity")
         
+        // Haptic feedback settings (Phase 3-7)
+        val KEY_HAPTIC_FEEDBACK_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("haptic_feedback_enabled")
+        
         // Photo classification mode settings
         val KEY_PHOTO_CLASSIFICATION_MODE = stringPreferencesKey("photo_classification_mode")
         val KEY_ALBUM_ADD_ACTION = stringPreferencesKey("album_add_action")
@@ -437,6 +440,25 @@ class PreferencesRepository @Inject constructor(
     suspend fun setSwipeSensitivity(sensitivity: Float) {
         dataStore.edit { preferences ->
             preferences[KEY_SWIPE_SENSITIVITY] = sensitivity.coerceIn(0.5f, 1.5f)
+        }
+    }
+    
+    // ==================== HAPTIC FEEDBACK SETTINGS (Phase 3-7) ====================
+    
+    /**
+     * Get haptic feedback enabled state.
+     * Default is true.
+     */
+    fun getHapticFeedbackEnabled(): Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[KEY_HAPTIC_FEEDBACK_ENABLED] ?: true
+    }
+    
+    /**
+     * Set haptic feedback enabled state.
+     */
+    suspend fun setHapticFeedbackEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[KEY_HAPTIC_FEEDBACK_ENABLED] = enabled
         }
     }
     

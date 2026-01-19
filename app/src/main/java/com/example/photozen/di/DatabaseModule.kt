@@ -10,6 +10,7 @@ import com.example.photozen.data.local.dao.FaceDao
 import com.example.photozen.data.local.dao.PhotoAnalysisDao
 import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.dao.PhotoLabelDao
+import com.example.photozen.data.local.dao.SortingRecordDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -204,6 +205,30 @@ private val MIGRATION_9_10 = object : Migration(9, 10) {
 }
 
 /**
+ * Migration from version 10 to 11: Add sorting_records table for detailed stats.
+ * - sorting_records: Daily sorting statistics with breakdown (kept/trashed/maybe)
+ * - Used for stats page, calendar heatmap, and streak calculation
+ */
+private val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Create sorting_records table
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS sorting_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                date TEXT NOT NULL,
+                sorted_count INTEGER NOT NULL DEFAULT 0,
+                kept_count INTEGER NOT NULL DEFAULT 0,
+                trashed_count INTEGER NOT NULL DEFAULT 0,
+                maybe_count INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            )
+        """)
+        // Create unique index on date
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_sorting_records_date ON sorting_records (date)")
+    }
+}
+
+/**
  * Hilt module for providing Room database and DAOs.
  */
 @Module
@@ -223,7 +248,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME
         )
-            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
             .fallbackToDestructiveMigration(dropAllTables = true) // For development - use migrations in production
             .build()
     }
@@ -280,5 +305,15 @@ object DatabaseModule {
     @Singleton
     fun provideAlbumBubbleDao(database: AppDatabase): AlbumBubbleDao {
         return database.albumBubbleDao()
+    }
+    
+    /**
+     * Provides SortingRecordDao from the database.
+     * Used for detailed sorting statistics (Phase 3 - Stats feature).
+     */
+    @Provides
+    @Singleton
+    fun provideSortingRecordDao(database: AppDatabase): SortingRecordDao {
+        return database.sortingRecordDao()
     }
 }
