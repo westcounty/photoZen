@@ -48,7 +48,7 @@ object FeatureFlags {
      * 
      * @since Phase 1-B
      */
-    var USE_UNIFIED_GESTURE = false
+    var USE_UNIFIED_GESTURE = true
     
     // ==================== Phase 1-C: 底部导航 ====================
     
@@ -62,7 +62,7 @@ object FeatureFlags {
      * 
      * @since Phase 1-C
      */
-    var USE_BOTTOM_NAV = false
+    var USE_BOTTOM_NAV = true
     
     // ==================== Phase 1-D: 新首页布局 ====================
     
@@ -79,7 +79,7 @@ object FeatureFlags {
      * 
      * @since Phase 1-D
      */
-    var USE_NEW_HOME_LAYOUT = false
+    var USE_NEW_HOME_LAYOUT = true
     
     // ==================== 调试方法 ====================
     
