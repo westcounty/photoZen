@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.repository.ThemeMode
+import com.example.photozen.navigation.MainDestination
 import com.example.photozen.navigation.PicZenNavHost
 import com.example.photozen.navigation.Screen
 import com.example.photozen.ui.MainScaffold
@@ -81,13 +82,14 @@ class MainActivity : ComponentActivity() {
                         if (FeatureFlags.USE_BOTTOM_NAV) {
                             // 新实现：使用 MainScaffold（带底部导航）
                             // Phase 3-8: 传递全局 SnackbarManager
+                            // 使用 MainDestination.Home.route 作为起始路由，与底部导航保持一致
                             MainScaffold(
                                 navController = navController,
                                 snackbarManager = snackbarManager
                             ) { paddingValues ->
                                 PicZenNavHost(
                                     navController = navController,
-                                    startDestination = Screen.Home,
+                                    startDestination = MainDestination.Home.route,
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .padding(paddingValues)

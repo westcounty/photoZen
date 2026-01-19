@@ -51,7 +51,7 @@ import com.example.photozen.ui.screens.workflow.WorkflowScreen
 @Composable
 fun PicZenNavHost(
     navController: NavHostController,
-    startDestination: Screen = Screen.Home,
+    startDestination: Any = Screen.Home,  // 支持 Screen 或 String 路由
     onFinish: () -> Unit = {},
     modifier: Modifier = Modifier,
     achievementViewModel: AchievementCelebrationViewModel = hiltViewModel()
