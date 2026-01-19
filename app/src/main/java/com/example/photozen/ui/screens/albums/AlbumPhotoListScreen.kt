@@ -59,6 +59,8 @@ import com.example.photozen.ui.components.PhotoStatusBadge
 import com.example.photozen.ui.components.shareImage
 import com.example.photozen.ui.util.FeatureFlags
 import com.example.photozen.ui.components.SelectionTopBar
+import com.example.photozen.ui.components.SelectionBottomBar
+import com.example.photozen.ui.components.BottomBarConfigs
 import com.example.photozen.ui.theme.KeepGreen
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.text.style.TextAlign
@@ -298,7 +300,7 @@ fun AlbumPhotoListScreen(
                 }
             }
             
-            // Selection action bar
+            // Selection action bar - Phase 4: 使用 BottomBarConfigs
             AnimatedVisibility(
                 visible = uiState.isSelectionMode && uiState.selectedCount > 0,
                 enter = slideInVertically(initialOffsetY = { it }),
@@ -309,41 +311,72 @@ fun AlbumPhotoListScreen(
                     uiState.photos.find { it.id in uiState.selectedIds }
                 } else null
                 
-                SelectionActionBar(
+                // Phase 4: 使用 BottomBarConfigs.adaptive 根据选择数量自动配置
+                val bottomBarActions = BottomBarConfigs.adaptive(
                     selectedCount = uiState.selectedCount,
-                    onEdit = if (singleSelectedPhoto != null) {
-                        { onNavigateToEditor(singleSelectedPhoto.id) }
-                    } else null,
-                    onShare = if (singleSelectedPhoto != null) {
-                        { shareImage(context, Uri.parse(singleSelectedPhoto.systemUri)) }
-                    } else null,
-                    onMove = {
-                        pickerMode = "move"
-                        showAlbumPicker = true
-                    },
-                    onCopy = {
-                        pickerMode = "copy"
-                        showAlbumPicker = true
-                    },
-                    onFilter = {
-                        // Get photo IDs from first selected to the end
-                        val firstSelectedIndex = uiState.photos.indexOfFirst { it.id in uiState.selectedIds }
-                        if (firstSelectedIndex >= 0) {
-                            val photoIdsFromHere = uiState.photos
-                                .drop(firstSelectedIndex)
-                                .map { it.id }
-                            
-                            if (photoIdsFromHere.isNotEmpty()) {
-                                scope.launch {
-                                    viewModel.setFilterSessionAndNavigate(photoIdsFromHere)
-                                    onNavigateToFlowSorter()
+                    singleSelectActions = {
+                        BottomBarConfigs.albumPhotosSingleSelect(
+                            onEdit = { singleSelectedPhoto?.let { onNavigateToEditor(it.id) } },
+                            onShare = { singleSelectedPhoto?.let { shareImage(context, Uri.parse(it.systemUri)) } },
+                            onMove = {
+                                pickerMode = "move"
+                                showAlbumPicker = true
+                            },
+                            onCopy = {
+                                pickerMode = "copy"
+                                showAlbumPicker = true
+                            },
+                            onFilter = {
+                                // Get photo IDs from first selected to the end
+                                val firstSelectedIndex = uiState.photos.indexOfFirst { it.id in uiState.selectedIds }
+                                if (firstSelectedIndex >= 0) {
+                                    val photoIdsFromHere = uiState.photos
+                                        .drop(firstSelectedIndex)
+                                        .map { it.id }
+                                    
+                                    if (photoIdsFromHere.isNotEmpty()) {
+                                        scope.launch {
+                                            viewModel.setFilterSessionAndNavigate(photoIdsFromHere)
+                                            onNavigateToFlowSorter()
+                                        }
+                                    }
                                 }
-                            }
-                        }
+                            },
+                            onDelete = { showDeleteConfirmSheet = true }
+                        )
                     },
-                    // Phase 3-9: 显示删除确认弹窗
-                    onDelete = { showDeleteConfirmSheet = true }
+                    multiSelectActions = {
+                        BottomBarConfigs.albumPhotosMultiSelect(
+                            onMove = {
+                                pickerMode = "move"
+                                showAlbumPicker = true
+                            },
+                            onCopy = {
+                                pickerMode = "copy"
+                                showAlbumPicker = true
+                            },
+                            onFilter = {
+                                // Get photo IDs from first selected to the end
+                                val firstSelectedIndex = uiState.photos.indexOfFirst { it.id in uiState.selectedIds }
+                                if (firstSelectedIndex >= 0) {
+                                    val photoIdsFromHere = uiState.photos
+                                        .drop(firstSelectedIndex)
+                                        .map { it.id }
+                                    
+                                    if (photoIdsFromHere.isNotEmpty()) {
+                                        scope.launch {
+                                            viewModel.setFilterSessionAndNavigate(photoIdsFromHere)
+                                            onNavigateToFlowSorter()
+                                        }
+                                    }
+                                }
+                            },
+                            onDelete = { showDeleteConfirmSheet = true }
+                        )
+                    }
                 )
+                
+                SelectionBottomBar(actions = bottomBarActions)
             }
         }
     }
@@ -586,128 +619,7 @@ private fun PhotoGrid(
     }
 }
 
-/**
- * Selection action bar with vertical icon+text layout.
- * Single selection shows more individual actions (edit, share).
- */
-@Composable
-private fun SelectionActionBar(
-    selectedCount: Int,
-    onEdit: (() -> Unit)? = null,
-    onShare: (() -> Unit)? = null,
-    onMove: () -> Unit,
-    onCopy: () -> Unit,
-    onFilter: () -> Unit,
-    onDelete: () -> Unit
-) {
-    val isSingleSelect = selectedCount == 1
-    
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        tonalElevation = 8.dp,
-        shadowElevation = 8.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 4.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Edit button (single select only)
-            if (isSingleSelect && onEdit != null) {
-                AlbumBottomBarActionItem(
-                    icon = Icons.Default.Edit,
-                    label = "编辑",
-                    color = MaterialTheme.colorScheme.tertiary,
-                    onClick = onEdit
-                )
-            }
-            
-            // Share button (single select only)
-            if (isSingleSelect && onShare != null) {
-                AlbumBottomBarActionItem(
-                    icon = Icons.Default.Share,
-                    label = "分享",
-                    color = Color(0xFF1E88E5),
-                    onClick = onShare
-                )
-            }
-            
-            // Move button
-            AlbumBottomBarActionItem(
-                icon = Icons.Default.Folder,
-                label = "移动",
-                color = MaterialTheme.colorScheme.primary,
-                onClick = onMove
-            )
-            
-            // Copy button
-            AlbumBottomBarActionItem(
-                icon = Icons.Default.ContentCopy,
-                label = "复制",
-                color = MaterialTheme.colorScheme.secondary,
-                onClick = onCopy
-            )
-            
-            // Filter button
-            AlbumBottomBarActionItem(
-                icon = Icons.Default.FilterList,
-                label = "筛选",
-                color = MaterialTheme.colorScheme.secondary,
-                onClick = onFilter
-            )
-            
-            // Delete button
-            AlbumBottomBarActionItem(
-                icon = Icons.Default.Delete,
-                label = "删除",
-                color = TrashRed,
-                onClick = onDelete
-            )
-        }
-    }
-}
-
-@Composable
-private fun AlbumBottomBarActionItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    color: Color,
-    onClick: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(color.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = color,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = color,
-            textAlign = TextAlign.Center,
-            maxLines = 1
-        )
-    }
-}
+// Phase 4: SelectionActionBar 和 AlbumBottomBarActionItem 已迁移到使用 BottomBarConfigs 和 SelectionBottomBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

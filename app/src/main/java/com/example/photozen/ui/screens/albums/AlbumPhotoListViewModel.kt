@@ -17,12 +17,16 @@ import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.MediaStoreDataSource
 import com.example.photozen.domain.usecase.AlbumOperationsUseCase
 import com.example.photozen.domain.usecase.MovePhotoResult
+import com.example.photozen.ui.state.PhotoSelectionStateHolder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -86,18 +90,42 @@ class AlbumPhotoListViewModel @Inject constructor(
     private val albumBubbleDao: AlbumBubbleDao,
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val albumOperationsUseCase: AlbumOperationsUseCase,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    // Phase 4: 共享选择状态
+    private val selectionStateHolder: PhotoSelectionStateHolder
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(AlbumPhotoListUiState())
-    val uiState: StateFlow<AlbumPhotoListUiState> = _uiState.asStateFlow()
+    
+    // Phase 4: 组合 uiState 以包含共享选择状态
+    val uiState: StateFlow<AlbumPhotoListUiState> = kotlinx.coroutines.flow.combine(
+        _uiState,
+        selectionStateHolder.selectedIds,
+        selectionStateHolder.isSelectionMode
+    ) { state, selectedIds, isSelectionMode ->
+        // Filter out selected photos that no longer exist
+        val validSelectedIds = selectedIds.filter { id ->
+            state.photos.any { it.id == id }
+        }.toSet()
+        
+        state.copy(
+            selectedIds = validSelectedIds,
+            isSelectionMode = isSelectionMode || validSelectedIds.isNotEmpty()
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = AlbumPhotoListUiState()
+    )
     
     private var loadJob: Job? = null
     
     /**
      * Initialize with album info.
+     * Phase 4: 进入页面时清空选择状态
      */
     fun initialize(bucketId: String, albumName: String) {
+        selectionStateHolder.clear()
         _uiState.update { it.copy(bucketId = bucketId, albumName = albumName) }
         loadPhotos()
         loadAlbumBubbleList()
@@ -220,60 +248,41 @@ class AlbumPhotoListViewModel @Inject constructor(
     
     /**
      * Enter selection mode.
+     * Phase 4: 委托给 PhotoSelectionStateHolder
      */
     fun enterSelectionMode(photoId: String) {
-        _uiState.update {
-            it.copy(
-                isSelectionMode = true,
-                selectedIds = setOf(photoId)
-            )
-        }
+        selectionStateHolder.clear()
+        selectionStateHolder.select(photoId)
     }
     
     /**
      * Toggle photo selection.
+     * Phase 4: 委托给 PhotoSelectionStateHolder
      */
     fun togglePhotoSelection(photoId: String) {
-        _uiState.update { state ->
-            val newSelection = if (photoId in state.selectedIds) {
-                state.selectedIds - photoId
-            } else {
-                state.selectedIds + photoId
-            }
-            
-            state.copy(
-                selectedIds = newSelection,
-                isSelectionMode = newSelection.isNotEmpty()
-            )
-        }
+        selectionStateHolder.toggle(photoId)
     }
     
     /**
      * Select all photos.
+     * Phase 4: 委托给 PhotoSelectionStateHolder
      */
     fun selectAll() {
-        _uiState.update { state ->
-            state.copy(
-                isSelectionMode = true,
-                selectedIds = state.photos.map { it.id }.toSet()
-            )
-        }
+        val allIds = _uiState.value.photos.map { it.id }
+        selectionStateHolder.selectAll(allIds)
     }
     
     /**
      * Clear selection.
+     * Phase 4: 委托给 PhotoSelectionStateHolder
      */
     fun clearSelection() {
-        _uiState.update {
-            it.copy(
-                isSelectionMode = false,
-                selectedIds = emptySet()
-            )
-        }
+        selectionStateHolder.clear()
     }
     
     /**
      * Update selection state (用于 DragSelectPhotoGrid 回调).
+     * Phase 4: 委托给 PhotoSelectionStateHolder
      * 
      * 当用户通过拖动选择多张照片时，DragSelectPhotoGrid 会调用此方法
      * 更新整个选中集合。
@@ -281,18 +290,17 @@ class AlbumPhotoListViewModel @Inject constructor(
      * @param newSelection 新的选中照片 ID 集合
      */
     fun updateSelection(newSelection: Set<String>) {
-        _uiState.update { it.copy(
-            selectedIds = newSelection,
-            isSelectionMode = newSelection.isNotEmpty()
-        )}
+        selectionStateHolder.setSelection(newSelection)
     }
     
     /**
      * Move selected photos to another album.
+     * Phase 4: 使用 selectionStateHolder
      */
     fun moveSelectedToAlbum(targetBucketId: String) {
         viewModelScope.launch {
-            val selectedPhotos = _uiState.value.photos.filter { it.id in _uiState.value.selectedIds }
+            val selectedIds = selectionStateHolder.getSelectedList().toSet()
+            val selectedPhotos = _uiState.value.photos.filter { it.id in selectedIds }
             var successCount = 0
             var needsConfirmation = false
             val movedPhotoIds = mutableListOf<String>()
@@ -347,10 +355,12 @@ class AlbumPhotoListViewModel @Inject constructor(
     
     /**
      * Copy selected photos to another album.
+     * Phase 4: 使用 selectionStateHolder
      */
     fun copySelectedToAlbum(targetBucketId: String) {
         viewModelScope.launch {
-            val selectedPhotos = _uiState.value.photos.filter { it.id in _uiState.value.selectedIds }
+            val selectedIds = selectionStateHolder.getSelectedList().toSet()
+            val selectedPhotos = _uiState.value.photos.filter { it.id in selectedIds }
             var successCount = 0
             
             // Get target album path once before loop
@@ -377,17 +387,20 @@ class AlbumPhotoListViewModel @Inject constructor(
     
     /**
      * Check if there are selected photos to delete.
+     * Phase 4: 使用 selectionStateHolder
      */
     fun hasSelectedPhotos(): Boolean {
-        return _uiState.value.selectedIds.isNotEmpty()
+        return selectionStateHolder.hasSelection()
     }
     
     /**
      * Get URIs of selected photos for delete request.
      * Also saves the IDs for later Room database sync.
+     * Phase 4: 使用 selectionStateHolder
      */
     fun getSelectedPhotoUris(): List<Uri> {
-        val selectedPhotos = _uiState.value.photos.filter { it.id in _uiState.value.selectedIds }
+        val selectedIds = selectionStateHolder.getSelectedList().toSet()
+        val selectedPhotos = _uiState.value.photos.filter { it.id in selectedIds }
         
         // Save the IDs for deletion from Room after user confirms
         _uiState.update { it.copy(pendingDeleteIds = selectedPhotos.map { photo -> photo.id }) }
@@ -489,5 +502,13 @@ class AlbumPhotoListViewModel @Inject constructor(
         viewModelScope.launch {
             preferencesRepository.setAlbumPhotoStatusFilter(PhotoStatus.entries.toSet())
         }
+    }
+    
+    /**
+     * Phase 4: 页面销毁时清理选择状态
+     */
+    override fun onCleared() {
+        super.onCleared()
+        selectionStateHolder.clear()
     }
 }

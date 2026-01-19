@@ -25,6 +25,7 @@ import com.example.photozen.domain.usecase.SortPhotoUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
 import com.example.photozen.util.StoragePermissionHelper
 import com.example.photozen.util.WidgetUpdater
+import com.example.photozen.util.PhotoPreloader
 import com.example.photozen.data.repository.GuideRepository
 import com.example.photozen.data.repository.FilterPresetRepository
 import com.example.photozen.domain.model.FilterConfig
@@ -188,7 +189,9 @@ class FlowSorterViewModel @Inject constructor(
     private val storagePermissionHelper: StoragePermissionHelper,
     val guideRepository: GuideRepository,
     private val filterPresetRepository: FilterPresetRepository,
-    private val statsRepository: StatsRepository
+    private val statsRepository: StatsRepository,
+    // Phase 4: 预加载器
+    private val photoPreloader: PhotoPreloader
 ) : ViewModel() {
     
     private val isDailyTask: Boolean = savedStateHandle["isDailyTask"] ?: false
@@ -988,6 +991,9 @@ class FlowSorterViewModel @Inject constructor(
         _sortedCountImmediate.value++  // Immediate counter for UI
         Log.d(TAG, "keepPhoto: sortedCountImmediate after=${_sortedCountImmediate.value}")
         
+        // Phase 4: 预加载下一批照片
+        preloadNextPhotos()
+        
         viewModelScope.launch {
             try {
                 sortPhotoUseCase.keepPhoto(photoId)
@@ -1022,6 +1028,9 @@ class FlowSorterViewModel @Inject constructor(
         _counters.value = _counters.value.copy(trash = _counters.value.trash + 1)
         _sortedCountImmediate.value++  // Immediate counter for UI
         
+        // Phase 4: 预加载下一批照片
+        preloadNextPhotos()
+        
         viewModelScope.launch {
             try {
                 sortPhotoUseCase.trashPhoto(photoId)
@@ -1055,6 +1064,9 @@ class FlowSorterViewModel @Inject constructor(
         // Update counters SYNCHRONOUSLY to ensure UI reflects change immediately
         _counters.value = _counters.value.copy(maybe = _counters.value.maybe + 1)
         _sortedCountImmediate.value++  // Immediate counter for UI
+        
+        // Phase 4: 预加载下一批照片
+        preloadNextPhotos()
         
         viewModelScope.launch {
             try {
@@ -1104,6 +1116,24 @@ class FlowSorterViewModel @Inject constructor(
     fun maybeCurrentPhoto(): Int {
         val photo = uiState.value.currentPhoto ?: return 0
         return maybePhoto(photo.id)
+    }
+    
+    /**
+     * Phase 4: 预加载下一批照片
+     * 
+     * 在滑动操作后调用，预加载接下来的3张照片以提升用户体验。
+     */
+    private fun preloadNextPhotos() {
+        val currentState = uiState.value
+        val photos = currentState.photos
+        val currentIndex = currentState.currentIndex
+        
+        // 使用 PhotoPreloader 预加载
+        photoPreloader.preloadForSwipe(
+            photos = photos,
+            currentIndex = currentIndex,
+            preloadCount = 3
+        )
     }
     
     /**

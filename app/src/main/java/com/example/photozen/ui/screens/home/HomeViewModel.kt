@@ -21,6 +21,7 @@ import com.example.photozen.domain.usecase.SyncPhotosUseCase
 import com.example.photozen.data.repository.GuideRepository
 import com.example.photozen.data.repository.StatsRepository
 import com.example.photozen.data.repository.StatsSummary
+import com.example.photozen.ui.state.AsyncState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -124,9 +126,8 @@ class HomeViewModel @Inject constructor(
     
     private val _hasPermission = MutableStateFlow(false)
     private val _isLoading = MutableStateFlow(true)
-    private val _isSyncing = MutableStateFlow(false)
-    private val _syncResult = MutableStateFlow<String?>(null)
-    private val _error = MutableStateFlow<String?>(null)
+    // Phase 4: 使用 AsyncState 替换 _isSyncing + _syncResult + _error
+    private val _syncState = MutableStateFlow<AsyncState<String?>>(AsyncState.Idle)
     
     // Camera album IDs - loaded once and cached
     private val _cameraAlbumIds = MutableStateFlow<List<String>>(emptyList())
@@ -274,174 +275,180 @@ class HomeViewModel @Inject constructor(
     }
     
     /**
-     * Smart Gallery statistics data class.
-     */
-    private data class SmartGalleryStats(
-        val personCount: Int = 0,
-        val labelCount: Int = 0,
-        val gpsPhotoCount: Int = 0,
-        val analyzedCount: Int = 0,
-        val totalPhotos: Int = 0
-    ) {
-        val analysisProgress: Float
-            get() = if (totalPhotos > 0) analyzedCount.toFloat() / totalPhotos else 0f
-    }
-    
-    /**
-     * Smart Gallery statistics flow.
-     * Must be defined before uiState to avoid initialization order issues.
+     * Phase 4: 智能画廊子状态 Flow
+     * 使用 SmartGalleryState 替换旧的 SmartGalleryStats
      * 
      * NOTE: Only queries the database when ENABLE_SMART_GALLERY is true.
      * When disabled, returns empty stats to avoid unnecessary database operations.
+     * 
+     * enabled 字段来自用户偏好设置（experimentalEnabled）
      */
-    private val smartGalleryStats: StateFlow<SmartGalleryStats> = if (BuildConfig.ENABLE_SMART_GALLERY) {
+    private val smartGalleryFlow: Flow<SmartGalleryState> = if (BuildConfig.ENABLE_SMART_GALLERY) {
+        // 先组合前 5 个 Flow
         combine(
+            preferencesRepository.getExperimentalEnabled(),
             faceDao.getPersonCountFlow(),
             photoLabelDao.getUniqueLabelCountFlow(),
             photoDao.getPhotosWithGpsCount(),
-            photoAnalysisDao.getAnalyzedCountFlow(),
-            getPhotosUseCase.getTotalCount()
-        ) { personCount, labelCount, gpsCount, analyzedCount, totalPhotos ->
-            SmartGalleryStats(
-                personCount = personCount,
-                labelCount = labelCount,
-                gpsPhotoCount = gpsCount,
-                analyzedCount = analyzedCount,
-                totalPhotos = totalPhotos
-            )
-        }.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = SmartGalleryStats()
-        )
+            photoAnalysisDao.getAnalyzedCountFlow()
+        ) { enabled, personCount, labelCount, gpsCount, analyzedCount ->
+            // 使用 data class 临时存储
+            SmartGalleryIntermediate(enabled, personCount, labelCount, gpsCount, analyzedCount)
+        }.let { intermediateFlow ->
+            // 添加 totalPhotos 计算 analysisProgress
+            combine(intermediateFlow, getPhotosUseCase.getTotalCount()) { intermediate, totalPhotos ->
+                val analysisProgress = if (totalPhotos > 0) {
+                    intermediate.analyzedCount.toFloat() / totalPhotos
+                } else 0f
+                SmartGalleryState(
+                    enabled = intermediate.enabled,
+                    personCount = intermediate.personCount,
+                    labelCount = intermediate.labelCount,
+                    gpsPhotoCount = intermediate.gpsPhotoCount,
+                    analysisProgress = analysisProgress,
+                    isAnalyzing = false
+                )
+            }
+        }
     } else {
-        // When Smart Gallery is disabled, return empty stats without database queries
-        MutableStateFlow(SmartGalleryStats())
+        // When Smart Gallery is disabled, just track experimentalEnabled setting
+        preferencesRepository.getExperimentalEnabled().map { enabled ->
+            SmartGalleryState(enabled = enabled)
+        }
     }
     
-    /**
-     * Intermediate flow for filtered counts.
-     */
-    private val filteredCountsFlow: Flow<FilteredCounts> = combine(
-        getFilteredTotalCount(),
-        getFilteredSortedCount(),
-        preferencesRepository.getExperimentalEnabled()
-    ) { total, sorted, experimental ->
-        FilteredCounts(total, sorted, experimental)
-    }
+    // Phase 4: 智能画廊中间数据（用于 combine 分组）
+    private data class SmartGalleryIntermediate(
+        val enabled: Boolean,
+        val personCount: Int,
+        val labelCount: Int,
+        val gpsPhotoCount: Int,
+        val analyzedCount: Int
+    )
+    
+    // ==================== Phase 4: 新的子状态 Flow ====================
     
     /**
-     * Intermediate flow for counts and classification mode.
+     * Phase 4: 照片统计子状态 Flow
+     * 合并了旧的 photoCountsFlow 和 filteredCountsFlow
      */
-    private val countsWithClassificationFlow: Flow<Pair<FilteredCounts, PhotoClassificationMode>> = combine(
-        filteredCountsFlow,
-        preferencesRepository.getPhotoClassificationMode()
-    ) { counts, classificationMode ->
-        Pair(counts, classificationMode)
-    }
-    
-    /**
-     * Intermediate flow for extra data (error, achievement, filter mode, daily task, filtered counts, classification mode).
-     */
-    private val extraDataFlow: Flow<ExtraData> = combine(
-        _error,
-        preferencesRepository.getAllAchievementData(),
-        preferencesRepository.getPhotoFilterMode(),
-        getDailyTaskStatusUseCase(),
-        countsWithClassificationFlow
-    ) { error, achievementData, filterMode, dailyTaskStatus, (counts, classificationMode) ->
-        ExtraData(error, achievementData, filterMode, dailyTaskStatus, counts, classificationMode)
-    }
-    
-    /**
-     * Intermediate flow for photo counts (total, unsorted, keep, trash, maybe).
-     */
-    private val photoCountsFlow: Flow<PhotoCounts> = combine(
+    private val photoStatsFlow: Flow<PhotoStatsState> = combine(
         getPhotosUseCase.getTotalCount(),
         getFilteredUnsortedCount(),
         getPhotosUseCase.getCountByStatus(PhotoStatus.KEEP),
         getPhotosUseCase.getCountByStatus(PhotoStatus.TRASH),
         getPhotosUseCase.getCountByStatus(PhotoStatus.MAYBE)
     ) { total, unsorted, keep, trash, maybe ->
-        PhotoCounts(total, unsorted, keep, trash, maybe)
+        // 第一阶段：基础统计
+        PhotoStatsState(
+            totalPhotos = total,
+            unsortedCount = unsorted,
+            keepCount = keep,
+            trashCount = trash,
+            maybeCount = maybe
+        )
+    }.let { baseStatsFlow ->
+        // 第二阶段：添加筛选统计
+        combine(
+            baseStatsFlow,
+            getFilteredTotalCount(),
+            getFilteredSortedCount()
+        ) { baseStats, filteredTotal, filteredSorted ->
+            baseStats.copy(
+                filteredTotal = filteredTotal,
+                filteredSorted = filteredSorted
+            )
+        }
     }
     
     /**
-     * Intermediate flow for UI state flags.
+     * Phase 4: UI 控制子状态 Flow
+     * 使用 AsyncState 替换 isSyncing + syncResult + error
      * 
-     * NOTE: isLoading logic is carefully designed to prevent UI flashing:
-     * - Only show loading when actively syncing (not for initial permission wait state)
-     * - _isLoading = true means waiting for permission (don't show loading, show permission prompt)
-     * - _isSyncing = true means actively syncing data (show loading with permission)
-     * - Use distinctUntilChanged to avoid redundant emissions
+     * NOTE: isLoading 逻辑保持与旧代码一致：
+     * - 只有在有权限且正在同步时才显示 loading
      */
-    private val uiStateFlags: Flow<UiStateFlags> = combine(
+    private val uiControlFlow: Flow<UiControlState> = combine(
         _hasPermission,
-        _isLoading,
-        _isSyncing,
-        _syncResult
-    ) { hasPermission, isLoading, isSyncing, syncResult ->
-        // Only show loading when:
-        // 1. We have permission AND
-        // 2. We are actively syncing (_isSyncing = true)
-        // Don't show loading for initial state (_isLoading = true but not syncing)
-        val effectiveLoading = hasPermission && isSyncing
-        UiStateFlags(hasPermission, effectiveLoading, isSyncing, syncResult)
-    }.distinctUntilChanged()
-    
-    /**
-     * Intermediate flow for dialog states.
-     */
-    private val dialogStatesFlow: Flow<DialogStates> = combine(
+        _syncState,
         _shouldShowChangelog,
         _shouldShowQuickStart,
-        _showSortModeSheet,
-        _statsSummary
-    ) { showChangelog, showQuickStart, showSortModeSheet, statsSummary ->
-        DialogStates(showChangelog, showQuickStart, showSortModeSheet, statsSummary)
+        _showSortModeSheet
+    ) { hasPermission, syncState, showChangelog, showQuickStart, showSortModeSheet ->
+        UiControlState(
+            hasPermission = hasPermission,
+            syncState = syncState,
+            shouldShowChangelog = showChangelog,
+            shouldShowQuickStart = showQuickStart,
+            showSortModeSheet = showSortModeSheet
+        )
     }
     
     /**
-     * UI State exposed to the screen.
+     * Phase 4: 功能配置子状态 Flow
+     * 合并了旧的 extraDataFlow 和 dialogStatesFlow 中的配置部分
+     */
+    private val featureConfigFlow: Flow<FeatureConfigState> = combine(
+        preferencesRepository.getPhotoFilterMode(),
+        preferencesRepository.getPhotoClassificationMode(),
+        getDailyTaskStatusUseCase(),
+        preferencesRepository.getAllAchievementData(),
+        _statsSummary
+    ) { filterMode, classificationMode, dailyTask, achievement, statsSummary ->
+        FeatureConfigState(
+            photoFilterMode = filterMode,
+            photoClassificationMode = classificationMode,
+            dailyTaskStatus = dailyTask,
+            achievementData = achievement,
+            statsSummary = statsSummary
+        )
+    }
+    
+    /**
+     * Phase 4: UI State exposed to the screen.
+     * 使用 4 个子状态 Flow 组合
      */
     val uiState: StateFlow<HomeUiState> = combine(
-        photoCountsFlow,
-        uiStateFlags,
-        extraDataFlow,
-        smartGalleryStats,
-        dialogStatesFlow
-    ) { counts, flags, extraData, sgStats, dialogStates ->
+        photoStatsFlow,
+        uiControlFlow,
+        featureConfigFlow,
+        smartGalleryFlow
+    ) { stats, uiControl, featureConfig, smartGallery ->
+        // 计算 isLoading：只有在有权限且正在同步时才显示 loading
+        // 保持与旧逻辑一致
+        val effectiveLoading = uiControl.hasPermission && uiControl.syncState.isLoading
+        
         HomeUiState(
-            totalPhotos = counts.total,
-            unsortedCount = counts.unsorted,
-            keepCount = counts.keep,
-            trashCount = counts.trash,
-            maybeCount = counts.maybe,
-            filteredTotal = extraData.counts.filteredTotal,
-            filteredSorted = extraData.counts.filteredSorted,
-            hasPermission = flags.hasPermission,
-            isLoading = flags.isLoading,
-            isSyncing = flags.isSyncing,
-            syncResult = flags.syncResult,
-            error = extraData.error,
-            achievementData = extraData.achievementData,
-            photoFilterMode = extraData.filterMode,
-            photoClassificationMode = extraData.classificationMode,
-            dailyTaskStatus = extraData.dailyTaskStatus,
-            experimentalEnabled = extraData.counts.experimentalEnabled,
-            // Smart Gallery stats
-            smartGalleryPersonCount = sgStats.personCount,
-            smartGalleryLabelCount = sgStats.labelCount,
-            smartGalleryGpsPhotoCount = sgStats.gpsPhotoCount,
-            smartGalleryAnalysisProgress = sgStats.analysisProgress,
-            smartGalleryIsAnalyzing = false,
-            // Dialog states
-            shouldShowChangelog = dialogStates.showChangelog,
-            shouldShowQuickStart = dialogStates.showQuickStart,
-            // Phase 1-D: 整理模式选择弹窗
-            showSortModeSheet = dialogStates.showSortModeSheet,
-            // Phase 3: 整理统计摘要
-            statsSummary = dialogStates.statsSummary
+            // 照片统计
+            totalPhotos = stats.totalPhotos,
+            unsortedCount = stats.unsortedCount,
+            keepCount = stats.keepCount,
+            trashCount = stats.trashCount,
+            maybeCount = stats.maybeCount,
+            filteredTotal = stats.filteredTotal,
+            filteredSorted = stats.filteredSorted,
+            // UI 控制
+            hasPermission = uiControl.hasPermission,
+            isLoading = effectiveLoading,
+            isSyncing = uiControl.syncState.isLoading,
+            syncResult = uiControl.syncState.getOrNull(),
+            error = uiControl.syncState.errorOrNull(),
+            shouldShowChangelog = uiControl.shouldShowChangelog,
+            shouldShowQuickStart = uiControl.shouldShowQuickStart,
+            showSortModeSheet = uiControl.showSortModeSheet,
+            // 功能配置
+            photoFilterMode = featureConfig.photoFilterMode,
+            photoClassificationMode = featureConfig.photoClassificationMode,
+            dailyTaskStatus = featureConfig.dailyTaskStatus,
+            achievementData = featureConfig.achievementData,
+            statsSummary = featureConfig.statsSummary,
+            // 智能画廊
+            experimentalEnabled = smartGallery.enabled,
+            smartGalleryPersonCount = smartGallery.personCount,
+            smartGalleryLabelCount = smartGallery.labelCount,
+            smartGalleryGpsPhotoCount = smartGallery.gpsPhotoCount,
+            smartGalleryAnalysisProgress = smartGallery.analysisProgress,
+            smartGalleryIsAnalyzing = smartGallery.isAnalyzing
         )
     }.stateIn(
         scope = viewModelScope,
@@ -449,45 +456,12 @@ class HomeViewModel @Inject constructor(
         initialValue = HomeUiState()
     )
     
-    /**
-     * Helper data class for combining filtered data.
-     */
-    private data class FilteredCounts(
-        val filteredTotal: Int,
-        val filteredSorted: Int,
-        val experimentalEnabled: Boolean
-    )
-    
-    private data class ExtraData(
-        val error: String?,
-        val achievementData: AchievementData,
-        val filterMode: PhotoFilterMode,
-        val dailyTaskStatus: DailyTaskStatus?,
-        val counts: FilteredCounts,
-        val classificationMode: PhotoClassificationMode
-    )
-    
-    private data class PhotoCounts(
-        val total: Int,
-        val unsorted: Int,
-        val keep: Int,
-        val trash: Int,
-        val maybe: Int
-    )
-    
-    private data class UiStateFlags(
-        val hasPermission: Boolean,
-        val isLoading: Boolean,
-        val isSyncing: Boolean,
-        val syncResult: String?
-    )
-    
-    private data class DialogStates(
-        val showChangelog: Boolean,
-        val showQuickStart: Boolean,
-        val showSortModeSheet: Boolean,
-        val statsSummary: StatsSummary
-    )
+    // Phase 4: 旧的中间数据类已删除
+    // - FilteredCounts -> 合并到 PhotoStatsState
+    // - ExtraData -> 拆分到 FeatureConfigState
+    // - PhotoCounts -> 合并到 PhotoStatsState
+    // - UiStateFlags -> 合并到 UiControlState
+    // - DialogStates -> 拆分到 UiControlState 和 FeatureConfigState
     
     init {
         // Update consecutive days tracking on app launch
@@ -650,37 +624,39 @@ class HomeViewModel @Inject constructor(
     
     /**
      * Called when permission is denied.
+     * Phase 4: 使用 AsyncState.Error 表示错误
      */
     fun onPermissionDenied() {
         _hasPermission.value = false
         _isLoading.value = false
-        _error.value = "需要存储权限才能访问照片"
+        _syncState.value = AsyncState.Error("需要存储权限才能访问照片")
     }
     
     /**
      * Sync photos from MediaStore.
+     * Phase 4: 使用 AsyncState 管理同步状态
      */
     fun syncPhotos() {
         if (!_hasPermission.value) return
         // Prevent multiple simultaneous syncs
-        if (_isSyncing.value) return
+        if (_syncState.value.isLoading) return
         
         viewModelScope.launch {
-            _isSyncing.value = true
+            _syncState.value = AsyncState.Loading
             try {
                 val result = syncPhotosUseCase()
                 hasCompletedInitialSync = true  // Mark sync as completed
-                _syncResult.value = if (result.isInitialSync) {
+                val message = if (result.isInitialSync) {
                     "已导入 ${result.newPhotosCount} 张照片"
                 } else if (result.newPhotosCount > 0) {
                     "发现 ${result.newPhotosCount} 张新照片"
                 } else {
                     null
                 }
+                _syncState.value = AsyncState.Success(message)
             } catch (e: Exception) {
-                _error.value = "同步失败: ${e.message}"
+                _syncState.value = AsyncState.Error("同步失败: ${e.message}", e)
             } finally {
-                _isSyncing.value = false
                 _isLoading.value = false
             }
         }
@@ -688,16 +664,24 @@ class HomeViewModel @Inject constructor(
     
     /**
      * Clear sync result message.
+     * Phase 4: 重置为 Idle 状态
      */
     fun clearSyncResult() {
-        _syncResult.value = null
+        // 只有在成功状态时才清除
+        if (_syncState.value is AsyncState.Success) {
+            _syncState.value = AsyncState.Idle
+        }
     }
     
     /**
      * Clear error message.
+     * Phase 4: 重置为 Idle 状态
      */
     fun clearError() {
-        _error.value = null
+        // 只有在错误状态时才清除
+        if (_syncState.value is AsyncState.Error) {
+            _syncState.value = AsyncState.Idle
+        }
     }
     
     // ==================== Phase 1-D: 整理模式选择 ====================

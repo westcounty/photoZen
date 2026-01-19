@@ -18,6 +18,7 @@ import com.example.photozen.domain.EventGrouper.Companion.getEffectiveTime
 import com.example.photozen.domain.GroupingMode
 import com.example.photozen.domain.PhotoEvent
 import com.example.photozen.domain.usecase.AlbumOperationsUseCase
+import com.example.photozen.domain.usecase.PhotoBatchOperationUseCase
 import com.example.photozen.domain.usecase.SortPhotoUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -80,7 +81,9 @@ class TimelineViewModel @Inject constructor(
     private val albumBubbleDao: AlbumBubbleDao,
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val albumOperationsUseCase: AlbumOperationsUseCase,
-    private val sortPhotoUseCase: SortPhotoUseCase
+    private val sortPhotoUseCase: SortPhotoUseCase,
+    // Phase 4: 批量操作 UseCase
+    private val batchOperationUseCase: PhotoBatchOperationUseCase
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(TimelineUiState())
@@ -452,6 +455,9 @@ class TimelineViewModel @Inject constructor(
     /**
      * 批量更新选中照片的状态
      * 
+     * Phase 4: 使用 PhotoBatchOperationUseCase 统一处理批量操作，
+     * 支持撤销、Snackbar 反馈和统计记录。
+     * 
      * @param status 目标状态
      */
     fun batchUpdateStatus(status: PhotoStatus) {
@@ -459,24 +465,23 @@ class TimelineViewModel @Inject constructor(
             val selectedIds = _uiState.value.selectedPhotoIds.toList()
             if (selectedIds.isEmpty()) return@launch
             
-            when (status) {
-                PhotoStatus.KEEP -> {
-                    selectedIds.forEach { sortPhotoUseCase.keepPhoto(it) }
-                    _uiState.update { it.copy(message = "已标记 ${selectedIds.size} 张为保留") }
+            // Phase 4: 使用 BatchUseCase 执行批量操作
+            // UseCase 内部已处理撤销、Snackbar、统计
+            batchOperationUseCase.batchUpdateStatus(
+                photoIds = selectedIds,
+                newStatus = status,
+                showUndo = true,
+                showSnackbar = false // 我们使用本地消息显示
+            ).onSuccess { result ->
+                val statusLabel = when (status) {
+                    PhotoStatus.KEEP -> "保留"
+                    PhotoStatus.MAYBE -> "待定"
+                    PhotoStatus.TRASH -> "删除"
+                    PhotoStatus.UNSORTED -> "未筛选"
                 }
-                PhotoStatus.MAYBE -> {
-                    selectedIds.forEach { sortPhotoUseCase.maybePhoto(it) }
-                    _uiState.update { it.copy(message = "已标记 ${selectedIds.size} 张为待定") }
-                }
-                PhotoStatus.TRASH -> {
-                    selectedIds.forEach { sortPhotoUseCase.trashPhoto(it) }
-                    _uiState.update { it.copy(message = "已标记 ${selectedIds.size} 张为删除") }
-                }
-                PhotoStatus.UNSORTED -> {
-                    // 重置为未筛选
-                    selectedIds.forEach { photoDao.updateStatus(it, PhotoStatus.UNSORTED) }
-                    _uiState.update { it.copy(message = "已重置 ${selectedIds.size} 张为未筛选") }
-                }
+                _uiState.update { it.copy(message = "已标记 ${result.affectedCount} 张为$statusLabel") }
+            }.onFailure { e ->
+                _uiState.update { it.copy(error = "操作失败: ${e.message}") }
             }
             
             // 清除选择

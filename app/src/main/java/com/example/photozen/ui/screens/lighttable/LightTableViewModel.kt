@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.domain.usecase.GetMaybePhotosUseCase
+import com.example.photozen.domain.usecase.PhotoBatchOperationUseCase
 import com.example.photozen.domain.usecase.SortPhotoUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -75,7 +76,9 @@ private data class InternalState(
 @HiltViewModel
 class LightTableViewModel @Inject constructor(
     private val getMaybePhotosUseCase: GetMaybePhotosUseCase,
-    private val sortPhotoUseCase: SortPhotoUseCase
+    private val sortPhotoUseCase: SortPhotoUseCase,
+    // Phase 4: 批量操作 UseCase
+    private val batchOperationUseCase: PhotoBatchOperationUseCase
 ) : ViewModel() {
     
     private val _internalState = MutableStateFlow(InternalState())
@@ -171,6 +174,8 @@ class LightTableViewModel @Inject constructor(
     
     /**
      * 保留选中的照片，丢弃未选中的
+     * 
+     * Phase 4: 使用 PhotoBatchOperationUseCase 统一处理批量操作
      */
     fun keepSelectedTrashRest() {
         val selected = _internalState.value.selectedInComparison
@@ -180,9 +185,10 @@ class LightTableViewModel @Inject constructor(
         
         viewModelScope.launch {
             try {
-                sortPhotoUseCase.batchUpdateStatus(selected.toList(), PhotoStatus.KEEP)
+                // Phase 4: 使用 BatchUseCase 执行批量操作
+                batchOperationUseCase.batchKeep(selected.toList(), showUndo = true)
                 if (others.isNotEmpty()) {
-                    sortPhotoUseCase.batchUpdateStatus(others.toList(), PhotoStatus.TRASH)
+                    batchOperationUseCase.batchTrash(others.toList(), showUndo = true)
                 }
                 clearSelection()
                 _internalState.update { it.copy(mode = LightTableMode.SELECTION) }
@@ -192,12 +198,16 @@ class LightTableViewModel @Inject constructor(
         }
     }
     
+    /**
+     * Phase 4: 使用 PhotoBatchOperationUseCase 统一处理批量操作
+     */
     fun keepAllSelected() {
         val selected = _internalState.value.selectedForComparison.toList()
         
         viewModelScope.launch {
             try {
-                sortPhotoUseCase.batchUpdateStatus(selected, PhotoStatus.KEEP)
+                // Phase 4: 使用 BatchUseCase 执行批量操作
+                batchOperationUseCase.batchKeep(selected, showUndo = true)
                 clearSelection()
                 _internalState.update { it.copy(mode = LightTableMode.SELECTION) }
             } catch (e: Exception) {
@@ -206,12 +216,16 @@ class LightTableViewModel @Inject constructor(
         }
     }
     
+    /**
+     * Phase 4: 使用 PhotoBatchOperationUseCase 统一处理批量操作
+     */
     fun trashAllSelected() {
         val selected = _internalState.value.selectedForComparison.toList()
         
         viewModelScope.launch {
             try {
-                sortPhotoUseCase.batchUpdateStatus(selected, PhotoStatus.TRASH)
+                // Phase 4: 使用 BatchUseCase 执行批量操作
+                batchOperationUseCase.batchTrash(selected, showUndo = true)
                 clearSelection()
                 _internalState.update { it.copy(mode = LightTableMode.SELECTION) }
             } catch (e: Exception) {

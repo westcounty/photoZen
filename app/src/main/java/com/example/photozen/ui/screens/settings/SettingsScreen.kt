@@ -1173,6 +1173,7 @@ private fun FilterOption(
 
 /**
  * App introduction dialog showing features and highlights.
+ * Updated for v2.0 - emphasizing new navigation and efficiency features.
  */
 @Composable
 private fun AboutDialog(
@@ -1198,7 +1199,7 @@ private fun AboutDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // App positioning
+                // App positioning - v2.0
                 Text(
                     text = "📷 让整理照片变成一种享受",
                     style = MaterialTheme.typography.titleSmall,
@@ -1206,37 +1207,37 @@ private fun AboutDialog(
                     color = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    text = "PhotoZen 是一款专为摄影爱好者设计的照片整理神器。告别繁琐的相册管理，用最自然的方式筛选你的照片。",
+                    text = "PhotoZen 2.0 全面升级！全新底部导航、统一手势交互、智能筛选预设，让照片整理更高效、更流畅、更愉悦。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 
                 HorizontalDivider()
                 
-                // Core features
+                // v2.0 New features
+                FeatureSection(
+                    title = "📱 全新底部导航",
+                    description = "首页/时间线/相册/设置一键直达，Tab 切换自动保持状态，整理流程沉浸式体验。"
+                )
+                
                 FeatureSection(
                     title = "🎴 滑动整理",
-                    description = "像刷 Tinder 一样筛选照片！左右滑保留，上滑删除，下滑待定。丝滑动画 + 触感反馈，让整理变成解压游戏。"
+                    description = "像刷 Tinder 一样筛选照片！左右滑保留，上滑删除，下滑待定。边缘发光 + 震动反馈，整理变成解压游戏。"
                 )
                 
                 FeatureSection(
-                    title = "🔍 对比抉择",
-                    description = "纠结哪张更好？同时对比多张照片，同步缩放查看细节，轻松做出取舍。"
+                    title = "👆 统一手势交互",
+                    description = "所有页面手势一致：点击看大图、长按选择、拖动批量选。学一次，处处通用。"
                 )
                 
                 FeatureSection(
-                    title = "🏷️ 标签气泡",
-                    description = "可拖拽的物理气泡图！标签越大说明照片越多，拖来拖去还有弹性碰撞，谁说管理标签不能好玩？"
+                    title = "⚡ 批量操作升级",
+                    description = "选择顶栏显示已选数量、支持全选、一键撤销。批量操作从未如此高效。"
                 )
                 
                 FeatureSection(
-                    title = "✂️ 无损编辑",
-                    description = "裁切照片不伤原图，还能创建虚拟副本。一张照片多种构图，随时恢复，尽情尝试。"
-                )
-                
-                FeatureSection(
-                    title = "🚀 心流模式",
-                    description = "一键进入沉浸式整理：滑动→对比→打标签→完成！连击系统让你越整理越上瘾。"
+                    title = "📊 整理统计",
+                    description = "日历热力图展示整理足迹，统计卡片记录成就。看得见的进步，更有动力！"
                 )
                 
                 FeatureSection(

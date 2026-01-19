@@ -10,7 +10,6 @@ import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.AlbumAddAction
-import com.example.photozen.data.repository.PhotoClassificationMode
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.MediaStoreDataSource
 import com.example.photozen.domain.usecase.AlbumOperationsUseCase
@@ -18,9 +17,9 @@ import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.MovePhotoResult
 import com.example.photozen.domain.usecase.SortPhotoUseCase
 import com.example.photozen.data.repository.GuideRepository
-import com.example.photozen.ui.state.UndoManager
 import com.example.photozen.ui.state.UiEvent
-import com.example.photozen.domain.model.UndoAction
+import com.example.photozen.ui.state.PhotoSelectionStateHolder
+import com.example.photozen.domain.usecase.PhotoBatchOperationUseCase
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -77,13 +76,12 @@ data class PhotoListUiState(
     val currentClassifyPhoto: PhotoEntity? get() = classifyModePhotos.getOrNull(classifyModeIndex)
 }
 
+// Phase 4 清理：isSelectionMode 和 selectedPhotoIds 已迁移到 PhotoSelectionStateHolder
 private data class InternalState(
     val isLoading: Boolean = true,
     val message: String? = null,
     val defaultExternalApp: String? = null,
     val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC,
-    val isSelectionMode: Boolean = false,
-    val selectedPhotoIds: Set<String> = emptySet(),
     val gridColumns: Int = 2,
     val showAlbumDialog: Boolean = false,
     // Phase 6: Keep list album filter
@@ -110,7 +108,9 @@ class PhotoListViewModel @Inject constructor(
     private val albumBubbleDao: AlbumBubbleDao,
     private val albumOperationsUseCase: AlbumOperationsUseCase,
     val guideRepository: GuideRepository,
-    private val undoManager: UndoManager
+    // Phase 4: 共享状态和批量操作
+    private val selectionStateHolder: PhotoSelectionStateHolder,
+    private val batchOperationUseCase: PhotoBatchOperationUseCase
 ) : ViewModel() {
     
     // UI 事件流
@@ -132,11 +132,14 @@ class PhotoListViewModel @Inject constructor(
     // Album mode state
     private val _albumState = MutableStateFlow(AlbumState())
     
+    // Phase 4: 使用 selectionStateHolder 的状态
     val uiState: StateFlow<PhotoListUiState> = combine(
         getPhotosUseCase.getPhotosByStatus(status),
         _internalState,
-        _albumState
-    ) { photos, internal, albumState ->
+        _albumState,
+        selectionStateHolder.selectedIds,
+        selectionStateHolder.isSelectionMode
+    ) { photos, internal, albumState, selectedIds, isSelectionMode ->
         // Apply sorting based on dateAdded (creation time)
         val sortedPhotos = applySortOrder(photos, internal.sortOrder)
         
@@ -156,8 +159,8 @@ class PhotoListViewModel @Inject constructor(
             sortedPhotos
         }
         
-        // Filter out selected photos that no longer exist
-        val validSelectedIds = internal.selectedPhotoIds.filter { id ->
+        // Filter out selected photos that no longer exist (Phase 4: 使用 StateHolder 的 selectedIds)
+        val validSelectedIds = selectedIds.filter { id ->
             filteredPhotos.any { it.id == id }
         }.toSet()
         
@@ -168,7 +171,7 @@ class PhotoListViewModel @Inject constructor(
             message = internal.message,
             defaultExternalApp = internal.defaultExternalApp,
             sortOrder = internal.sortOrder,
-            isSelectionMode = internal.isSelectionMode,
+            isSelectionMode = isSelectionMode || validSelectedIds.isNotEmpty(), // Phase 4: 使用 StateHolder
             selectedPhotoIds = validSelectedIds,
             gridColumns = internal.gridColumns,
             albumBubbleList = albumState.albumBubbleList,
@@ -189,6 +192,9 @@ class PhotoListViewModel @Inject constructor(
     )
     
     init {
+        // Phase 4: 进入页面时清空选择状态，避免与其他页面冲突
+        selectionStateHolder.clear()
+        
         viewModelScope.launch {
             _internalState.update { it.copy(isLoading = false) }
         }
@@ -325,138 +331,103 @@ class PhotoListViewModel @Inject constructor(
         _internalState.update { it.copy(message = null) }
     }
     
-    // ==================== Selection Mode ====================
+    // ==================== Selection Mode (Phase 4: 使用 StateHolder) ====================
     
     /**
      * Toggle selection mode on/off.
+     * Phase 4: 委托给 PhotoSelectionStateHolder
      */
     fun toggleSelectionMode() {
-        _internalState.update { 
-            it.copy(
-                isSelectionMode = !it.isSelectionMode,
-                selectedPhotoIds = if (it.isSelectionMode) emptySet() else it.selectedPhotoIds
-            )
+        if (selectionStateHolder.hasSelection()) {
+            selectionStateHolder.clear()
         }
     }
     
     /**
      * Exit selection mode and clear selection.
+     * Phase 4: 委托给 PhotoSelectionStateHolder
      */
     fun exitSelectionMode() {
-        _internalState.update { 
-            it.copy(isSelectionMode = false, selectedPhotoIds = emptySet())
-        }
+        selectionStateHolder.clear()
     }
     
     /**
      * Toggle selection of a single photo.
+     * Phase 4: 委托给 PhotoSelectionStateHolder
      */
     fun togglePhotoSelection(photoId: String) {
-        _internalState.update { state ->
-            val newSelection = if (photoId in state.selectedPhotoIds) {
-                state.selectedPhotoIds - photoId
-            } else {
-                state.selectedPhotoIds + photoId
-            }
-            state.copy(selectedPhotoIds = newSelection)
-        }
+        selectionStateHolder.toggle(photoId)
     }
     
     /**
      * Update selection with a new set of IDs (for drag-select).
+     * Phase 4: 委托给 PhotoSelectionStateHolder
      */
     fun updateSelection(newSelection: Set<String>) {
-        _internalState.update { state ->
-            state.copy(
-                isSelectionMode = newSelection.isNotEmpty(),
-                selectedPhotoIds = newSelection
-            )
-        }
+        selectionStateHolder.setSelection(newSelection)
     }
     
     /**
      * Select all photos.
+     * Phase 4: 委托给 PhotoSelectionStateHolder
      */
     fun selectAll() {
-        val allIds = uiState.value.photos.map { it.id }.toSet()
-        _internalState.update { it.copy(selectedPhotoIds = allIds) }
+        val allIds = uiState.value.photos.map { it.id }
+        selectionStateHolder.selectAll(allIds)
     }
     
     /**
      * Deselect all photos.
+     * Phase 4: 委托给 PhotoSelectionStateHolder
      */
     fun deselectAll() {
-        _internalState.update { it.copy(selectedPhotoIds = emptySet()) }
+        selectionStateHolder.clear()
     }
     
     /**
-     * 批量更新选中照片状态（带撤销支持）
+     * 批量更新选中照片状态（Phase 4: 使用 BatchUseCase）
+     * 
+     * 新版本使用 PhotoBatchOperationUseCase 统一处理：
+     * - 状态批量更新
+     * - 撤销支持（通过 UndoManager）
+     * - Snackbar 反馈（通过 SnackbarManager）
+     * - 统计记录
      */
     private fun batchUpdateStatus(newStatus: PhotoStatus) {
-        val selectedIds = _internalState.value.selectedPhotoIds.toList()
+        val selectedIds = selectionStateHolder.getSelectedList()
         if (selectedIds.isEmpty()) return
         
         viewModelScope.launch {
-            try {
-                // 1. 记录原始状态
-                val previousStatus = selectedIds.associateWith { id ->
-                    photoDao.getById(id)?.status ?: status
-                }
-                
-                // 2. 执行更新
-                when (newStatus) {
-                    PhotoStatus.KEEP -> selectedIds.forEach { sortPhotoUseCase.keepPhoto(it) }
-                    PhotoStatus.TRASH -> selectedIds.forEach { sortPhotoUseCase.trashPhoto(it) }
-                    PhotoStatus.MAYBE -> selectedIds.forEach { sortPhotoUseCase.maybePhoto(it) }
-                    PhotoStatus.UNSORTED -> selectedIds.forEach { sortPhotoUseCase.resetPhoto(it) }
-                }
-                
-                // 3. 记录可撤销操作
-                val action = UndoAction.StatusChange(selectedIds, previousStatus, newStatus)
-                undoManager.recordAction(action)
-                
-                // 4. 清空选择
-                _internalState.update { 
-                    it.copy(
-                        selectedPhotoIds = emptySet(),
-                        isSelectionMode = false
-                    )
-                }
-                
-                // 5. 发送 Snackbar 事件
-                _uiEvent.emit(UiEvent.ShowSnackbar(
-                    message = action.getDescription(),
-                    actionLabel = "撤销",
-                    onAction = {
-                        val result = undoManager.undo()
-                        if (result.isSuccess && result.getOrDefault(false)) {
-                            _uiEvent.emit(UiEvent.ShowSnackbar("已撤销"))
-                        }
-                    }
-                ))
-            } catch (e: Exception) {
-                _uiEvent.emit(UiEvent.ShowSnackbar("操作失败"))
-            }
+            // Phase 4: 使用 BatchUseCase 执行批量操作
+            // UseCase 内部已处理撤销、Snackbar、统计
+            batchOperationUseCase.batchUpdateStatus(selectedIds, newStatus)
+            
+            // 清空选择
+            selectionStateHolder.clear()
         }
     }
     
     /**
      * Move selected photos to Keep.
+     * Phase 4: 使用 BatchUseCase
      */
     fun moveSelectedToKeep() = batchUpdateStatus(PhotoStatus.KEEP)
     
     /**
      * Move selected photos to Trash.
+     * Phase 4: 使用 BatchUseCase
      */
     fun moveSelectedToTrash() = batchUpdateStatus(PhotoStatus.TRASH)
     
     /**
      * Move selected photos to Maybe.
+     * Phase 4: 使用 BatchUseCase
      */
     fun moveSelectedToMaybe() = batchUpdateStatus(PhotoStatus.MAYBE)
     
     /**
      * Reset selected photos to Unsorted.
+     * Phase 4: 使用 BatchUseCase
      */
     fun resetSelectedToUnsorted() = batchUpdateStatus(PhotoStatus.UNSORTED)
     
@@ -520,9 +491,10 @@ class PhotoListViewModel @Inject constructor(
     
     /**
      * Add selected photos to album using default action (copy or move).
+     * Phase 4: 使用 selectionStateHolder
      */
     fun addSelectedToAlbum(bucketId: String) {
-        val selectedIds = _internalState.value.selectedPhotoIds
+        val selectedIds = selectionStateHolder.getSelectedList()
         if (selectedIds.isEmpty()) return
         
         val action = _albumState.value.albumAddAction
@@ -535,9 +507,10 @@ class PhotoListViewModel @Inject constructor(
     
     /**
      * Move selected photos to an album.
+     * Phase 4: 使用 selectionStateHolder
      */
     fun moveSelectedToAlbum(bucketId: String) {
-        val selectedIds = _internalState.value.selectedPhotoIds
+        val selectedIds = selectionStateHolder.getSelectedList()
         if (selectedIds.isEmpty()) return
         
         viewModelScope.launch {
@@ -566,11 +539,10 @@ class PhotoListViewModel @Inject constructor(
                 _internalState.update { 
                     it.copy(
                         showAlbumDialog = false,
-                        message = "已移动 $successCount 张照片到「${album?.displayName}」",
-                        selectedPhotoIds = emptySet(),
-                        isSelectionMode = false
+                        message = "已移动 $successCount 张照片到「${album?.displayName}」"
                     )
                 }
+                selectionStateHolder.clear()
             } catch (e: Exception) {
                 _internalState.update { it.copy(message = "移动失败: ${e.message}") }
             }
@@ -579,9 +551,10 @@ class PhotoListViewModel @Inject constructor(
     
     /**
      * Copy selected photos to an album.
+     * Phase 4: 使用 selectionStateHolder
      */
     fun copySelectedToAlbum(bucketId: String) {
-        val selectedIds = _internalState.value.selectedPhotoIds
+        val selectedIds = selectionStateHolder.getSelectedList()
         if (selectedIds.isEmpty()) return
         
         viewModelScope.launch {
@@ -605,11 +578,10 @@ class PhotoListViewModel @Inject constructor(
                 _internalState.update { 
                     it.copy(
                         showAlbumDialog = false,
-                        message = "已复制 $successCount 张照片到「${album?.displayName}」",
-                        selectedPhotoIds = emptySet(),
-                        isSelectionMode = false
+                        message = "已复制 $successCount 张照片到「${album?.displayName}」"
                     )
                 }
+                selectionStateHolder.clear()
             } catch (e: Exception) {
                 _internalState.update { it.copy(message = "复制失败: ${e.message}") }
             }
@@ -768,5 +740,13 @@ class PhotoListViewModel @Inject constructor(
             // Move to next photo
             _internalState.update { it.copy(classifyModeIndex = currentIndex + 1) }
         }
+    }
+    
+    /**
+     * Phase 4: 页面销毁时清理选择状态
+     */
+    override fun onCleared() {
+        super.onCleared()
+        selectionStateHolder.clear()
     }
 }

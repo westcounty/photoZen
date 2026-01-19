@@ -13,7 +13,8 @@ import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.ManageTrashUseCase
-import com.example.photozen.domain.usecase.SortPhotoUseCase
+import com.example.photozen.domain.usecase.PhotoBatchOperationUseCase
+import com.example.photozen.ui.state.PhotoSelectionStateHolder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,14 +41,13 @@ data class TrashUiState(
     val allSelected: Boolean get() = photos.isNotEmpty() && selectedIds.size == photos.size
 }
 
+// Phase 4 清理：selectedIds 和 inSelectionMode 已迁移到 PhotoSelectionStateHolder
 private data class InternalState(
-    val selectedIds: Set<String> = emptySet(),
     val isLoading: Boolean = true,
     val isDeleting: Boolean = false,
     val deleteIntentSender: IntentSender? = null,
     val message: String? = null,
-    val gridColumns: Int = 2,
-    val inSelectionMode: Boolean = false
+    val gridColumns: Int = 2
 )
 
 @HiltViewModel
@@ -55,25 +55,35 @@ class TrashViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val getPhotosUseCase: GetPhotosUseCase,
     private val manageTrashUseCase: ManageTrashUseCase,
-    private val sortPhotoUseCase: SortPhotoUseCase,
-    private val preferencesRepository: com.example.photozen.data.repository.PreferencesRepository
+    private val preferencesRepository: com.example.photozen.data.repository.PreferencesRepository,
+    // Phase 4: 共享状态和批量操作
+    private val selectionStateHolder: PhotoSelectionStateHolder,
+    private val batchOperationUseCase: PhotoBatchOperationUseCase
 ) : ViewModel() {
     
     private val _internalState = MutableStateFlow(InternalState())
     
+    // Phase 4: 使用 selectionStateHolder 的状态
     val uiState: StateFlow<TrashUiState> = combine(
         getPhotosUseCase.getPhotosByStatus(PhotoStatus.TRASH),
-        _internalState
-    ) { photos, internal ->
+        _internalState,
+        selectionStateHolder.selectedIds,
+        selectionStateHolder.isSelectionMode
+    ) { photos, internal, selectedIds, isSelectionMode ->
+        // Filter out selected photos that no longer exist
+        val validSelectedIds = selectedIds.filter { id ->
+            photos.any { it.id == id }
+        }.toSet()
+        
         TrashUiState(
             photos = photos,
-            selectedIds = internal.selectedIds,
+            selectedIds = validSelectedIds,
             isLoading = internal.isLoading && photos.isEmpty(),
             isDeleting = internal.isDeleting,
             deleteIntentSender = internal.deleteIntentSender,
             message = internal.message,
             gridColumns = internal.gridColumns,
-            inSelectionMode = internal.inSelectionMode
+            inSelectionMode = isSelectionMode || validSelectedIds.isNotEmpty()
         )
     }.stateIn(
         scope = viewModelScope,
@@ -82,6 +92,9 @@ class TrashViewModel @Inject constructor(
     )
     
     init {
+        // Phase 4: 进入页面时清空选择状态
+        selectionStateHolder.clear()
+        
         viewModelScope.launch {
             _internalState.update { it.copy(isLoading = false) }
         }
@@ -95,67 +108,66 @@ class TrashViewModel @Inject constructor(
         }
     }
     
+    // Phase 4: 选择操作委托给 StateHolder
     fun toggleSelection(photoId: String) {
-        _internalState.update { state ->
-            val newSelection = if (photoId in state.selectedIds) {
-                state.selectedIds - photoId
-            } else {
-                state.selectedIds + photoId
-            }
-            state.copy(selectedIds = newSelection)
-        }
+        selectionStateHolder.toggle(photoId)
     }
     
     /**
      * Update selection with a new set of IDs (for drag-select).
+     * Phase 4: 委托给 StateHolder
      */
     fun updateSelection(newSelection: Set<String>) {
-        _internalState.update { state ->
-            state.copy(
-                selectedIds = newSelection,
-                inSelectionMode = newSelection.isNotEmpty()
-            )
-        }
+        selectionStateHolder.setSelection(newSelection)
     }
     
+    /**
+     * Phase 4: 委托给 StateHolder
+     */
     fun selectAll() {
-        val allIds = uiState.value.photos.map { it.id }.toSet()
-        _internalState.update { it.copy(selectedIds = allIds) }
+        val allIds = uiState.value.photos.map { it.id }
+        selectionStateHolder.selectAll(allIds)
     }
     
+    /**
+     * Phase 4: 委托给 StateHolder
+     */
     fun clearSelection() {
-        _internalState.update { it.copy(selectedIds = emptySet(), inSelectionMode = false) }
+        selectionStateHolder.clear()
     }
     
+    /**
+     * Phase 4: 委托给 StateHolder（已废弃，选择时自动进入选择模式）
+     */
     fun enterSelectionMode() {
-        _internalState.update { it.copy(inSelectionMode = true) }
+        // Selection mode is now automatic when selection is made
     }
     
+    /**
+     * Move selected photos to Keep.
+     * Phase 4: 使用 BatchUseCase
+     */
     fun keepSelected() {
-        val selected = _internalState.value.selectedIds.toList()
+        val selected = selectionStateHolder.getSelectedList()
+        if (selected.isEmpty()) return
+        
         viewModelScope.launch {
-            try {
-                sortPhotoUseCase.batchUpdateStatus(selected, PhotoStatus.KEEP)
-                _internalState.update { 
-                    it.copy(selectedIds = emptySet(), inSelectionMode = false, message = "已将 ${selected.size} 张照片移至保留")
-                }
-            } catch (e: Exception) {
-                _internalState.update { it.copy(message = "操作失败") }
-            }
+            batchOperationUseCase.batchRestoreFromTrash(selected, PhotoStatus.KEEP)
+            selectionStateHolder.clear()
         }
     }
     
+    /**
+     * Move selected photos to Maybe.
+     * Phase 4: 使用 BatchUseCase
+     */
     fun maybeSelected() {
-        val selected = _internalState.value.selectedIds.toList()
+        val selected = selectionStateHolder.getSelectedList()
+        if (selected.isEmpty()) return
+        
         viewModelScope.launch {
-            try {
-                sortPhotoUseCase.batchUpdateStatus(selected, PhotoStatus.MAYBE)
-                _internalState.update { 
-                    it.copy(selectedIds = emptySet(), inSelectionMode = false, message = "已将 ${selected.size} 张照片移至待定")
-                }
-            } catch (e: Exception) {
-                _internalState.update { it.copy(message = "操作失败") }
-            }
+            batchOperationUseCase.batchRestoreFromTrash(selected, PhotoStatus.MAYBE)
+            selectionStateHolder.clear()
         }
     }
     
@@ -168,17 +180,17 @@ class TrashViewModel @Inject constructor(
         }
     }
     
+    /**
+     * Restore selected photos to Unsorted.
+     * Phase 4: 使用 BatchUseCase
+     */
     fun restoreSelected() {
-        val selected = _internalState.value.selectedIds.toList()
+        val selected = selectionStateHolder.getSelectedList()
+        if (selected.isEmpty()) return
+        
         viewModelScope.launch {
-            try {
-                sortPhotoUseCase.batchUpdateStatus(selected, PhotoStatus.UNSORTED)
-                _internalState.update { 
-                    it.copy(selectedIds = emptySet(), inSelectionMode = false, message = "已恢复 ${selected.size} 张照片")
-                }
-            } catch (e: Exception) {
-                _internalState.update { it.copy(message = "恢复失败") }
-            }
+            batchOperationUseCase.batchRestoreFromTrash(selected, PhotoStatus.UNSORTED)
+            selectionStateHolder.clear()
         }
     }
     
@@ -187,9 +199,13 @@ class TrashViewModel @Inject constructor(
      * For Android 11+, this creates an IntentSender for user confirmation.
      * For older versions, we just remove from our database (actual file deletion 
      * would require WRITE_EXTERNAL_STORAGE which is restricted).
+     * 
+     * Note: 永久删除保持原逻辑，不使用 BatchUseCase，因为涉及系统权限请求。
      */
     fun requestPermanentDelete() {
-        val selectedPhotos = uiState.value.photos.filter { it.id in _internalState.value.selectedIds }
+        // Phase 4: 使用 selectionStateHolder 获取选中的照片
+        val selectedIds = selectionStateHolder.getSelectedList()
+        val selectedPhotos = uiState.value.photos.filter { it.id in selectedIds }
         if (selectedPhotos.isEmpty()) return
         
         viewModelScope.launch {
@@ -219,12 +235,11 @@ class TrashViewModel @Inject constructor(
                 } else {
                     // Older versions: Just remove selected photos from our database
                     // (actual file deletion not supported without special permissions)
-                    val selectedIds = _internalState.value.selectedIds.toList()
                     val count = selectedIds.size
                     manageTrashUseCase.deletePhotos(selectedIds)
+                    selectionStateHolder.clear()
                     _internalState.update { 
                         it.copy(
-                            selectedIds = emptySet(),
                             isDeleting = false,
                             message = "已从整理记录中移除 $count 张照片"
                         )
@@ -240,12 +255,13 @@ class TrashViewModel @Inject constructor(
     
     /**
      * Called after system delete dialog completes.
+     * Phase 4: 使用 selectionStateHolder
      */
     fun onDeleteComplete(success: Boolean) {
         viewModelScope.launch {
             if (success) {
                 // Remove only the selected photos from our database
-                val selectedIds = _internalState.value.selectedIds.toList()
+                val selectedIds = selectionStateHolder.getSelectedList()
                 val count = selectedIds.size
                 manageTrashUseCase.deletePhotos(selectedIds)
                 
@@ -256,9 +272,9 @@ class TrashViewModel @Inject constructor(
                     preferencesRepository.incrementTrashEmptied()
                 }
                 
+                selectionStateHolder.clear()
                 _internalState.update { 
                     it.copy(
-                        selectedIds = emptySet(),
                         deleteIntentSender = null,
                         message = "已彻底删除 $count 张照片"
                     )
@@ -277,5 +293,13 @@ class TrashViewModel @Inject constructor(
     
     fun clearMessage() {
         _internalState.update { it.copy(message = null) }
+    }
+    
+    /**
+     * Phase 4: 页面销毁时清理选择状态
+     */
+    override fun onCleared() {
+        super.onCleared()
+        selectionStateHolder.clear()
     }
 }

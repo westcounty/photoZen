@@ -87,6 +87,8 @@ import com.example.photozen.ui.components.DeleteType
 import com.example.photozen.ui.components.DragSelectPhotoGrid
 import com.example.photozen.ui.components.EmptyStates
 import com.example.photozen.ui.components.SelectionTopBar
+import com.example.photozen.ui.components.SelectionBottomBar
+import com.example.photozen.ui.components.BottomBarConfigs
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
@@ -207,15 +209,15 @@ fun TrashScreen(
             }
         },
         bottomBar = {
+            // Phase 4: 使用 BottomBarConfigs
             if (uiState.isSelectionMode && uiState.selectedCount > 0) {
-                TrashSelectionBottomBar(
-                    onRestore = { viewModel.restoreSelected() },
+                val actions = BottomBarConfigs.trashListMultiSelect(
                     onKeep = { viewModel.keepSelected() },
                     onMaybe = { viewModel.maybeSelected() },
-                    // Phase 3-9: 显示删除确认弹窗
-                    onDelete = { showDeleteConfirmSheet = true },
-                    isDeleting = uiState.isDeleting
+                    onReset = { viewModel.restoreSelected() },
+                    onPermanentDelete = { showDeleteConfirmSheet = true }
                 )
+                SelectionBottomBar(actions = actions)
             }
         }
     ) { paddingValues ->
@@ -268,108 +270,4 @@ fun TrashScreen(
     }
 }
 
-@Composable
-private fun TrashSelectionBottomBar(
-    onRestore: () -> Unit,
-    onKeep: () -> Unit,
-    onMaybe: () -> Unit,
-    onDelete: () -> Unit,
-    isDeleting: Boolean
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        tonalElevation = 8.dp,
-        shadowElevation = 8.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 4.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Keep button
-            TrashBottomBarActionItem(
-                icon = Icons.Default.Favorite,
-                label = "保留",
-                color = KeepGreen,
-                onClick = onKeep
-            )
-            
-            // Maybe button
-            TrashBottomBarActionItem(
-                icon = Icons.Default.QuestionMark,
-                label = "待定",
-                color = MaybeAmber,
-                onClick = onMaybe
-            )
-            
-            // Restore button
-            TrashBottomBarActionItem(
-                icon = Icons.AutoMirrored.Filled.Undo,
-                label = "重置",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                onClick = onRestore
-            )
-            
-            // Delete button
-            TrashBottomBarActionItem(
-                icon = Icons.Default.DeleteForever,
-                label = "彻删",
-                color = TrashRed,
-                onClick = onDelete,
-                isLoading = isDeleting
-            )
-        }
-    }
-}
-
-@Composable
-private fun TrashBottomBarActionItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    color: Color,
-    onClick: () -> Unit,
-    isLoading: Boolean = false
-) {
-    Column(
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(enabled = !isLoading, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(color.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    color = color,
-                    strokeWidth = 2.dp
-                )
-            } else {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    tint = color,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = color,
-            textAlign = TextAlign.Center,
-            maxLines = 1
-        )
-    }
-}
-
+// Phase 4: TrashSelectionBottomBar 和 TrashBottomBarActionItem 已迁移到 BottomActionBar.kt

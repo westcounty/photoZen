@@ -117,6 +117,8 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import com.example.photozen.ui.components.openImageWithApp
 import com.example.photozen.ui.components.SelectionTopBar
+import com.example.photozen.ui.components.SelectionBottomBar
+import com.example.photozen.ui.components.BottomBarConfigs
 import com.example.photozen.ui.state.UiEvent
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
@@ -311,7 +313,7 @@ fun PhotoListScreen(
             }
         },
         bottomBar = {
-            // Selection mode bottom bar
+            // Selection mode bottom bar - Phase 4: 使用 BottomBarConfigs
             AnimatedVisibility(
                 visible = uiState.isSelectionMode && uiState.selectedCount > 0 && uiState.canBatchManage,
                 enter = slideInVertically(initialOffsetY = { it }),
@@ -322,22 +324,73 @@ fun PhotoListScreen(
                     uiState.photos.find { it.id in uiState.selectedPhotoIds }
                 } else null
                 
-                SelectionBottomBar(
-                    status = uiState.status,
-                    selectedCount = uiState.selectedCount,
-                    onEdit = if (singleSelectedPhoto != null) {
-                        { onNavigateToEditor(singleSelectedPhoto.id) }
-                    } else null,
-                    onShare = if (singleSelectedPhoto != null) {
-                        { shareImage(context, Uri.parse(singleSelectedPhoto.systemUri)) }
-                    } else null,
-                    onMoveToKeep = if (uiState.status != PhotoStatus.KEEP) {{ viewModel.moveSelectedToKeep() }} else null,
-                    onMoveToMaybe = if (uiState.status != PhotoStatus.MAYBE) {{ viewModel.moveSelectedToMaybe() }} else null,
-                    // Phase 3-9: 显示删除确认弹窗
-                    onMoveToTrash = if (uiState.status != PhotoStatus.TRASH) {{ showDeleteConfirmSheet = true }} else null,
-                    onResetToUnsorted = { viewModel.resetSelectedToUnsorted() },
-                    onAddToAlbum = if (uiState.canBatchAlbum) {{ viewModel.showAlbumDialog() }} else null
-                )
+                // Phase 4: 使用 BottomBarConfigs.adaptive 根据状态和选择数量自动配置
+                val bottomBarActions = when (uiState.status) {
+                    PhotoStatus.KEEP -> BottomBarConfigs.adaptive(
+                        selectedCount = uiState.selectedCount,
+                        singleSelectActions = {
+                            BottomBarConfigs.keepListSingleSelect(
+                                onEdit = { singleSelectedPhoto?.let { onNavigateToEditor(it.id) } },
+                                onShare = { singleSelectedPhoto?.let { shareImage(context, Uri.parse(it.systemUri)) } },
+                                onAlbum = { viewModel.showAlbumDialog() },
+                                onMaybe = { viewModel.moveSelectedToMaybe() },
+                                onTrash = { showDeleteConfirmSheet = true },
+                                onReset = { viewModel.resetSelectedToUnsorted() }
+                            )
+                        },
+                        multiSelectActions = {
+                            BottomBarConfigs.keepListMultiSelect(
+                                onAlbum = { viewModel.showAlbumDialog() },
+                                onMaybe = { viewModel.moveSelectedToMaybe() },
+                                onTrash = { showDeleteConfirmSheet = true },
+                                onReset = { viewModel.resetSelectedToUnsorted() }
+                            )
+                        }
+                    )
+                    PhotoStatus.MAYBE -> BottomBarConfigs.adaptive(
+                        selectedCount = uiState.selectedCount,
+                        singleSelectActions = {
+                            BottomBarConfigs.maybeListSingleSelect(
+                                onEdit = { singleSelectedPhoto?.let { onNavigateToEditor(it.id) } },
+                                onShare = { singleSelectedPhoto?.let { shareImage(context, Uri.parse(it.systemUri)) } },
+                                onKeep = { viewModel.moveSelectedToKeep() },
+                                onTrash = { showDeleteConfirmSheet = true },
+                                onReset = { viewModel.resetSelectedToUnsorted() }
+                            )
+                        },
+                        multiSelectActions = {
+                            BottomBarConfigs.maybeListMultiSelect(
+                                onKeep = { viewModel.moveSelectedToKeep() },
+                                onTrash = { showDeleteConfirmSheet = true },
+                                onReset = { viewModel.resetSelectedToUnsorted() }
+                            )
+                        }
+                    )
+                    PhotoStatus.TRASH -> BottomBarConfigs.adaptive(
+                        selectedCount = uiState.selectedCount,
+                        singleSelectActions = {
+                            BottomBarConfigs.trashListSingleSelect(
+                                onKeep = { viewModel.moveSelectedToKeep() },
+                                onMaybe = { viewModel.moveSelectedToMaybe() },
+                                onReset = { viewModel.resetSelectedToUnsorted() },
+                                onPermanentDelete = { /* Handled separately in TrashScreen */ }
+                            )
+                        },
+                        multiSelectActions = {
+                            BottomBarConfigs.trashListMultiSelect(
+                                onKeep = { viewModel.moveSelectedToKeep() },
+                                onMaybe = { viewModel.moveSelectedToMaybe() },
+                                onReset = { viewModel.resetSelectedToUnsorted() },
+                                onPermanentDelete = { /* Handled separately in TrashScreen */ }
+                            )
+                        }
+                    )
+                    PhotoStatus.UNSORTED -> emptyList()
+                }
+                
+                if (bottomBarActions.isNotEmpty()) {
+                    SelectionBottomBar(actions = bottomBarActions)
+                }
             }
         }
     ) { paddingValues ->
@@ -545,151 +598,7 @@ fun PhotoListScreen(
     }
 }
 
-/**
- * Selection mode bottom bar with batch actions.
- * Shows different actions based on current status and selection count.
- * Single selection shows more individual actions (edit, share).
- * Uses vertical icon+text layout to prevent crowding.
- */
-@Composable
-private fun SelectionBottomBar(
-    status: PhotoStatus,
-    selectedCount: Int,
-    onEdit: (() -> Unit)? = null,
-    onShare: (() -> Unit)? = null,
-    onMoveToKeep: (() -> Unit)? = null,
-    onMoveToMaybe: (() -> Unit)? = null,
-    onMoveToTrash: (() -> Unit)? = null,
-    onResetToUnsorted: () -> Unit,
-    onAddToAlbum: (() -> Unit)? = null
-) {
-    val isSingleSelect = selectedCount == 1
-    
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        tonalElevation = 8.dp,
-        shadowElevation = 8.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 4.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Edit button (single select only)
-            if (isSingleSelect && onEdit != null) {
-                BottomBarActionItem(
-                    icon = Icons.Default.Edit,
-                    label = "编辑",
-                    color = MaterialTheme.colorScheme.tertiary,
-                    onClick = onEdit
-                )
-            }
-            
-            // Share button (single select only)
-            if (isSingleSelect && onShare != null) {
-                BottomBarActionItem(
-                    icon = Icons.Default.Share,
-                    label = "分享",
-                    color = Color(0xFF1E88E5),
-                    onClick = onShare
-                )
-            }
-            
-            // Add to album button (for KEEP status)
-            if (onAddToAlbum != null) {
-                BottomBarActionItem(
-                    icon = Icons.Default.PhotoAlbum,
-                    label = "相册",
-                    color = MaterialTheme.colorScheme.primary,
-                    onClick = onAddToAlbum
-                )
-            }
-            
-            // Keep button (for MAYBE and TRASH status)
-            if (onMoveToKeep != null) {
-                BottomBarActionItem(
-                    icon = Icons.Default.Favorite,
-                    label = "保留",
-                    color = KeepGreen,
-                    onClick = onMoveToKeep
-                )
-            }
-            
-            // Maybe button (not for MAYBE status)
-            if (onMoveToMaybe != null) {
-                BottomBarActionItem(
-                    icon = Icons.Default.QuestionMark,
-                    label = "待定",
-                    color = MaybeAmber,
-                    onClick = onMoveToMaybe
-                )
-            }
-            
-            // Trash button (not for TRASH status)
-            if (onMoveToTrash != null) {
-                BottomBarActionItem(
-                    icon = Icons.Default.Delete,
-                    label = "删除",
-                    color = TrashRed,
-                    onClick = onMoveToTrash
-                )
-            }
-            
-            // Reset button (always available)
-            BottomBarActionItem(
-                icon = Icons.Default.Undo,
-                label = "重置",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                onClick = onResetToUnsorted
-            )
-        }
-    }
-}
-
-/**
- * Individual action item for bottom bar with vertical icon+text layout.
- */
-@Composable
-private fun BottomBarActionItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    color: Color,
-    onClick: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(color.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = color,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = color,
-            textAlign = TextAlign.Center
-        )
-    }
-}
-
+// Phase 4: SelectionBottomBar 和 BottomBarActionItem 已迁移到 BottomActionBar.kt
 
 /**
  * Phase 6.1: Card prompting user to classify photos to albums.

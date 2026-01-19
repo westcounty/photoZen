@@ -45,6 +45,8 @@ import coil3.compose.AsyncImage
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.util.ThumbnailSizePolicy
+import com.example.photozen.util.withThumbnailPolicy
 import com.example.photozen.ui.components.EdgeGlowOverlay
 import com.example.photozen.ui.components.GlowingDirectionIndicator
 import com.example.photozen.ui.components.SwipeIndicatorDirection
@@ -122,6 +124,7 @@ fun PhotoCard(
                 // Use AsyncImage WITHOUT conditional rendering to prevent flash on recomposition
                 // The background is always visible, and the image renders on top when ready
                 // This eliminates the flash when switching cards
+                // Phase 4: 使用 ThumbnailSizePolicy 优化图片加载
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
                         .data(Uri.parse(photo.systemUri))
@@ -130,6 +133,7 @@ fun PhotoCard(
                         .memoryCachePolicy(CachePolicy.ENABLED) // Prioritize memory cache
                         .diskCachePolicy(CachePolicy.ENABLED) // Use disk cache as fallback
                         .placeholderMemoryCacheKey(photo.id) // Use preloaded image as placeholder
+                        .withThumbnailPolicy(ThumbnailSizePolicy.Context.CARD_PREVIEW) // Phase 4: 优化缩略图大小
                         .build(),
                     contentDescription = photo.displayName,
                     contentScale = ContentScale.Fit,
