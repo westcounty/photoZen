@@ -42,19 +42,68 @@ import com.example.photozen.ui.screens.workflow.WorkflowScreen
  * Main navigation host for PicZen app.
  * Manages navigation between all screens.
  * 
+ * 有两个重载版本：
+ * 1. startDestination: String - 用于底部导航模式（使用 MainDestination.xxx.route）
+ * 2. startDestination: Screen - 用于旧模式和 Share 场景
+ * 
  * @param navController The navigation controller
- * @param startDestination The start destination (defaults to Home, but can be ShareCopy/ShareCompare for share intents)
- * @param onFinish Callback to finish the activity (used for share screens to return to original app)
+ * @param startDestination The start destination
+ * @param onFinish Callback to finish the activity (used for share screens)
  * @param modifier Modifier for the NavHost
  * @param achievementViewModel ViewModel for achievement celebrations
+ */
+
+/**
+ * PicZenNavHost - 使用 Screen 类型作为起始目的地
+ * 用于旧模式和 Share 场景
  */
 @Composable
 fun PicZenNavHost(
     navController: NavHostController,
-    startDestination: Any = Screen.Home,  // 支持 Screen 或 String 路由
+    startDestination: Screen,
     onFinish: () -> Unit = {},
     modifier: Modifier = Modifier,
     achievementViewModel: AchievementCelebrationViewModel = hiltViewModel()
+) {
+    PicZenNavHostInternal(
+        navController = navController,
+        startDestination = startDestination,
+        onFinish = onFinish,
+        modifier = modifier,
+        achievementViewModel = achievementViewModel
+    )
+}
+
+/**
+ * PicZenNavHost - 使用 String 路由作为起始目的地
+ * 用于底部导航模式
+ */
+@Composable
+fun PicZenNavHost(
+    navController: NavHostController,
+    startDestination: String,
+    modifier: Modifier = Modifier,
+    achievementViewModel: AchievementCelebrationViewModel = hiltViewModel()
+) {
+    PicZenNavHostInternal(
+        navController = navController,
+        startDestination = startDestination,
+        onFinish = {},
+        modifier = modifier,
+        achievementViewModel = achievementViewModel
+    )
+}
+
+/**
+ * 内部实现 - 支持 Any 类型的 startDestination
+ */
+@Composable
+private fun PicZenNavHostInternal(
+    navController: NavHostController,
+    startDestination: Any,
+    onFinish: () -> Unit,
+    modifier: Modifier,
+    achievementViewModel: AchievementCelebrationViewModel
 ) {
     val celebrationState by achievementViewModel.currentCelebration.collectAsState()
     
