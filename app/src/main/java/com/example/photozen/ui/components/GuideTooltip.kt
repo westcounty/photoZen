@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -44,6 +45,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
@@ -113,36 +116,46 @@ fun GuideTooltip(
     highlightPadding: Dp = 8.dp,
     modifier: Modifier = Modifier
 ) {
-    AnimatedVisibility(
-        visible = visible && targetBounds != null,
-        enter = fadeIn(animationSpec = tween(300)),
-        exit = fadeOut(animationSpec = tween(200)),
-        modifier = modifier.zIndex(1000f)
-    ) {
-        if (targetBounds == null) return@AnimatedVisibility
-        
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures { onDismiss() }
-                }
+    // 获取屏幕尺寸（需要在 Popup 外部获取）
+    val configuration = LocalConfiguration.current
+    val screenWidthDp = configuration.screenWidthDp.dp
+    val screenHeightDp = configuration.screenHeightDp.dp
+
+    // 使用 Popup 确保遮罩覆盖整个屏幕
+    if (visible && targetBounds != null) {
+        Popup(
+            onDismissRequest = onDismiss,
+            properties = PopupProperties(
+                focusable = true,
+                dismissOnBackPress = true,
+                dismissOnClickOutside = false
+            )
         ) {
-            // 遮罩层（带挖空效果）
-            GuideOverlay(
-                targetBounds = targetBounds,
-                padding = highlightPadding
-            )
-            
-            // 气泡
-            GuideTooltipBubble(
-                message = message,
-                targetBounds = targetBounds,
-                arrowDirection = arrowDirection,
-                stepInfo = stepInfo,
-                onDismiss = onDismiss,
-                dismissText = dismissText
-            )
+            // 使用明确的屏幕尺寸，而不是 fillMaxSize()
+            // 因为 Popup 默认是 wrap content，fillMaxSize() 无法正常工作
+            Box(
+                modifier = Modifier
+                    .size(screenWidthDp, screenHeightDp)
+                    .pointerInput(Unit) {
+                        detectTapGestures { onDismiss() }
+                    }
+            ) {
+                // 遮罩层（带挖空效果）
+                GuideOverlay(
+                    targetBounds = targetBounds,
+                    padding = highlightPadding
+                )
+
+                // 气泡
+                GuideTooltipBubble(
+                    message = message,
+                    targetBounds = targetBounds,
+                    arrowDirection = arrowDirection,
+                    stepInfo = stepInfo,
+                    onDismiss = onDismiss,
+                    dismissText = dismissText
+                )
+            }
         }
     }
 }

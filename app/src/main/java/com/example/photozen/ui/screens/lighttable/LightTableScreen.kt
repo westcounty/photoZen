@@ -122,24 +122,36 @@ fun LightTableScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val haptic = LocalHapticFeedback.current
-    
+
     // Shared transform state for synchronized zoom
     val transformState = rememberTransformState()
-    
+
+    // Individual transform states for each photo (max 6 photos in comparison)
+    // These are managed here so reset button can reset all of them
+    val individualTransformStates = remember {
+        List(6) { TransformState() }
+    }
+
+    // Helper function to reset all zoom states
+    fun resetAllZoomStates() {
+        transformState.reset()
+        individualTransformStates.forEach { it.reset() }
+    }
+
     // Fullscreen preview state
     var showFullscreen by remember { mutableStateOf(false) }
     var fullscreenStartIndex by remember { mutableIntStateOf(0) }
-    
+
     // Sync zoom toggle state (default: enabled for synchronized zoom)
     var syncZoomEnabled by remember { mutableStateOf(true) }
-    
+
     // Handle back press in comparison mode or fullscreen
     BackHandler(enabled = showFullscreen || uiState.mode == LightTableMode.COMPARISON) {
         if (showFullscreen) {
             showFullscreen = false
         } else {
             viewModel.exitComparison()
-            transformState.reset()
+            resetAllZoomStates()
         }
     }
     
@@ -242,6 +254,7 @@ fun LightTableScreen(
                         photos = uiState.comparisonPhotos,
                         transformState = transformState,
                         syncZoomEnabled = syncZoomEnabled,
+                        individualTransformStates = individualTransformStates.take(uiState.comparisonPhotos.size),
                         selectedPhotoIds = uiState.selectedInComparison,
                         onSelectPhoto = { viewModel.toggleComparisonSelection(it) },
                         onFullscreenClick = { index ->
@@ -255,7 +268,7 @@ fun LightTableScreen(
                     SmallFloatingActionButton(
                         onClick = {
                             viewModel.exitComparison()
-                            transformState.reset()
+                            resetAllZoomStates()
                         },
                         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -299,7 +312,7 @@ fun LightTableScreen(
                         SmallFloatingActionButton(
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                transformState.reset()
+                                resetAllZoomStates()
                             },
                             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                             contentColor = MaterialTheme.colorScheme.onSurface
@@ -935,29 +948,41 @@ fun LightTableContent(
     val uiState by viewModel.uiState.collectAsState()
     val haptic = LocalHapticFeedback.current
     val transformState = rememberTransformState()
-    
+
+    // Individual transform states for each photo (max 6 photos in comparison)
+    // These are managed here so reset button can reset all of them
+    val individualTransformStates = remember {
+        List(6) { TransformState() }
+    }
+
+    // Helper function to reset all zoom states
+    fun resetAllZoomStates() {
+        transformState.reset()
+        individualTransformStates.forEach { it.reset() }
+    }
+
     // Set session filter when provided
     LaunchedEffect(sessionPhotoIds) {
         viewModel.setSessionPhotoIds(sessionPhotoIds)
     }
-    
+
     // Fullscreen state
     var showFullscreen by remember { mutableStateOf(false) }
     var fullscreenStartIndex by remember { mutableIntStateOf(0) }
-    
+
     // Sync zoom toggle state (default: enabled for synchronized zoom)
     var syncZoomEnabled by remember { mutableStateOf(true) }
-    
+
     // Handle back press in comparison mode
     BackHandler(enabled = showFullscreen || uiState.mode == LightTableMode.COMPARISON) {
         if (showFullscreen) {
             showFullscreen = false
         } else {
             viewModel.exitComparison()
-            transformState.reset()
+            resetAllZoomStates()
         }
     }
-    
+
     // Auto-complete when no more "Maybe" photos in workflow mode
     LaunchedEffect(uiState.allMaybePhotos.isEmpty(), uiState.isLoading) {
         if (isWorkflowMode && !uiState.isLoading && uiState.allMaybePhotos.isEmpty()) {
@@ -1037,6 +1062,7 @@ fun LightTableContent(
                         photos = uiState.comparisonPhotos,
                         transformState = transformState,
                         syncZoomEnabled = syncZoomEnabled,
+                        individualTransformStates = individualTransformStates.take(uiState.comparisonPhotos.size),
                         selectedPhotoIds = uiState.selectedInComparison,
                         onSelectPhoto = { viewModel.toggleComparisonSelection(it) },
                         onFullscreenClick = { index ->
@@ -1050,7 +1076,7 @@ fun LightTableContent(
                     SmallFloatingActionButton(
                         onClick = {
                             viewModel.exitComparison()
-                            transformState.reset()
+                            resetAllZoomStates()
                         },
                         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -1094,7 +1120,7 @@ fun LightTableContent(
                         SmallFloatingActionButton(
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                transformState.reset()
+                                resetAllZoomStates()
                             },
                             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                             contentColor = MaterialTheme.colorScheme.onSurface

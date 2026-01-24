@@ -164,7 +164,7 @@ class PhotoSelectionStateHolder @Inject constructor() {
     
     /**
      * 清空选择（退出选择模式）
-     * 
+     *
      * 应在以下场景调用：
      * - 页面离开时
      * - 批量操作完成后
@@ -173,6 +173,16 @@ class PhotoSelectionStateHolder @Inject constructor() {
     fun clear() {
         _selectedIds.value = emptySet()
         _isSelectionMode.value = false
+    }
+
+    /**
+     * 进入选择模式（不选中任何照片）
+     *
+     * 用于点击"多选"按钮时直接进入选择模式，
+     * 此时用户可以点击照片来选中。
+     */
+    fun enterSelectionMode() {
+        _isSelectionMode.value = true
     }
     
     /**

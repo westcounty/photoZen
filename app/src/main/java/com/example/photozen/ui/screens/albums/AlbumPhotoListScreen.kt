@@ -326,14 +326,14 @@ fun AlbumPhotoListScreen(
                                 pickerMode = "copy"
                                 showAlbumPicker = true
                             },
-                            onFilter = {
-                                // Get photo IDs from first selected to the end
+                            onStartFromHere = {
+                                // 从选中照片开始，将该照片及之后的所有照片加入待筛选列表
                                 val firstSelectedIndex = uiState.photos.indexOfFirst { it.id in uiState.selectedIds }
                                 if (firstSelectedIndex >= 0) {
                                     val photoIdsFromHere = uiState.photos
                                         .drop(firstSelectedIndex)
                                         .map { it.id }
-                                    
+
                                     if (photoIdsFromHere.isNotEmpty()) {
                                         scope.launch {
                                             viewModel.setFilterSessionAndNavigate(photoIdsFromHere)
@@ -354,22 +354,6 @@ fun AlbumPhotoListScreen(
                             onCopy = {
                                 pickerMode = "copy"
                                 showAlbumPicker = true
-                            },
-                            onFilter = {
-                                // Get photo IDs from first selected to the end
-                                val firstSelectedIndex = uiState.photos.indexOfFirst { it.id in uiState.selectedIds }
-                                if (firstSelectedIndex >= 0) {
-                                    val photoIdsFromHere = uiState.photos
-                                        .drop(firstSelectedIndex)
-                                        .map { it.id }
-                                    
-                                    if (photoIdsFromHere.isNotEmpty()) {
-                                        scope.launch {
-                                            viewModel.setFilterSessionAndNavigate(photoIdsFromHere)
-                                            onNavigateToFlowSorter()
-                                        }
-                                    }
-                                }
                             },
                             onDelete = { showDeleteConfirmSheet = true }
                         )

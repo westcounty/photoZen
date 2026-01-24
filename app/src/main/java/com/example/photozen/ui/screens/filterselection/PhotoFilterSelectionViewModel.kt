@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.repository.CustomFilterSession
+import com.example.photozen.data.repository.GuideRepository
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.Album
 import com.example.photozen.data.source.MediaStoreDataSource
@@ -34,7 +35,8 @@ data class PhotoFilterSelectionUiState(
 class PhotoFilterSelectionViewModel @Inject constructor(
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val preferencesRepository: PreferencesRepository,
-    private val photoDao: PhotoDao
+    private val photoDao: PhotoDao,
+    val guideRepository: GuideRepository
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(PhotoFilterSelectionUiState())
@@ -139,26 +141,61 @@ class PhotoFilterSelectionViewModel @Inject constructor(
      * IMPORTANT: This now queries UNSORTED photos from the database,
      * not all photos from MediaStore. This ensures the count matches
      * what the user will actually see in the sorting screen.
+     *
+     * Uses smart include/exclude mode to avoid SQL parameter overflow:
+     * - If selected count < excluded count → use include mode (IN)
+     * - If selected count >= excluded count → use exclude mode (NOT IN)
      */
     private fun updateFilteredCount() {
         viewModelScope.launch {
             try {
                 val state = _uiState.value
-                
-                // Convert bucket IDs: empty set means no filter (null)
-                val bucketIds = if (state.selectedAlbumIds.isEmpty()) null 
-                                else state.selectedAlbumIds.toList()
-                
+
+                // Calculate which mode is more efficient
+                val selectedCount = state.selectedAlbumIds.size
+                val totalCount = state.albums.size
+                val excludedCount = totalCount - selectedCount
+
                 // Dates are already in milliseconds
                 // For end date, extend to end of day (23:59:59.999) by adding 86400000 - 1
                 val startDateMs = state.startDate
                 val endDateMs = state.endDate?.let { it + 86400L * 1000 - 1 }
-                
-                val count = photoDao.getUnsortedCountFilteredSync(
-                    bucketIds = bucketIds,
-                    startDateMs = startDateMs,
-                    endDateMs = endDateMs
-                )
+
+                val count = when {
+                    // No selection = no album filter (all albums)
+                    selectedCount == 0 -> {
+                        photoDao.getUnsortedCountFilteredSync(
+                            bucketIds = null,
+                            startDateMs = startDateMs,
+                            endDateMs = endDateMs
+                        )
+                    }
+                    // All selected = no album filter
+                    selectedCount == totalCount -> {
+                        photoDao.getUnsortedCountFilteredSync(
+                            bucketIds = null,
+                            startDateMs = startDateMs,
+                            endDateMs = endDateMs
+                        )
+                    }
+                    // Use include mode when fewer albums are selected
+                    selectedCount <= excludedCount -> {
+                        photoDao.getUnsortedCountFilteredSync(
+                            bucketIds = state.selectedAlbumIds.toList(),
+                            startDateMs = startDateMs,
+                            endDateMs = endDateMs
+                        )
+                    }
+                    // Use exclude mode when more albums are selected
+                    else -> {
+                        val excludeIds = state.albums.map { it.id }.toSet() - state.selectedAlbumIds
+                        photoDao.getUnsortedCountExcludingBucketsSync(
+                            excludeBucketIds = excludeIds.toList(),
+                            startDateMs = startDateMs,
+                            endDateMs = endDateMs
+                        )
+                    }
+                }
                 _uiState.update { it.copy(filteredPhotoCount = count) }
             } catch (e: Exception) {
                 // Ignore count update errors
@@ -176,24 +213,37 @@ class PhotoFilterSelectionViewModel @Inject constructor(
     /**
      * Save the current selection as the session custom filter.
      * Called when user confirms the selection.
-     * 
-     * IMPORTANT: When ALL albums are selected, we use null to indicate "no album restriction".
-     * This prevents SQL parameter overflow when there are many albums (SQLite has ~999 param limit),
-     * and also improves query performance.
+     *
+     * Uses smart include/exclude mode to prevent SQL parameter overflow:
+     * - If selected count < excluded count → use include mode (albumIds)
+     * - If selected count >= excluded count → use exclude mode (excludeAlbumIds)
+     * - If all or none selected → use null (no album filter)
      */
     fun saveSessionFilter() {
         val state = _uiState.value
-        
-        // If all albums are selected, treat it as "no album filter" (null)
-        // This prevents SQL issues with large IN clauses and improves performance
-        val albumIds = when {
-            state.selectedAlbumIds.isEmpty() -> null  // No selection = no filter
-            state.selectedAlbumIds.size == state.albums.size -> null  // All selected = no filter
-            else -> state.selectedAlbumIds.toList()  // Partial selection = specific filter
+
+        val selectedCount = state.selectedAlbumIds.size
+        val totalCount = state.albums.size
+        val excludedCount = totalCount - selectedCount
+
+        // Determine the most efficient mode
+        val (albumIds, excludeAlbumIds) = when {
+            // No selection = no filter
+            selectedCount == 0 -> null to null
+            // All selected = no filter
+            selectedCount == totalCount -> null to null
+            // Use include mode when fewer albums are selected
+            selectedCount <= excludedCount -> state.selectedAlbumIds.toList() to null
+            // Use exclude mode when more albums are selected (fewer to exclude)
+            else -> {
+                val excludeIds = state.albums.map { it.id }.toSet() - state.selectedAlbumIds
+                null to excludeIds.toList()
+            }
         }
-        
+
         val filter = CustomFilterSession(
             albumIds = albumIds,
+            excludeAlbumIds = excludeAlbumIds,
             startDate = state.startDate,
             endDate = state.endDate
         )

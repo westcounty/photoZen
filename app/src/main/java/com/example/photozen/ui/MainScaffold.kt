@@ -5,6 +5,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -160,6 +162,8 @@ fun MainScaffold(
     
     Scaffold(
         modifier = modifier,
+        // 不处理任何 window insets，由 bottomBar 和各页面自己处理
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         // Phase 3-8: 全局 SnackbarHost 带样式
         snackbarHost = {
             SnackbarHost(hostState = snackbarHostState) { data ->

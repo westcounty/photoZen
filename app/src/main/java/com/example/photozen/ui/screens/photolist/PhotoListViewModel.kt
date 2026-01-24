@@ -17,6 +17,7 @@ import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.MovePhotoResult
 import com.example.photozen.domain.usecase.SortPhotoUseCase
 import com.example.photozen.data.repository.GuideRepository
+import com.example.photozen.ui.components.PhotoGridMode
 import com.example.photozen.ui.state.UiEvent
 import com.example.photozen.ui.state.PhotoSelectionStateHolder
 import com.example.photozen.domain.usecase.PhotoBatchOperationUseCase
@@ -53,6 +54,7 @@ data class PhotoListUiState(
     val isSelectionMode: Boolean = false,
     val selectedPhotoIds: Set<String> = emptySet(),
     val gridColumns: Int = 2,
+    val gridMode: PhotoGridMode = PhotoGridMode.WATERFALL,
     // Album mode support
     val albumBubbleList: List<AlbumBubbleEntity> = emptyList(),
     val albumAddAction: AlbumAddAction = AlbumAddAction.MOVE,
@@ -83,6 +85,7 @@ private data class InternalState(
     val defaultExternalApp: String? = null,
     val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC,
     val gridColumns: Int = 2,
+    val gridMode: PhotoGridMode = PhotoGridMode.WATERFALL,
     val showAlbumDialog: Boolean = false,
     // Phase 6: Keep list album filter
     val showPhotosInAlbum: Boolean = true,
@@ -174,6 +177,7 @@ class PhotoListViewModel @Inject constructor(
             isSelectionMode = isSelectionMode || validSelectedIds.isNotEmpty(), // Phase 4: 使用 StateHolder
             selectedPhotoIds = validSelectedIds,
             gridColumns = internal.gridColumns,
+            gridMode = internal.gridMode,
             albumBubbleList = albumState.albumBubbleList,
             albumAddAction = albumState.albumAddAction,
             showAlbumDialog = internal.showAlbumDialog,
@@ -644,7 +648,21 @@ class PhotoListViewModel @Inject constructor(
             _internalState.update { it.copy(gridColumns = newColumns) }
         }
     }
-    
+
+    /**
+     * Toggle between SQUARE (grid) and WATERFALL (staggered) modes.
+     * SQUARE mode supports drag-to-select, WATERFALL mode does not.
+     */
+    fun toggleGridMode() {
+        _internalState.update { state ->
+            val newMode = when (state.gridMode) {
+                PhotoGridMode.SQUARE -> PhotoGridMode.WATERFALL
+                PhotoGridMode.WATERFALL -> PhotoGridMode.SQUARE
+            }
+            state.copy(gridMode = newMode)
+        }
+    }
+
     // ==================== Phase 6: Keep List Album Features ====================
     
     /**

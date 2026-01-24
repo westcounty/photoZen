@@ -2,6 +2,7 @@ package com.example.photozen.ui.screens.stats
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.photozen.data.repository.GuideRepository
 import com.example.photozen.data.repository.StatsRepository
 import com.example.photozen.data.repository.StatsSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -34,7 +35,8 @@ data class StatsUiState(
  */
 @HiltViewModel
 class StatsViewModel @Inject constructor(
-    private val statsRepository: StatsRepository
+    private val statsRepository: StatsRepository,
+    val guideRepository: GuideRepository
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(StatsUiState())

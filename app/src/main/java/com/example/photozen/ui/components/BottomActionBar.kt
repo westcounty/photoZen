@@ -268,6 +268,19 @@ fun filterAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction
 )
 
 /**
+ * Create a "Start From Here" (从此开始) action - start sorting from this photo.
+ * Used in album photo list for single selection.
+ */
+@Composable
+fun startFromHereAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
+    icon = Icons.Default.FilterList,
+    label = "从此开始",
+    color = MaterialTheme.colorScheme.primary,
+    onClick = onClick,
+    enabled = enabled
+)
+
+/**
  * Create a "Discard" (丢弃) action for light table comparison.
  */
 fun discardAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(

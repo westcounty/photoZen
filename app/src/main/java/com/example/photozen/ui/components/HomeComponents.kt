@@ -24,10 +24,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -183,29 +187,34 @@ fun HomeMainAction(
 
 /**
  * 首页快捷入口区 - 显示快捷操作入口
- * 
- * 提供对比、回收站等快捷入口。
- * 
+ *
+ * 提供已保留、对比、回收站等快捷入口。
+ *
  * ## 设计说明
- * 
+ *
  * 启用底部导航后，时间线和相册入口将移除（由底部导航提供），
- * 仅保留对比和回收站两个入口。
- * 
+ * 保留已保留、对比和回收站三个入口。
+ *
  * ## 禁用状态
- * 
+ *
+ * - 已保留按钮：当 keepCount == 0 时禁用（半透明显示）
  * - 对比按钮：当 maybeCount == 0 时禁用（半透明显示）
  * - 回收站按钮：始终可点击
- * 
+ *
+ * @param onKeepClick 已保留入口点击回调
  * @param onCompareClick 对比入口点击回调
  * @param onTrashClick 回收站入口点击回调
+ * @param keepCount 已保留照片数量（用于显示角标，为0时禁用按钮）
  * @param maybeCount 待定照片数量（用于显示角标，为0时禁用对比按钮）
  * @param trashCount 回收站照片数量（用于显示角标）
  * @param modifier Modifier
  */
 @Composable
 fun HomeQuickActions(
+    onKeepClick: () -> Unit = {},
     onCompareClick: () -> Unit,
     onTrashClick: () -> Unit,
+    keepCount: Int = 0,
     maybeCount: Int = 0,
     trashCount: Int = 0,
     modifier: Modifier = Modifier
@@ -214,6 +223,14 @@ fun HomeQuickActions(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
+        QuickActionItem(
+            icon = Icons.Default.Favorite,
+            label = "已保留",
+            badge = if (keepCount > 0) keepCount.toString() else null,
+            onClick = onKeepClick,
+            tint = KeepGreen,
+            enabled = keepCount > 0
+        )
         QuickActionItem(
             icon = Icons.AutoMirrored.Filled.CompareArrows,
             label = "对比",
@@ -479,6 +496,255 @@ fun HomeDailyTask(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 首页核心操作卡片 - 整合每日任务和整理全部入口
+ *
+ * 这是首页的核心功能区，包含：
+ * - 每日任务进度（如果启用）
+ * - 两个操作按钮：继续任务（主）+ 整理全部（次）
+ * - 如果每日任务未启用，只显示整理全部按钮
+ *
+ * @param dailyTaskStatus 每日任务状态（可为null表示未启用或加载中）
+ * @param unsortedCount 待整理照片数量
+ * @param onStartDailyTask 开始/继续每日任务回调
+ * @param onStartSortAll 整理全部回调
+ * @param modifier Modifier
+ */
+@Composable
+fun HomeDailyTaskWithSortAll(
+    dailyTaskStatus: com.example.photozen.domain.usecase.DailyTaskStatus?,
+    unsortedCount: Int,
+    onStartDailyTask: () -> Unit,
+    onStartSortAll: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isDailyTaskEnabled = dailyTaskStatus?.isEnabled == true
+    val isCompleted = dailyTaskStatus?.isCompleted == true
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isCompleted)
+                KeepGreen.copy(alpha = 0.1f)
+            else
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+        ),
+        shape = RoundedCornerShape(20.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+        ) {
+            // 每日任务进度区（仅当启用时显示）
+            if (isDailyTaskEnabled && dailyTaskStatus != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // 左侧：图标 + 标题
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = if (isCompleted)
+                                Icons.Default.Check
+                            else
+                                Icons.Default.Assignment,
+                            contentDescription = null,
+                            tint = if (isCompleted) KeepGreen else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isCompleted) "今日任务已完成" else "每日任务",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    // 右侧：进度数字
+                    Text(
+                        text = "${dailyTaskStatus.current}/${dailyTaskStatus.target}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isCompleted) KeepGreen else MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 进度条
+                LinearProgressIndicator(
+                    progress = { dailyTaskStatus.progress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    color = if (isCompleted) KeepGreen else MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // 待整理照片数量提示 + 预计完成天数
+            if (unsortedCount > 0) {
+                // 计算预计完成天数（仅在每日任务启用时显示）
+                val daysRemaining = if (isDailyTaskEnabled && dailyTaskStatus != null && dailyTaskStatus.target > 0) {
+                    val remaining = unsortedCount - (if (isCompleted) 0 else dailyTaskStatus.current)
+                    kotlin.math.ceil(remaining.toFloat() / dailyTaskStatus.target).toInt().coerceAtLeast(0)
+                } else null
+
+                val daysText = when {
+                    daysRemaining == null -> ""
+                    daysRemaining <= 0 -> "，今天可完成"
+                    daysRemaining == 1 -> "，约 1 天可完成"
+                    else -> "，约 $daysRemaining 天可完成"
+                }
+
+                Text(
+                    text = "${unsortedCount} 张照片待整理$daysText",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            // 操作按钮区
+            if (isDailyTaskEnabled && !isCompleted) {
+                // 每日任务启用且未完成：显示两个按钮
+                // 主按钮：整理全部，次按钮：继续任务
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // 主按钮：整理全部
+                    Button(
+                        onClick = onStartSortAll,
+                        modifier = Modifier.weight(1f),
+                        enabled = unsortedCount > 0
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("整理全部")
+                    }
+
+                    // 次按钮：继续任务
+                    FilledTonalButton(
+                        onClick = onStartDailyTask,
+                        modifier = Modifier.weight(1f),
+                        enabled = unsortedCount > 0
+                    ) {
+                        Text("继续任务")
+                    }
+                }
+            } else if (isCompleted) {
+                // 每日任务已完成：只显示整理全部按钮
+                Text(
+                    text = "今日目标已达成！继续整理可以累积更多成就。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = KeepGreen
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                FilledTonalButton(
+                    onClick = onStartSortAll,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = unsortedCount > 0
+                ) {
+                    Text("继续整理全部")
+                }
+            } else {
+                // 每日任务未启用：只显示整理全部按钮
+                Button(
+                    onClick = onStartSortAll,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = unsortedCount > 0
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("开始整理")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 分享功能提示卡片
+ *
+ * 提示用户可以从系统相册分享照片到 PhotoZen 进行复制或对比。
+ * 用户关闭后不再显示。
+ *
+ * @param onDismiss 关闭回调
+ * @param modifier Modifier
+ */
+@Composable
+fun ShareFeatureTipCard(
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            // 分享图标
+            Icon(
+                imageVector = Icons.Default.Share,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .size(28.dp)
+                    .padding(top = 2.dp)
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // 文案区域
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "从相册分享照片到 PhotoZen",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "在系统相册选择照片 → 点击分享 → 选择「用 PhotoZen 复制」或「用 PhotoZen 对比」",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                )
+            }
+
+            // 关闭按钮
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "关闭提示",
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f),
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
     }

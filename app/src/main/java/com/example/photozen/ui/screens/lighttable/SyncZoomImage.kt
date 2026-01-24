@@ -87,17 +87,25 @@ fun SyncZoomImage(
                     onGesture = { centroid, pan, zoom, _ ->
                         // Calculate new scale
                         val newScale = transformState.scale * zoom
-                        
+
                         // Update transform state (this affects all synced images)
                         if (zoom != 1f) {
                             transformState.updateScale(newScale, centroid)
                         }
-                        
-                        // Apply pan
+
+                        // Apply pan with bounds checking to prevent photo from moving too far out
                         if (transformState.scale > 1f) {
                             transformState.updateOffset(pan.x, pan.y)
+                            // Apply bounds to prevent panning mostly outside the container
+                            // This ensures the photo remains controllable
+                            if (containerSize.width > 0 && containerSize.height > 0) {
+                                transformState.applyBounds(
+                                    containerSize.width.toFloat(),
+                                    containerSize.height.toFloat()
+                                )
+                            }
                         }
-                        
+
                         // Notify parent of gesture
                         onTransformGesture(newScale, pan)
                     }

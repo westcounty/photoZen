@@ -11,13 +11,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.photozen.domain.model.GuideKey
 import com.example.photozen.ui.components.*
+import com.example.photozen.ui.guide.rememberGuideState
 
 /**
  * 统计页面
@@ -38,7 +45,14 @@ fun StatsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    
+
+    // 日历热力图引导状态
+    val calendarGuide = rememberGuideState(
+        guideKey = GuideKey.STATS_CALENDAR,
+        guideRepository = viewModel.guideRepository
+    )
+    var calendarBounds by remember { mutableStateOf<Rect?>(null) }
+
     // 显示错误信息
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
@@ -113,16 +127,30 @@ fun StatsScreen(
                     calendarData = uiState.calendarData,
                     selectedDate = uiState.selectedDate,
                     selectedDateCount = uiState.selectedDateCount,
-                    onDayClick = viewModel::onDayClicked
+                    onDayClick = viewModel::onDayClicked,
+                    modifier = Modifier.onGloballyPositioned { coordinates ->
+                        calendarBounds = coordinates.boundsInRoot()
+                    }
                 )
                 
                 // 连续整理天数
                 StreakCard(days = uiState.summary.consecutiveDays)
-                
+
                 // 底部间距
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
+    }
+
+    // 日历热力图引导提示
+    if (calendarGuide.shouldShow && uiState.calendarData.isNotEmpty()) {
+        GuideTooltip(
+            visible = true,
+            message = "📊 日历热力图\n点击任意日期查看当天整理详情\n颜色越深表示整理越多",
+            targetBounds = calendarBounds,
+            arrowDirection = ArrowDirection.UP,
+            onDismiss = calendarGuide.dismiss
+        )
     }
 }
 
@@ -134,10 +162,11 @@ private fun CalendarHeatmapCard(
     calendarData: Map<String, Int>,
     selectedDate: String?,
     selectedDateCount: Int,
-    onDayClick: (String, Int) -> Unit
+    onDayClick: (String, Int) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
         )

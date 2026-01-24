@@ -1169,8 +1169,12 @@ data class AchievementData(
 /**
  * Custom filter session data for CUSTOM filter mode.
  * Not persisted - only valid for the current session.
- * 
- * @param albumIds Optional list of album bucket IDs to filter by
+ *
+ * @param albumIds Optional list of album bucket IDs to include (include mode).
+ *                 Mutually exclusive with excludeAlbumIds.
+ * @param excludeAlbumIds Optional list of album bucket IDs to exclude (exclude mode).
+ *                        Used when most albums are selected - more efficient than large IN clause.
+ *                        Mutually exclusive with albumIds.
  * @param startDate Start time in milliseconds (inclusive)
  * @param endDate End time in milliseconds
  * @param preciseMode When false (default), endDate is treated as the start of a day and
@@ -1181,11 +1185,17 @@ data class AchievementData(
  */
 data class CustomFilterSession(
     val albumIds: List<String>? = null,
+    val excludeAlbumIds: List<String>? = null,
     val startDate: Long? = null,
     val endDate: Long? = null,
     val preciseMode: Boolean = false,
     val photoIds: List<String>? = null
-)
+) {
+    /**
+     * Check if this filter uses exclude mode (NOT IN instead of IN).
+     */
+    val isExcludeMode: Boolean get() = !excludeAlbumIds.isNullOrEmpty()
+}
 
 /**
  * Bubble position data for tag bubble screen.

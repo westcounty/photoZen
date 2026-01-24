@@ -242,9 +242,9 @@ interface PhotoDao {
      * startDateMs and endDateMs are in milliseconds.
      */
     @Query("""
-        SELECT id FROM photos 
-        WHERE status = 'UNSORTED' 
-        AND is_virtual_copy = 0 
+        SELECT id FROM photos
+        WHERE status = 'UNSORTED'
+        AND is_virtual_copy = 0
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
         AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
         AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
@@ -255,7 +255,27 @@ interface PhotoDao {
         startDateMs: Long?,
         endDateMs: Long?
     ): List<String>
-    
+
+    /**
+     * Get unsorted photo IDs EXCLUDING specific buckets, with date range filter.
+     * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
+     * Used when most albums are selected (exclude mode is more efficient than include mode).
+     */
+    @Query("""
+        SELECT id FROM photos
+        WHERE status = 'UNSORTED'
+        AND is_virtual_copy = 0
+        AND (bucket_id NOT IN (:excludeBucketIds) OR bucket_id IS NULL)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
+    """)
+    suspend fun getUnsortedPhotoIdsExcludingBucketsFiltered(
+        excludeBucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): List<String>
+
     /**
      * Get photos by ID list.
      * Note: SQL IN clause does not guarantee order, so sorting must be done in memory.
@@ -425,8 +445,8 @@ interface PhotoDao {
      * startDateMs and endDateMs are in milliseconds.
      */
     @Query("""
-        SELECT * FROM photos 
-        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
         AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
         AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
@@ -438,10 +458,77 @@ interface PhotoDao {
         startDateMs: Long?,
         endDateMs: Long?,
         seed: Long,
-        limit: Int, 
+        limit: Int,
         offset: Int
     ): List<PhotoEntity>
-    
+
+    // ==================== EXCLUDE MODE PAGED QUERIES WITH DATE FILTER ====================
+    // Used when most albums are selected (exclude mode is more efficient than large IN clause)
+
+    /**
+     * Get unsorted photos EXCLUDING specific bucket IDs with date range filter - Date Descending.
+     * Used when most albums are selected (exclude mode is more efficient than include mode).
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (bucket_id NOT IN (:excludeBucketIds) OR bucket_id IS NULL)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosExcludingBucketsFilteredPagedDesc(
+        excludeBucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?,
+        limit: Int,
+        offset: Int
+    ): List<PhotoEntity>
+
+    /**
+     * Get unsorted photos EXCLUDING specific bucket IDs with date range filter - Date Ascending.
+     * Used when most albums are selected (exclude mode is more efficient than include mode).
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (bucket_id NOT IN (:excludeBucketIds) OR bucket_id IS NULL)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) ASC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosExcludingBucketsFilteredPagedAsc(
+        excludeBucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?,
+        limit: Int,
+        offset: Int
+    ): List<PhotoEntity>
+
+    /**
+     * Get unsorted photos EXCLUDING specific bucket IDs with date range filter - Random order.
+     * Used when most albums are selected (exclude mode is more efficient than include mode).
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (bucket_id NOT IN (:excludeBucketIds) OR bucket_id IS NULL)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY (ABS(CAST(SUBSTR(id, 1, 8) AS INTEGER)) * :seed) % 2147483647
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosExcludingBucketsFilteredPagedRandom(
+        excludeBucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?,
+        seed: Long,
+        limit: Int,
+        offset: Int
+    ): List<PhotoEntity>
+
     /**
      * Get count of unsorted photos filtered by bucket IDs (optional) and date range (optional).
      * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
@@ -467,14 +554,33 @@ interface PhotoDao {
      * startDateMs and endDateMs are in milliseconds.
      */
     @Query("""
-        SELECT COUNT(*) FROM photos 
-        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        SELECT COUNT(*) FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
         AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
         AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
     """)
     suspend fun getUnsortedCountFilteredSync(
         bucketIds: List<String>?,
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): Int
+
+    /**
+     * Get count of unsorted photos EXCLUDING specific bucket IDs, with date range filter.
+     * Suspend version for one-time queries.
+     * Used when most albums are selected (exclude mode is more efficient than include mode).
+     * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (bucket_id NOT IN (:excludeBucketIds) OR bucket_id IS NULL)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+    """)
+    suspend fun getUnsortedCountExcludingBucketsSync(
+        excludeBucketIds: List<String>,
         startDateMs: Long?,
         endDateMs: Long?
     ): Int
@@ -511,8 +617,9 @@ interface PhotoDao {
     
     /**
      * Get all "TRASH" photos.
+     * Ordered by updated_at DESC (most recently added to trash first).
      */
-    @Query("SELECT * FROM photos WHERE status = 'TRASH' AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
+    @Query("SELECT * FROM photos WHERE status = 'TRASH' AND is_virtual_copy = 0 ORDER BY updated_at DESC")
     fun getTrashPhotos(): Flow<List<PhotoEntity>>
     
     /**

@@ -96,6 +96,7 @@ import com.example.photozen.ui.components.ArrowDirection
 import com.example.photozen.ui.components.GuideStepInfo
 import com.example.photozen.ui.components.SelectableStaggeredPhotoGrid
 import com.example.photozen.ui.guide.rememberGuideSequenceState
+import com.example.photozen.ui.guide.rememberGuideState
 import com.example.photozen.domain.model.GuideKey
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.components.FilterButton
@@ -142,7 +143,18 @@ fun FlowSorterScreen(
     val scope = rememberCoroutineScope()
     // Phase 3-7: 使用设置中的震动反馈开关
     val hapticManager = rememberHapticFeedbackManager(uiState.hapticFeedbackEnabled)
-    
+
+    // 视图切换引导状态（滑动引导完成后显示）
+    val swipeGuideSequence = rememberGuideSequenceState(
+        guideKeys = GuideKey.flowSorterSequence,
+        guideRepository = viewModel.guideRepository
+    )
+    val viewToggleGuide = rememberGuideState(
+        guideKey = GuideKey.FLOW_SORTER_VIEW_TOGGLE,
+        guideRepository = viewModel.guideRepository
+    )
+    var viewToggleBounds by remember { mutableStateOf<Rect?>(null) }
+
     // 筛选相关状态
     val filterConfig by viewModel.filterConfig.collectAsState()
     val filterPresets by viewModel.filterPresets.collectAsState()
@@ -261,9 +273,14 @@ fun FlowSorterScreen(
                             }
                             
                             // View mode toggle
-                            IconButton(onClick = { viewModel.toggleViewMode() }) {
+                            IconButton(
+                                onClick = { viewModel.toggleViewMode() },
+                                modifier = Modifier.onGloballyPositioned { coordinates ->
+                                    viewToggleBounds = coordinates.boundsInRoot()
+                                }
+                            ) {
                                 Icon(
-                                    imageVector = if (uiState.viewMode == FlowSorterViewMode.CARD) 
+                                    imageVector = if (uiState.viewMode == FlowSorterViewMode.CARD)
                                         Icons.Default.GridView else Icons.Default.ViewCarousel,
                                     contentDescription = if (uiState.viewMode == FlowSorterViewMode.CARD)
                                         "列表视图" else "卡片视图"
@@ -354,6 +371,18 @@ fun FlowSorterScreen(
             onDismiss = { showFilterSheet = false }
         )
     }
+
+    // 视图切换引导提示（滑动引导完成后显示）
+    if (viewToggleGuide.shouldShow && !swipeGuideSequence.isActive &&
+        uiState.viewMode == FlowSorterViewMode.CARD && !uiState.isComplete) {
+        GuideTooltip(
+            visible = true,
+            message = "📱 切换视图\n点击可在卡片和列表视图间切换",
+            targetBounds = viewToggleBounds,
+            arrowDirection = ArrowDirection.UP,
+            onDismiss = viewToggleGuide.dismiss
+        )
+    }
 }
 
 /**
@@ -386,10 +415,6 @@ fun FlowSorterContent(
     var showAlbumPicker by remember { mutableStateOf(false) }
     val availableAlbums by viewModel.availableAlbums.collectAsState()
     var selectedAlbumIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    
-    // Context menu state (for "从此张开始筛选" feature)
-    var showContextMenu by remember { mutableStateOf(false) }
-    var contextMenuPhotoIndex by remember { mutableIntStateOf(-1) }
     
     // Local view mode state for workflow mode (since we don't have TopAppBar)
     var localViewMode by remember { mutableStateOf(FlowSorterViewMode.CARD) }
@@ -479,6 +504,8 @@ fun FlowSorterContent(
                     }
                     effectiveViewMode == FlowSorterViewMode.LIST -> {
                         // List view with staggered grid
+                        // Long press enters selection mode directly (no context menu popup)
+                        // "从此张开始筛选" is now in the bottom action bar when single photo is selected
                         SelectableStaggeredPhotoGrid(
                             photos = uiState.photos,
                             selectedIds = uiState.selectedPhotoIds,
@@ -489,12 +516,8 @@ fun FlowSorterContent(
                                     fullscreenPhoto = photo
                                 }
                             },
-                            columns = uiState.gridColumns,
-                            onPhotoLongClick = { _, index ->
-                                // Show context menu for "从此张开始筛选"
-                                contextMenuPhotoIndex = index
-                                showContextMenu = true
-                            }
+                            columns = uiState.gridColumns
+                            // onPhotoLongClick removed - long press now only enters selection mode
                         )
                     }
                     else -> {
@@ -601,11 +624,29 @@ fun FlowSorterContent(
                 enter = slideInVertically { it },
                 exit = slideOutVertically { it }
             ) {
+                // Calculate the index of the single selected photo (for "从此张开始筛选")
+                val singleSelectedIndex = if (uiState.selectedCount == 1) {
+                    val selectedId = uiState.selectedPhotoIds.first()
+                    uiState.photos.indexOfFirst { it.id == selectedId }
+                } else -1
+
                 BatchActionBar(
                     selectedCount = uiState.selectedCount,
                     onKeep = { viewModel.keepSelectedPhotos() },
                     onTrash = { viewModel.trashSelectedPhotos() },
-                    onMaybe = { viewModel.maybeSelectedPhotos() }
+                    onMaybe = { viewModel.maybeSelectedPhotos() },
+                    onStartFromHere = if (singleSelectedIndex >= 0) {
+                        {
+                            // Start from this photo and switch to card mode
+                            viewModel.startFromIndex(singleSelectedIndex)
+                            viewModel.clearSelection()
+                            if (!isWorkflowMode) {
+                                viewModel.setViewMode(FlowSorterViewMode.CARD)
+                            } else {
+                                localViewMode = FlowSorterViewMode.CARD
+                            }
+                        }
+                    } else null
                 )
             }
         }
@@ -797,84 +838,6 @@ fun FlowSorterContent(
         )
     }
     
-    // Context menu dialog for "从此张开始筛选" feature
-    if (showContextMenu && contextMenuPhotoIndex >= 0 && contextMenuPhotoIndex < uiState.photos.size) {
-        AlertDialog(
-            onDismissRequest = { 
-                showContextMenu = false 
-                contextMenuPhotoIndex = -1
-            },
-            title = { Text("选择操作") },
-            text = {
-                Column {
-                    // Option 1: Select (enter selection mode)
-                    TextButton(
-                        onClick = {
-                            showContextMenu = false
-                            val photoId = uiState.photos[contextMenuPhotoIndex].id
-                            viewModel.updateSelection(setOf(photoId))
-                            contextMenuPhotoIndex = -1
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Start,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text("选择")
-                        }
-                    }
-                    
-                    // Option 2: Start filtering from this photo
-                    TextButton(
-                        onClick = {
-                            showContextMenu = false
-                            // Start from this photo: remove photos before it and switch to card mode
-                            viewModel.startFromIndex(contextMenuPhotoIndex)
-                            // Switch to card view mode
-                            if (!isWorkflowMode) {
-                                viewModel.setViewMode(FlowSorterViewMode.CARD)
-                            } else {
-                                localViewMode = FlowSorterViewMode.CARD
-                            }
-                            contextMenuPhotoIndex = -1
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Start,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.FilterList,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text("从此张开始筛选")
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { 
-                    showContextMenu = false 
-                    contextMenuPhotoIndex = -1
-                }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
 }
 
 /**
@@ -1177,13 +1140,20 @@ private fun ConfettiAnimation(
 
 /**
  * Bottom action bar for batch operations with vertical icon+text layout.
+ *
+ * @param selectedCount Number of selected photos
+ * @param onKeep Callback for keep action
+ * @param onTrash Callback for trash action
+ * @param onMaybe Callback for maybe action
+ * @param onStartFromHere Callback for "从此张开始筛选" action (only shown when single photo selected)
  */
 @Composable
 private fun BatchActionBar(
     selectedCount: Int,
     onKeep: () -> Unit,
     onTrash: () -> Unit,
-    onMaybe: () -> Unit
+    onMaybe: () -> Unit,
+    onStartFromHere: (() -> Unit)? = null
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1198,6 +1168,16 @@ private fun BatchActionBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // "从此张开始筛选" button (only when single photo is selected)
+            if (onStartFromHere != null) {
+                FlowSorterBottomBarActionItem(
+                    icon = Icons.Default.FilterList,
+                    label = "从此开始",
+                    color = MaterialTheme.colorScheme.primary,
+                    onClick = onStartFromHere
+                )
+            }
+
             // Keep button
             FlowSorterBottomBarActionItem(
                 icon = Icons.Default.Favorite,
@@ -1205,7 +1185,7 @@ private fun BatchActionBar(
                 color = KeepGreen,
                 onClick = onKeep
             )
-            
+
             // Maybe button
             FlowSorterBottomBarActionItem(
                 icon = Icons.Default.QuestionMark,
@@ -1213,7 +1193,7 @@ private fun BatchActionBar(
                 color = MaybeAmber,
                 onClick = onMaybe
             )
-            
+
             // Trash button
             FlowSorterBottomBarActionItem(
                 icon = Icons.Default.Delete,

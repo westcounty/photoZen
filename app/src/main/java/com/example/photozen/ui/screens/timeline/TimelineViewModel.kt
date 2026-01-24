@@ -9,6 +9,7 @@ import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.CustomFilterSession
+import com.example.photozen.data.repository.GuideRepository
 import com.example.photozen.data.repository.PhotoFilterMode
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.DeleteResult
@@ -83,7 +84,8 @@ class TimelineViewModel @Inject constructor(
     private val albumOperationsUseCase: AlbumOperationsUseCase,
     private val sortPhotoUseCase: SortPhotoUseCase,
     // Phase 4: 批量操作 UseCase
-    private val batchOperationUseCase: PhotoBatchOperationUseCase
+    private val batchOperationUseCase: PhotoBatchOperationUseCase,
+    val guideRepository: GuideRepository
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(TimelineUiState())

@@ -68,6 +68,11 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -89,10 +94,12 @@ import com.example.photozen.data.repository.DailyTaskMode
 import com.example.photozen.domain.usecase.DailyTaskStatus
 import com.example.photozen.ui.components.AchievementSummaryCard
 import com.example.photozen.ui.components.ChangelogDialog
+import com.example.photozen.ui.components.ShareFeatureTipCard
 import com.example.photozen.ui.components.MiniStatsCard
 import com.example.photozen.ui.components.DailyTaskDisplayStatus
 import com.example.photozen.ui.components.HomeDesignTokens
 import com.example.photozen.ui.components.HomeDailyTask
+import com.example.photozen.ui.components.HomeDailyTaskWithSortAll
 import com.example.photozen.ui.components.HomeMainAction
 import com.example.photozen.ui.components.HomeQuickActions
 import com.example.photozen.ui.components.QuickStartSheet
@@ -103,7 +110,7 @@ import com.example.photozen.ui.components.ArrowDirection
 import com.example.photozen.ui.guide.rememberGuideState
 import com.example.photozen.domain.model.GuideKey
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -190,6 +197,9 @@ fun HomeScreen(
     
     Scaffold(
         modifier = modifier,
+        // 禁用底部 insets 处理，因为外层 MainScaffold 的 NavigationBar 已经处理了
+        // 但保留顶部状态栏的处理（TopAppBar 需要）
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
@@ -226,13 +236,7 @@ fun HomeScreen(
                             )
                         }
                     }
-                    
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "设置"
-                        )
-                    }
+                    // 设置入口已移至底部导航
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
@@ -248,6 +252,7 @@ fun HomeScreen(
                 onStartSorting = { viewModel.showSortModeSheet() },
                 onNavigateToLightTable = onNavigateToLightTable,
                 onNavigateToTrash = onNavigateToTrash,
+                onNavigateToPhotoList = onNavigateToPhotoList,
                 onNavigateToAchievements = onNavigateToAchievements,
                 onStartDailyTask = {
                     val status = uiState.dailyTaskStatus
@@ -289,7 +294,8 @@ fun HomeScreen(
                 onNavigateToTimeline = onNavigateToTimeline,
                 onNavigateToAlbumBubble = onNavigateToAlbumBubble,
                 onNavigateToStats = onNavigateToStats,  // Phase 3
-                permissionLauncher = permissionLauncher
+                permissionLauncher = permissionLauncher,
+                guideRepository = viewModel.guideRepository
             )
         }
     }
@@ -355,6 +361,7 @@ private fun NewHomeLayout(
     onStartSorting: () -> Unit,
     onNavigateToLightTable: () -> Unit,
     onNavigateToTrash: () -> Unit,
+    onNavigateToPhotoList: (PhotoStatus) -> Unit,
     onNavigateToAchievements: () -> Unit,
     onStartDailyTask: () -> Unit,
     onNavigateToSmartGallery: () -> Unit,
@@ -373,7 +380,13 @@ private fun NewHomeLayout(
             .fillMaxSize()
             .padding(paddingValues)
             .verticalScroll(rememberScrollState())
-            .padding(HomeDesignTokens.SectionSpacing),
+            .windowInsetsPadding(WindowInsets.navigationBars)  // 系统导航栏 padding
+            .padding(
+                start = HomeDesignTokens.SectionSpacing,
+                end = HomeDesignTokens.SectionSpacing,
+                top = HomeDesignTokens.SectionSpacing,
+                bottom = HomeDesignTokens.SectionSpacing + 80.dp  // NavigationBar 高度
+            ),
         verticalArrangement = Arrangement.spacedBy(HomeDesignTokens.SectionSpacing)
     ) {
         // 加载状态
@@ -386,17 +399,27 @@ private fun NewHomeLayout(
         }
         
         if (!uiState.isLoading) {
-            // 1. 主操作区（带引导）
+            // 1. 整理统计（移到最顶部）
+            MiniStatsCard(
+                totalSorted = uiState.statsSummary.totalSorted,
+                weekSorted = uiState.statsSummary.weekSorted,
+                consecutiveDays = uiState.statsSummary.consecutiveDays,
+                onClick = onNavigateToStats
+            )
+
+            // 2. 每日任务/整理入口（核心功能，突出显示）
+            // 包含"继续任务"和"整理全部"两个操作
             Box {
-                HomeMainAction(
+                HomeDailyTaskWithSortAll(
+                    dailyTaskStatus = uiState.dailyTaskStatus,
                     unsortedCount = uiState.unsortedCount,
-                    onStartClick = onStartSorting,
-                    enabled = uiState.unsortedCount > 0,
+                    onStartDailyTask = onStartDailyTask,
+                    onStartSortAll = onStartSorting,
                     modifier = Modifier.onGloballyPositioned { coordinates ->
-                        mainActionBounds = coordinates.boundsInRoot()
+                        mainActionBounds = coordinates.boundsInWindow()
                     }
                 )
-                
+
                 // 开始按钮引导
                 GuideTooltip(
                     visible = startButtonGuide.shouldShow && uiState.unsortedCount > 0,
@@ -406,28 +429,17 @@ private fun NewHomeLayout(
                     onDismiss = startButtonGuide.dismiss
                 )
             }
-            
-            // 2. 快捷入口（仅对比和回收站）
+
+            // 3. 快捷入口（已保留、对比、回收站）
             HomeQuickActions(
+                onKeepClick = { onNavigateToPhotoList(PhotoStatus.KEEP) },
                 onCompareClick = onNavigateToLightTable,
                 onTrashClick = onNavigateToTrash,
+                keepCount = uiState.keepCount,
                 maybeCount = uiState.maybeCount,
                 trashCount = uiState.trashCount
             )
-            
-            // 3. 每日任务（如果启用）
-            if (uiState.dailyTaskStatus?.isEnabled == true) {
-                HomeDailyTask(
-                    status = DailyTaskDisplayStatus(
-                        current = uiState.dailyTaskStatus!!.current,
-                        target = uiState.dailyTaskStatus!!.target,
-                        isEnabled = true,
-                        isCompleted = uiState.dailyTaskStatus!!.isCompleted
-                    ),
-                    onStartClick = onStartDailyTask
-                )
-            }
-            
+
             // 4. 智能画廊（实验功能）
             if (BuildConfig.ENABLE_SMART_GALLERY) {
                 AnimatedVisibility(
@@ -445,15 +457,18 @@ private fun NewHomeLayout(
                     )
                 }
             }
-            
-            // 5. 整理统计入口
-            MiniStatsCard(
-                totalSorted = uiState.statsSummary.totalSorted,
-                weekSorted = uiState.statsSummary.weekSorted,
-                consecutiveDays = uiState.statsSummary.consecutiveDays,
-                onClick = onNavigateToStats
+
+            // 5. 分享功能提示（成就区域上方）
+            val shareFeatureTip = rememberGuideState(
+                guideKey = GuideKey.SHARE_FEATURE_TIP,
+                guideRepository = guideRepository
             )
-            
+            if (shareFeatureTip.shouldShow) {
+                ShareFeatureTipCard(
+                    onDismiss = { shareFeatureTip.dismiss() }
+                )
+            }
+
             // 6. 成就预览
             val achievements = generateAchievements(uiState.achievementData)
             AchievementSummaryCard(
@@ -461,7 +476,7 @@ private fun NewHomeLayout(
                 onClick = onNavigateToAchievements
             )
         }
-        
+
         // 空状态
         if (!uiState.isLoading && !uiState.hasPhotos && uiState.hasPermission) {
             EmptyStateCard()
@@ -507,7 +522,8 @@ private fun LegacyHomeLayout(
     onNavigateToTimeline: () -> Unit,
     onNavigateToAlbumBubble: () -> Unit,
     onNavigateToStats: () -> Unit,  // Phase 3: 统计页面入口
-    permissionLauncher: ManagedActivityResultLauncher<Array<String>, Map<String, Boolean>>
+    permissionLauncher: ManagedActivityResultLauncher<Array<String>, Map<String, Boolean>>,
+    guideRepository: com.example.photozen.data.repository.GuideRepository
 ) {
     Column(
         modifier = Modifier
@@ -654,7 +670,18 @@ private fun LegacyHomeLayout(
                 consecutiveDays = uiState.statsSummary.consecutiveDays,
                 onClick = onNavigateToStats
             )
-            
+
+            // 分享功能提示（成就区域上方）
+            val shareFeatureTip = rememberGuideState(
+                guideKey = GuideKey.SHARE_FEATURE_TIP,
+                guideRepository = guideRepository
+            )
+            if (shareFeatureTip.shouldShow) {
+                ShareFeatureTipCard(
+                    onDismiss = { shareFeatureTip.dismiss() }
+                )
+            }
+
             // Achievement Card
             val achievements = generateAchievements(uiState.achievementData)
             AchievementSummaryCard(

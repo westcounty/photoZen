@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,15 +41,16 @@ private data class LayoutConfig(
 /**
  * Comparison grid layout for Light Table.
  * Arranges 2-6 photos using intelligent layout algorithm.
- * 
+ *
  * The algorithm calculates the optimal layout by:
  * 1. Trying all possible row/column configurations
  * 2. Considering screen aspect ratio and photo aspect ratio
  * 3. Maximizing the display area while keeping all photos the same size
- * 
+ *
  * @param photos List of photos to compare (max 6)
  * @param transformState Shared transformation state for sync zoom
  * @param syncZoomEnabled When true, all photos zoom together; when false, each photo has independent zoom
+ * @param individualTransformStates List of individual transform states for each photo (must match photos.size)
  * @param selectedPhotoIds Set of selected photo IDs
  * @param onSelectPhoto Callback when a photo is tapped
  * @param onFullscreenClick Callback when fullscreen button is clicked
@@ -57,6 +61,7 @@ fun ComparisonGrid(
     photos: List<PhotoEntity>,
     transformState: TransformState,
     syncZoomEnabled: Boolean = true,
+    individualTransformStates: List<TransformState>,
     selectedPhotoIds: Set<String>,
     onSelectPhoto: (String) -> Unit,
     onFullscreenClick: ((Int) -> Unit)? = null,
@@ -104,6 +109,7 @@ fun ComparisonGrid(
             photos = photos.take(photoCount),
             transformState = transformState,
             syncZoomEnabled = syncZoomEnabled,
+            individualTransformStates = individualTransformStates,
             selectedPhotoIds = selectedPhotoIds,
             onSelectPhoto = onSelectPhoto,
             onFullscreenClick = onFullscreenClick,
@@ -278,6 +284,7 @@ private fun RenderLayout(
     photos: List<PhotoEntity>,
     transformState: TransformState,
     syncZoomEnabled: Boolean,
+    individualTransformStates: List<TransformState>,
     selectedPhotoIds: Set<String>,
     onSelectPhoto: (String) -> Unit,
     onFullscreenClick: ((Int) -> Unit)?,
@@ -286,16 +293,33 @@ private fun RenderLayout(
     val density = LocalDensity.current
     val photoWidthDp = with(density) { layout.photoWidth.toDp() }
     val photoHeightDp = with(density) { layout.photoHeight.toDp() }
-    
-    // Create individual transform states for independent zoom mode
-    val individualTransformStates = remember(photos.size, syncZoomEnabled) {
-        if (syncZoomEnabled) {
-            emptyList()
-        } else {
-            List(photos.size) { TransformState() }
+
+    // Track the previous sync mode to detect transitions
+    val previousSyncEnabled = remember { mutableStateOf(syncZoomEnabled) }
+
+    // Handle state synchronization when switching between sync and individual modes
+    // Use LaunchedEffect to ensure proper side effect handling
+    LaunchedEffect(syncZoomEnabled) {
+        if (syncZoomEnabled != previousSyncEnabled.value) {
+            if (syncZoomEnabled) {
+                // Switching TO sync mode: copy first non-default individual state to shared state
+                val sourceState = individualTransformStates.firstOrNull {
+                    it.scale != 1f || it.offsetX != 0f || it.offsetY != 0f
+                } ?: individualTransformStates.firstOrNull()
+
+                sourceState?.let {
+                    transformState.copyFrom(it)
+                }
+            } else {
+                // Switching TO individual mode: copy shared state to all individual states
+                individualTransformStates.forEach { state ->
+                    state.copyFrom(transformState)
+                }
+            }
+            previousSyncEnabled.value = syncZoomEnabled
         }
     }
-    
+
     var photoIndex = 0
     
     Column(

@@ -163,16 +163,23 @@ class GetUnsortedPhotosUseCase @Inject constructor(
                         .filter { it.status == com.example.photozen.data.model.PhotoStatus.UNSORTED }
                         .map { it.id }
                 }
-                
-                val bucketIds = sessionFilter?.albumIds
-                val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
-                
+
                 // Calculate effective date range in milliseconds
                 // non-preciseMode: endDate is start of day, extend to end of day (23:59:59.999)
                 val startDateMs = sessionFilter?.startDate
                 val endDateMs = sessionFilter?.endDate?.let { it + 86400L * 1000 - 1 }
-                
-                photoDao.getUnsortedPhotoIdsFiltered(safeBucketIds, startDateMs, endDateMs)
+
+                // Check if using exclude mode (more efficient when most albums are selected)
+                val excludeBucketIds = sessionFilter?.excludeAlbumIds
+                if (!excludeBucketIds.isNullOrEmpty()) {
+                    // Exclude mode: use NOT IN
+                    photoDao.getUnsortedPhotoIdsExcludingBucketsFiltered(excludeBucketIds, startDateMs, endDateMs)
+                } else {
+                    // Include mode: use IN (or null for all)
+                    val bucketIds = sessionFilter?.albumIds
+                    val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
+                    photoDao.getUnsortedPhotoIdsFiltered(safeBucketIds, startDateMs, endDateMs)
+                }
             }
         }
         
@@ -293,7 +300,7 @@ class GetUnsortedPhotosUseCase @Inject constructor(
     
     /**
      * Get count of unsorted photos filtered by bucket IDs (optional) and date range (optional).
-     * 
+     *
      * @param startDateMs Start date in milliseconds
      * @param endDateMs End date in milliseconds (already processed for preciseMode)
      */
@@ -304,5 +311,59 @@ class GetUnsortedPhotosUseCase @Inject constructor(
     ): Flow<Int> {
         val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
         return photoDao.getUnsortedCountFiltered(safeBucketIds, startDateMs, endDateMs)
+    }
+
+    /**
+     * Get count of unsorted photos filtered by bucket IDs (optional) and date range (optional).
+     * Suspend version for one-time queries (used for pagination mode decision).
+     *
+     * @param startDateMs Start date in milliseconds
+     * @param endDateMs End date in milliseconds (already processed for preciseMode)
+     */
+    suspend fun getCountFilteredSync(
+        bucketIds: List<String>?,
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): Int {
+        val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
+        return photoDao.getUnsortedCountFilteredSync(safeBucketIds, startDateMs, endDateMs)
+    }
+
+    /**
+     * Get count of unsorted photos EXCLUDING specific bucket IDs, with date range filter.
+     * Suspend version for one-time queries.
+     * Used when most albums are selected (exclude mode is more efficient than include mode).
+     */
+    suspend fun getCountExcludingBucketsFilteredSync(
+        excludeBucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): Int {
+        return photoDao.getUnsortedCountExcludingBucketsSync(excludeBucketIds, startDateMs, endDateMs)
+    }
+
+    /**
+     * Get a page of unsorted photos EXCLUDING specific bucket IDs, with date range filter.
+     * Used when most albums are selected (exclude mode is more efficient than include mode).
+     *
+     * @param excludeBucketIds Bucket IDs to exclude
+     * @param startDateMs Start date in milliseconds
+     * @param endDateMs End date in milliseconds (already processed for preciseMode)
+     */
+    suspend fun getPageExcludingBucketsFiltered(
+        excludeBucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?,
+        page: Int,
+        sortOrder: PhotoSortOrder,
+        randomSeed: Long = 0,
+        offsetAdjustment: Int = 0
+    ): List<PhotoEntity> {
+        val offset = (page * PAGE_SIZE + offsetAdjustment).coerceAtLeast(0)
+        return when (sortOrder) {
+            PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosExcludingBucketsFilteredPagedDesc(excludeBucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
+            PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosExcludingBucketsFilteredPagedAsc(excludeBucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
+            PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosExcludingBucketsFilteredPagedRandom(excludeBucketIds, startDateMs, endDateMs, randomSeed, PAGE_SIZE, offset)
+        }
     }
 }

@@ -78,6 +78,16 @@ class TransformState {
         offsetX = 0f
         offsetY = 0f
     }
+
+    /**
+     * Copy state from another TransformState.
+     * Used for state synchronization when switching between sync and individual modes.
+     */
+    fun copyFrom(other: TransformState) {
+        scale = other.scale
+        offsetX = other.offsetX
+        offsetY = other.offsetY
+    }
     
     /**
      * Apply bounds to prevent panning outside image.

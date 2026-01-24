@@ -151,6 +151,8 @@ object BottomBarConfigs {
     
     /**
      * 相册照片列表 - 单选模式
+     *
+     * 包含"从此开始"功能：将选中照片及之后的照片加入待筛选列表
      */
     @Composable
     fun albumPhotosSingleSelect(
@@ -158,30 +160,30 @@ object BottomBarConfigs {
         onShare: () -> Unit,
         onMove: () -> Unit,
         onCopy: () -> Unit,
-        onFilter: () -> Unit,
+        onStartFromHere: () -> Unit,
         onDelete: () -> Unit
     ): List<BottomBarAction> = listOf(
         editAction(onEdit),
         shareAction(onShare),
         moveAction(onMove),
         copyAction(onCopy),
-        filterAction(onFilter),
+        startFromHereAction(onStartFromHere),
         deleteAction(onDelete)
     )
     
     /**
      * 相册照片列表 - 多选模式
+     *
+     * 不包含"从此开始"功能（该功能仅在单选时可用）
      */
     @Composable
     fun albumPhotosMultiSelect(
         onMove: () -> Unit,
         onCopy: () -> Unit,
-        onFilter: () -> Unit,
         onDelete: () -> Unit
     ): List<BottomBarAction> = listOf(
         moveAction(onMove),
         copyAction(onCopy),
-        filterAction(onFilter),
         deleteAction(onDelete)
     )
     

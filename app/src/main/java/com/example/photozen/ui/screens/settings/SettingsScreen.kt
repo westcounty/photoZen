@@ -12,6 +12,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -133,6 +136,7 @@ fun SettingsScreen(
     
     Scaffold(
         modifier = modifier,
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
@@ -159,7 +163,12 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
+                .windowInsetsPadding(WindowInsets.navigationBars)  // 系统导航栏 padding
+                .padding(
+                    start = 16.dp,
+                    end = 16.dp,
+                    bottom = 80.dp  // 额外的底部 padding 避免被 app 导航栏遮挡
+                ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Spacer(modifier = Modifier.height(4.dp))
@@ -178,7 +187,7 @@ fun SettingsScreen(
                     subtitle = if (uiState.dailyTaskEnabled) "养成整理好习惯" else null,
                     onClick = { showDailyTaskDialog = true }
                 )
-                
+
                 // 待整理照片范围
                 ValueSettingsItem(
                     icon = Icons.Default.PhotoLibrary,
@@ -191,20 +200,28 @@ fun SettingsScreen(
                     },
                     onClick = { showFilterDialog = true }
                 )
-                
-                // 滑动灵敏度
-                SwipeSensitivitySettingCompact(
-                    sensitivity = uiState.swipeSensitivity,
-                    onSensitivityChange = { viewModel.setSwipeSensitivity(it) }
+
+                // 快速相册分类设置（从相册设置移过来）
+                EnhancedSettingsItem(
+                    icon = Icons.Default.Category,
+                    title = "快速相册分类",
+                    subtitle = if (uiState.cardSortingAlbumEnabled) "已开启" else "已关闭",
+                    onClick = { showClassificationModeDialog = true }
                 )
-                
-                // Phase 3-7: 震动反馈开关
+
+                // 震动反馈开关
                 SwitchSettingsItem(
                     icon = Icons.Default.Vibration,
                     title = "震动反馈",
                     subtitle = "滑动操作时提供触觉反馈",
                     checked = uiState.hapticFeedbackEnabled,
                     onCheckedChange = { viewModel.setHapticFeedbackEnabled(it) }
+                )
+
+                // 滑动灵敏度（移到震动反馈下面）
+                SwipeSensitivitySettingCompact(
+                    sensitivity = uiState.swipeSensitivity,
+                    onSensitivityChange = { viewModel.setSwipeSensitivity(it) }
                 )
             }
             
@@ -238,20 +255,7 @@ fun SettingsScreen(
                 }
             }
             
-            // ==================== 相册设置分组（默认折叠）====================
-            CollapsibleSettingsGroup(
-                title = "相册设置",
-                icon = Icons.Default.PhotoAlbum,
-                initialExpanded = false
-            ) {
-                // 快速相册分类设置
-                EnhancedSettingsItem(
-                    icon = Icons.Default.Category,
-                    title = "快速相册分类",
-                    subtitle = if (uiState.cardSortingAlbumEnabled) "已开启" else "已关闭",
-                    onClick = { showClassificationModeDialog = true }
-                )
-            }
+            // 相册设置分组已删除，快速相册分类设置已移至功能设置
             
             // ==================== 帮助与关于分组（默认折叠）====================
             CollapsibleSettingsGroup(

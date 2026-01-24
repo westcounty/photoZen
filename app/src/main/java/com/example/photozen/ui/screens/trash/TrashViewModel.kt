@@ -14,6 +14,7 @@ import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.ManageTrashUseCase
 import com.example.photozen.domain.usecase.PhotoBatchOperationUseCase
+import com.example.photozen.ui.components.PhotoGridMode
 import com.example.photozen.ui.state.PhotoSelectionStateHolder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -34,6 +35,7 @@ data class TrashUiState(
     val deleteIntentSender: IntentSender? = null,
     val message: String? = null,
     val gridColumns: Int = 2,
+    val gridMode: PhotoGridMode = PhotoGridMode.WATERFALL,
     val inSelectionMode: Boolean = false
 ) {
     val isSelectionMode: Boolean get() = inSelectionMode || selectedIds.isNotEmpty()
@@ -47,7 +49,8 @@ private data class InternalState(
     val isDeleting: Boolean = false,
     val deleteIntentSender: IntentSender? = null,
     val message: String? = null,
-    val gridColumns: Int = 2
+    val gridColumns: Int = 2,
+    val gridMode: PhotoGridMode = PhotoGridMode.WATERFALL
 )
 
 @HiltViewModel
@@ -83,6 +86,7 @@ class TrashViewModel @Inject constructor(
             deleteIntentSender = internal.deleteIntentSender,
             message = internal.message,
             gridColumns = internal.gridColumns,
+            gridMode = internal.gridMode,
             inSelectionMode = isSelectionMode || validSelectedIds.isNotEmpty()
         )
     }.stateIn(
@@ -137,10 +141,11 @@ class TrashViewModel @Inject constructor(
     }
     
     /**
-     * Phase 4: 委托给 StateHolder（已废弃，选择时自动进入选择模式）
+     * 进入选择模式
+     * Phase 4: 委托给 StateHolder
      */
     fun enterSelectionMode() {
-        // Selection mode is now automatic when selection is made
+        selectionStateHolder.enterSelectionMode()
     }
     
     /**
@@ -179,7 +184,21 @@ class TrashViewModel @Inject constructor(
             _internalState.update { it.copy(gridColumns = newColumns) }
         }
     }
-    
+
+    /**
+     * Toggle between SQUARE (grid) and WATERFALL (staggered) modes.
+     * SQUARE mode supports drag-to-select, WATERFALL mode does not.
+     */
+    fun toggleGridMode() {
+        _internalState.update { state ->
+            val newMode = when (state.gridMode) {
+                PhotoGridMode.SQUARE -> PhotoGridMode.WATERFALL
+                PhotoGridMode.WATERFALL -> PhotoGridMode.SQUARE
+            }
+            state.copy(gridMode = newMode)
+        }
+    }
+
     /**
      * Restore selected photos to Unsorted.
      * Phase 4: 使用 BatchUseCase

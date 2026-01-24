@@ -11,6 +11,9 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -27,7 +30,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -40,10 +46,14 @@ import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.domain.GroupingMode
 import com.example.photozen.domain.PhotoEvent
+import com.example.photozen.ui.components.ArrowDirection
 import com.example.photozen.ui.components.EmptyStates
+import com.example.photozen.ui.components.GuideTooltip
 import com.example.photozen.ui.components.TimelineEventPhotoRow
 import com.example.photozen.ui.components.SelectionTopBar
+import com.example.photozen.ui.guide.rememberGuideState
 import com.example.photozen.ui.util.FeatureFlags
+import com.example.photozen.domain.model.GuideKey
 import androidx.activity.compose.BackHandler
 import kotlinx.coroutines.launch
 
@@ -69,7 +79,14 @@ fun TimelineScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    
+
+    // 分组模式引导状态
+    val groupingGuide = rememberGuideState(
+        guideKey = GuideKey.TIMELINE_GROUPING,
+        guideRepository = viewModel.guideRepository
+    )
+    var groupingSelectorBounds by remember { mutableStateOf<Rect?>(null) }
+
     // Fullscreen preview state
     var showFullscreen by remember { mutableStateOf(false) }
     var fullscreenPhotos by remember { mutableStateOf<List<PhotoEntity>>(emptyList()) }
@@ -144,6 +161,7 @@ fun TimelineScreen(
     
     Scaffold(
         modifier = modifier,
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             if (uiState.isSelectionMode) {
@@ -237,7 +255,10 @@ fun TimelineScreen(
                 // Grouping mode selector
                 GroupingModeSelector(
                     currentMode = uiState.groupingMode,
-                    onModeSelected = viewModel::setGroupingMode
+                    onModeSelected = viewModel::setGroupingMode,
+                    modifier = Modifier.onGloballyPositioned { coordinates ->
+                        groupingSelectorBounds = coordinates.boundsInRoot()
+                    }
                 )
                 
                 if (uiState.isLoading) {
@@ -262,8 +283,15 @@ fun TimelineScreen(
                     // Event list
                     LazyColumn(
                         state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .windowInsetsPadding(WindowInsets.navigationBars),  // 系统导航栏 padding
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 16.dp,
+                            bottom = 16.dp + 80.dp  // 额外的底部 padding 避免被 app 导航栏遮挡
+                        ),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(uiState.events, key = { it.id }) { event ->
@@ -361,6 +389,17 @@ fun TimelineScreen(
             }
         )
     }
+
+    // 分组模式引导提示
+    if (groupingGuide.shouldShow && uiState.events.isNotEmpty()) {
+        GuideTooltip(
+            visible = true,
+            message = "📅 切换分组\n选择按天、月、年或智能分组查看照片",
+            targetBounds = groupingSelectorBounds,
+            arrowDirection = ArrowDirection.DOWN,
+            onDismiss = groupingGuide.dismiss
+        )
+    }
 }
 
 /**
@@ -423,10 +462,11 @@ private fun TimelineFullscreenViewerWrapper(
 @Composable
 private fun GroupingModeSelector(
     currentMode: GroupingMode,
-    onModeSelected: (GroupingMode) -> Unit
+    onModeSelected: (GroupingMode) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     LazyRow(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)

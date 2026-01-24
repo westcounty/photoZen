@@ -54,9 +54,12 @@ import androidx.compose.material.icons.filled.PhotoAlbum
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material.icons.filled.ViewModule
+import androidx.compose.material.icons.filled.ViewComfy
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import com.example.photozen.ui.components.shareImage
+import com.example.photozen.ui.components.PhotoGridMode
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -253,8 +256,21 @@ fun PhotoListScreen(
                             }
                         }
                         
-                        // Grid columns toggle
+                        // Grid mode toggle (square vs waterfall)
                         if (uiState.photos.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.toggleGridMode() }) {
+                                Icon(
+                                    imageVector = when (uiState.gridMode) {
+                                        PhotoGridMode.SQUARE -> Icons.Default.Dashboard
+                                        PhotoGridMode.WATERFALL -> Icons.Default.ViewComfy
+                                    },
+                                    contentDescription = when (uiState.gridMode) {
+                                        PhotoGridMode.SQUARE -> "切换到瀑布流"
+                                        PhotoGridMode.WATERFALL -> "切换到网格"
+                                    }
+                                )
+                            }
+                            // Grid columns toggle
                             IconButton(onClick = { viewModel.cycleGridColumns() }) {
                                 Icon(
                                     imageVector = when (uiState.gridColumns) {
@@ -293,18 +309,6 @@ fun PhotoListScreen(
                             }
                         }
                         
-                        // Batch selection mode button
-                        if (uiState.canBatchManage && uiState.photos.isNotEmpty()) {
-                            IconButton(onClick = { 
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                viewModel.toggleSelectionMode() 
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Checklist,
-                                    contentDescription = "批量管理"
-                                )
-                            }
-                        }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface
@@ -472,6 +476,7 @@ fun PhotoListScreen(
                                     showActionSheet = true
                                 },
                                 columns = uiState.gridColumns,
+                                gridMode = uiState.gridMode,
                                 selectionColor = color,
                                 modifier = Modifier.onGloballyPositioned { coordinates ->
                                     if (gridBounds == null && coordinates.size.width > 0) {

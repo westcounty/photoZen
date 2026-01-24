@@ -273,8 +273,37 @@ class FlowSorterViewModel @Inject constructor(
     // ==================== PAGINATION STATE ====================
     // Pagination ensures correct sorting across ALL photos, not just the first 500.
     // The database applies ORDER BY to all matching photos, then LIMIT/OFFSET for pagination.
-    
-    // Unified Pagination Strategy:
+
+    // Two pagination strategies:
+    // 1. Snapshot Mode (small datasets): Load all IDs into memory for consistent random shuffle
+    // 2. Database Mode (large datasets): Use LIMIT/OFFSET directly to avoid OOM
+
+    companion object {
+        /**
+         * Maximum number of photos to use snapshot pagination.
+         * For larger datasets, use database-level pagination to avoid OOM.
+         */
+        private const val MAX_SNAPSHOT_SIZE = 5000
+    }
+
+    /** Whether to use database-level pagination instead of ID snapshot */
+    private var useDatabasePagination = false
+
+    /** Cached filter parameters for database pagination mode */
+    private var dbPaginationParams: DatabasePaginationParams? = null
+
+    /** Parameters needed for database-level pagination */
+    private data class DatabasePaginationParams(
+        val filterMode: PhotoFilterMode,
+        val bucketIds: List<String>?,
+        val excludeBucketIds: List<String>?,
+        val startDateMs: Long?,
+        val endDateMs: Long?,
+        val sortOrder: PhotoSortOrder,
+        val randomSeed: Long
+    )
+
+    // Unified Pagination Strategy (for small datasets):
     // We fetch ALL matching photo IDs (sorted globally by DB) into memory (Snapshot).
     // This ensures:
     // 1. Consistent sorting order (Global Sort).
@@ -336,17 +365,20 @@ class FlowSorterViewModel @Inject constructor(
     /**
      * Load the initial batch of photos based on current filter mode and sort order.
      * Called when filter mode or sort order changes.
-     * 
+     *
      * Uses _isReloading flag to prevent "complete" screen flash during reload.
      * IMPORTANT: Uses flow.first() to get the CURRENT values at call time,
      * ensuring correct filter/sort parameters are used (especially for CUSTOM mode).
+     *
+     * CRITICAL FIX: Now also uses _filterConfig for in-page filtering (筛选按钮).
+     * If _filterConfig has values, they override the global preferences.
      */
     private fun loadInitialPhotos() {
         loadPhotosJob?.cancel()
         loadPhotosJob = viewModelScope.launch {
             // Set reloading flag BEFORE clearing data to prevent "complete" flash
             _isReloading.value = true
-            
+
             // Reset pagination state
             currentPage = 0
             hasMorePages = true
@@ -354,15 +386,15 @@ class FlowSorterViewModel @Inject constructor(
             _sortedPhotoIds.value = emptySet()
             _isLoadingMore.value = true
             currentSessionIds = null // Reset snapshot
-            
+
             // Reset initial total count to recalculate with new filter/sort
             // This ensures accurate total count after filter changes
             _initialTotalCount.value = -1
-            
+
             // Reset session counters (keep/trash/maybe) for the new sort session
             _counters.value = SortCounters()
             _sortedCountImmediate.value = 0  // Reset immediate counter too
-            
+
             try {
                 // Get CURRENT values using first() to ensure correct parameters
                 // This is critical for CUSTOM mode where sessionFilter must be correct
@@ -370,41 +402,152 @@ class FlowSorterViewModel @Inject constructor(
                 val sessionFilter = preferencesRepository.getSessionCustomFilterFlow().first()
                 val sortOrder = _sortOrder.value
                 val cameraIds = _cameraAlbumIds.value
-                
-                // Initialize the ID snapshot for ALL sort modes
-                // This guarantees global sorting and stability
-                // If albumBucketId is set, override filter to only show photos from that album
-                val allIds = if (albumBucketId != null) {
-                    getUnsortedPhotosUseCase.getAllIds(
-                        com.example.photozen.data.repository.PhotoFilterMode.CAMERA_ONLY,
-                        listOf(albumBucketId),
-                        null,
-                        sortOrder
+
+                // CRITICAL FIX: Check if in-page filter (_filterConfig) is active
+                // If so, use it instead of global preferences
+                val currentFilterConfig = _filterConfig.value
+                val effectiveSessionFilter = if (!currentFilterConfig.isEmpty) {
+                    // Use _filterConfig values - create a CustomFilterSession with preciseMode=true
+                    // This ensures the filter is applied correctly at database level
+                    CustomFilterSession(
+                        albumIds = currentFilterConfig.albumIds,
+                        startDate = currentFilterConfig.startDate,
+                        endDate = currentFilterConfig.endDate?.let { it + 86400L * 1000 - 1 }, // Extend to end of day
+                        preciseMode = true
                     )
                 } else {
-                    getUnsortedPhotosUseCase.getAllIds(
-                        filterMode, 
-                        cameraIds, 
-                        sessionFilter,
-                        sortOrder
+                    sessionFilter
+                }
+
+                // Calculate effective filter parameters for pagination
+                // Support both include mode (bucketIds) and exclude mode (excludeBucketIds)
+                val effectiveBucketIds: List<String>? = when {
+                    albumBucketId != null -> listOf(albumBucketId)
+                    !currentFilterConfig.isEmpty -> currentFilterConfig.albumIds
+                    filterMode == PhotoFilterMode.CUSTOM -> sessionFilter?.albumIds
+                    filterMode == PhotoFilterMode.CAMERA_ONLY -> cameraIds.takeIf { it.isNotEmpty() }
+                    else -> null
+                }
+                val effectiveExcludeBucketIds: List<String>? = when {
+                    filterMode == PhotoFilterMode.CUSTOM -> sessionFilter?.excludeAlbumIds
+                    else -> null
+                }
+                val effectiveStartDateMs: Long? = when {
+                    !currentFilterConfig.isEmpty -> currentFilterConfig.startDate
+                    filterMode == PhotoFilterMode.CUSTOM -> sessionFilter?.startDate
+                    else -> null
+                }
+                val effectiveEndDateMs: Long? = when {
+                    !currentFilterConfig.isEmpty -> currentFilterConfig.endDate?.let { it + 86400L * 1000 - 1 }
+                    filterMode == PhotoFilterMode.CUSTOM -> sessionFilter?.endDate?.let {
+                        if (sessionFilter.preciseMode) it else it + 86400L * 1000 - 1
+                    }
+                    else -> null
+                }
+
+                // First, check the count to decide pagination strategy
+                // This avoids loading all IDs into memory for large datasets
+                // Use appropriate count method based on include/exclude mode
+                val photoCount = if (!effectiveExcludeBucketIds.isNullOrEmpty()) {
+                    getUnsortedPhotosUseCase.getCountExcludingBucketsFilteredSync(
+                        effectiveExcludeBucketIds, effectiveStartDateMs, effectiveEndDateMs
+                    )
+                } else {
+                    getUnsortedPhotosUseCase.getCountFilteredSync(
+                        effectiveBucketIds, effectiveStartDateMs, effectiveEndDateMs
                     )
                 }
-                
-                // For RANDOM, shuffle the list
-                currentSessionIds = if (sortOrder == PhotoSortOrder.RANDOM) {
-                    allIds.shuffled(java.util.Random(randomSeed))
+
+                Log.d(TAG, "loadInitialPhotos: photoCount=$photoCount, maxSnapshot=$MAX_SNAPSHOT_SIZE")
+
+                if (photoCount > MAX_SNAPSHOT_SIZE) {
+                    // Large dataset: Use database-level pagination to avoid OOM
+                    Log.d(TAG, "Using database pagination mode for $photoCount photos")
+                    useDatabasePagination = true
+                    currentSessionIds = null
+                    dbPaginationParams = DatabasePaginationParams(
+                        filterMode = if (albumBucketId != null) PhotoFilterMode.CAMERA_ONLY
+                                    else if (!currentFilterConfig.isEmpty) PhotoFilterMode.CUSTOM
+                                    else filterMode,
+                        bucketIds = effectiveBucketIds,
+                        excludeBucketIds = effectiveExcludeBucketIds,
+                        startDateMs = effectiveStartDateMs,
+                        endDateMs = effectiveEndDateMs,
+                        sortOrder = sortOrder,
+                        randomSeed = randomSeed
+                    )
+
+                    // Load first page using database pagination
+                    // Use appropriate method based on include/exclude mode
+                    val photos = if (!effectiveExcludeBucketIds.isNullOrEmpty()) {
+                        getUnsortedPhotosUseCase.getPageExcludingBucketsFiltered(
+                            excludeBucketIds = effectiveExcludeBucketIds,
+                            startDateMs = effectiveStartDateMs,
+                            endDateMs = effectiveEndDateMs,
+                            page = 0,
+                            sortOrder = sortOrder,
+                            randomSeed = randomSeed
+                        )
+                    } else {
+                        getUnsortedPhotosUseCase.getPageFiltered(
+                            bucketIds = effectiveBucketIds,
+                            startDateMs = effectiveStartDateMs,
+                            endDateMs = effectiveEndDateMs,
+                            page = 0,
+                            sortOrder = sortOrder,
+                            randomSeed = randomSeed
+                        )
+                    }
+                    _pagedPhotos.value = photos
+                    hasMorePages = photos.size >= GetUnsortedPhotosUseCase.PAGE_SIZE
                 } else {
-                    allIds
+                    // Small dataset: Use snapshot pagination for better UX (stable random order)
+                    Log.d(TAG, "Using snapshot pagination mode for $photoCount photos")
+                    useDatabasePagination = false
+                    dbPaginationParams = null
+
+                    // Initialize the ID snapshot for ALL sort modes
+                    // This guarantees global sorting and stability
+                    val allIds = if (albumBucketId != null) {
+                        getUnsortedPhotosUseCase.getAllIds(
+                            com.example.photozen.data.repository.PhotoFilterMode.CAMERA_ONLY,
+                            listOf(albumBucketId),
+                            null,
+                            sortOrder
+                        )
+                    } else if (!currentFilterConfig.isEmpty) {
+                        // Use the effective filter when _filterConfig is active
+                        getUnsortedPhotosUseCase.getAllIds(
+                            PhotoFilterMode.CUSTOM,
+                            cameraIds,
+                            effectiveSessionFilter,
+                            sortOrder
+                        )
+                    } else {
+                        getUnsortedPhotosUseCase.getAllIds(
+                            filterMode,
+                            cameraIds,
+                            sessionFilter,
+                            sortOrder
+                        )
+                    }
+
+                    // For RANDOM, shuffle the list
+                    currentSessionIds = if (sortOrder == PhotoSortOrder.RANDOM) {
+                        allIds.shuffled(java.util.Random(randomSeed))
+                    } else {
+                        allIds
+                    }
+
+                    val photos = loadPhotosPage(
+                        page = 0,
+                        filterMode = filterMode,
+                        sessionFilter = sessionFilter,
+                        sortOrder = sortOrder
+                    )
+                    _pagedPhotos.value = photos
+                    hasMorePages = photos.size >= GetUnsortedPhotosUseCase.PAGE_SIZE
                 }
-                
-                val photos = loadPhotosPage(
-                    page = 0,
-                    filterMode = filterMode,
-                    sessionFilter = sessionFilter,
-                    sortOrder = sortOrder
-                )
-                _pagedPhotos.value = photos
-                hasMorePages = photos.size >= GetUnsortedPhotosUseCase.PAGE_SIZE
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Coroutine was cancelled (e.g., by a new loadInitialPhotos call)
                 // This is expected behavior, don't show error to user
@@ -463,18 +606,17 @@ class FlowSorterViewModel @Inject constructor(
     /**
      * Load more photos when approaching the end of the current batch.
      * Called automatically when remaining unsorted photos drop below threshold.
-     * 
-     * IMPORTANT: Uses adjusted offset to account for photos sorted since last load.
-     * Without this adjustment, some photos would be skipped when loading next page
-     * because the database query only includes UNSORTED photos (sorted ones are excluded).
-     * 
+     *
+     * Supports two pagination modes:
+     * 1. Snapshot Mode: Uses pre-loaded ID list (for small datasets)
+     * 2. Database Mode: Uses LIMIT/OFFSET directly (for large datasets)
+     *
      * NOTE: This method uses debouncing to avoid rapid consecutive calls during fast swiping.
      * Errors are silently handled to prevent "加载照片失败" messages during normal operation.
-     * Uses flow.first() to get current filter/sort values for correct pagination.
      */
     private fun loadMorePhotosIfNeeded() {
         if (_isLoadingMore.value || !hasMorePages || _isReloading.value) return
-        
+
         val unsortedRemaining = _pagedPhotos.value.count { it.id !in _sortedPhotoIds.value }
         if (unsortedRemaining < GetUnsortedPhotosUseCase.PRELOAD_THRESHOLD) {
             // Cancel any pending load to avoid duplicate requests
@@ -482,29 +624,55 @@ class FlowSorterViewModel @Inject constructor(
             loadMoreDebounceJob = viewModelScope.launch {
                 // Small delay to debounce rapid calls
                 delay(50)
-                
+
                 if (_isLoadingMore.value || !hasMorePages) return@launch
-                
+
                 _isLoadingMore.value = true
                 try {
-                    // Get CURRENT filter/sort values using first()
-                    val filterMode = preferencesRepository.getPhotoFilterMode().first()
-                    val sessionFilter = preferencesRepository.getSessionCustomFilterFlow().first()
-                    val sortOrder = _sortOrder.value
-                    
-                    // Unified Snapshot Pagination: No offset adjustment needed
-                    // Just load the next page of IDs from the snapshot
-                    val offsetAdjustment = 0
-                    
                     currentPage++
-                    val morePhotos = loadPhotosPage(
-                        page = currentPage,
-                        filterMode = filterMode,
-                        sessionFilter = sessionFilter,
-                        sortOrder = sortOrder,
-                        offsetAdjustment = offsetAdjustment
-                    )
-                    
+
+                    val morePhotos = if (useDatabasePagination) {
+                        // Database pagination mode: Use LIMIT/OFFSET with offset adjustment
+                        val params = dbPaginationParams ?: return@launch
+                        // Adjust offset for photos that have been sorted (they're no longer in UNSORTED status)
+                        val offsetAdjustment = -_sortedPhotoIds.value.size
+
+                        // Use appropriate method based on include/exclude mode
+                        if (!params.excludeBucketIds.isNullOrEmpty()) {
+                            getUnsortedPhotosUseCase.getPageExcludingBucketsFiltered(
+                                excludeBucketIds = params.excludeBucketIds,
+                                startDateMs = params.startDateMs,
+                                endDateMs = params.endDateMs,
+                                page = currentPage,
+                                sortOrder = params.sortOrder,
+                                randomSeed = params.randomSeed,
+                                offsetAdjustment = offsetAdjustment
+                            )
+                        } else {
+                            getUnsortedPhotosUseCase.getPageFiltered(
+                                bucketIds = params.bucketIds,
+                                startDateMs = params.startDateMs,
+                                endDateMs = params.endDateMs,
+                                page = currentPage,
+                                sortOrder = params.sortOrder,
+                                randomSeed = params.randomSeed,
+                                offsetAdjustment = offsetAdjustment
+                            )
+                        }
+                    } else {
+                        // Snapshot pagination mode: Use pre-loaded ID list
+                        val filterMode = preferencesRepository.getPhotoFilterMode().first()
+                        val sessionFilter = preferencesRepository.getSessionCustomFilterFlow().first()
+                        val sortOrder = _sortOrder.value
+
+                        loadPhotosPage(
+                            page = currentPage,
+                            filterMode = filterMode,
+                            sessionFilter = sessionFilter,
+                            sortOrder = sortOrder
+                        )
+                    }
+
                     if (morePhotos.isNotEmpty()) {
                         // Filter out any photos we already have (duplicates due to offset shift)
                         val existingIds = _pagedPhotos.value.map { it.id }.toSet()
@@ -553,6 +721,8 @@ class FlowSorterViewModel @Inject constructor(
      * Get the REAL count of unsorted photos (not limited by LIMIT 500).
      * Used to display accurate total count in the UI.
      * If albumBucketId is set, only count photos from that album.
+     *
+     * CRITICAL FIX: Now also uses _filterConfig for in-page filtering.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun getFilteredPhotosCountFlow(): Flow<Int> {
@@ -560,16 +730,31 @@ class FlowSorterViewModel @Inject constructor(
         if (albumBucketId != null) {
             return getUnsortedPhotosUseCase.getCountByBuckets(listOf(albumBucketId))
         }
-        
-        return combine(
+
+        // Combine first 4 flows into FilterParams
+        val paramsFlow = combine(
             preferencesRepository.getPhotoFilterMode(),
             _cameraAlbumIds,
             _cameraAlbumsLoaded,
-            preferencesRepository.getSessionCustomFilterFlow(),
-            _sortOrder
-        ) { filterMode, cameraIds, loaded, sessionFilter, sortOrder ->
-            FilterParams(filterMode, cameraIds, loaded, sessionFilter, sortOrder)
-        }.flatMapLatest { params ->
+            preferencesRepository.getSessionCustomFilterFlow()
+        ) { filterMode, cameraIds, loaded, sessionFilter ->
+            FilterParams(filterMode, cameraIds, loaded, sessionFilter, PhotoSortOrder.DATE_DESC)
+        }
+
+        // Then combine with _filterConfig
+        return combine(paramsFlow, _filterConfig) { params, inPageFilter ->
+            params to inPageFilter
+        }.flatMapLatest { (params, inPageFilter) ->
+            // CRITICAL FIX: Priority 0 - Check if in-page filter is active
+            if (!inPageFilter.isEmpty) {
+                val effectiveEndDateMs = inPageFilter.endDate?.let { it + 86400L * 1000 - 1 }
+                return@flatMapLatest getUnsortedPhotosUseCase.getCountFiltered(
+                    inPageFilter.albumIds,
+                    inPageFilter.startDate,
+                    effectiveEndDateMs
+                )
+            }
+
             // Priority 1: If sessionFilter has preciseMode=true, use it directly
             // This allows timeline sorting to work without changing the global filter mode
             val sessionFilter = params.sessionFilter
@@ -580,7 +765,7 @@ class FlowSorterViewModel @Inject constructor(
                     sessionFilter.endDate
                 )
             }
-            
+
             when (params.filterMode) {
                 PhotoFilterMode.ALL -> getUnsortedPhotosUseCase.getCount()
                 PhotoFilterMode.CAMERA_ONLY -> {
@@ -601,21 +786,21 @@ class FlowSorterViewModel @Inject constructor(
                         getUnsortedPhotosUseCase.getCount()
                     }
                 }
-            PhotoFilterMode.CUSTOM -> {
-                if (sessionFilter != null) {
-                    // Calculate effective end date based on preciseMode (non-precise uses day extension)
-                    val effectiveEndDateMs = sessionFilter.endDate?.let { it + 86400L * 1000 - 1 }
-                    getUnsortedPhotosUseCase.getCountFiltered(
-                        sessionFilter.albumIds,
-                        sessionFilter.startDate,
-                        effectiveEndDateMs
-                    )
-                } else {
-                    getUnsortedPhotosUseCase.getCount()
+                PhotoFilterMode.CUSTOM -> {
+                    if (sessionFilter != null) {
+                        // Calculate effective end date based on preciseMode (non-precise uses day extension)
+                        val effectiveEndDateMs = sessionFilter.endDate?.let { it + 86400L * 1000 - 1 }
+                        getUnsortedPhotosUseCase.getCountFiltered(
+                            sessionFilter.albumIds,
+                            sessionFilter.startDate,
+                            effectiveEndDateMs
+                        )
+                    } else {
+                        getUnsortedPhotosUseCase.getCount()
+                    }
                 }
             }
         }
-    }
     }
     
     /**
@@ -902,8 +1087,13 @@ class FlowSorterViewModel @Inject constructor(
      * 应用筛选配置
      */
     fun applyFilter(config: FilterConfig) {
+        // CRITICAL: Reset initial total count BEFORE setting filter config
+        // This ensures the combine flow uses the new count instead of cached old value
+        // Without this, the first filter apply shows stale count (requires two applies to update)
+        _initialTotalCount.value = -1
+
         _filterConfig.value = config
-        
+
         // 保存为最近使用
         viewModelScope.launch {
             filterPresetRepository.saveLastFilterConfig(config)

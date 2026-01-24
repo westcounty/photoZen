@@ -4,9 +4,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -82,17 +84,18 @@ class MainActivity : ComponentActivity() {
                         if (FeatureFlags.USE_BOTTOM_NAV) {
                             // 新实现：使用 MainScaffold（带底部导航）
                             // Phase 3-8: 传递全局 SnackbarManager
-                            // 使用 MainDestination.Home.route 作为起始路由，与底部导航保持一致
+                            // 使用 Screen.Home 作为起始目的地（类型安全导航）
+                            // MainScaffold 会通过监听路由变化来同步底部导航高亮状态
                             MainScaffold(
                                 navController = navController,
                                 snackbarManager = snackbarManager
-                            ) { paddingValues ->
+                            ) { _ ->
+                                // 不使用底部 padding，让内容填满整个区域
+                                // 底部导航栏会覆盖在内容上方
                                 PicZenNavHost(
                                     navController = navController,
-                                    startDestination = MainDestination.Home.route,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(paddingValues)
+                                    startDestination = Screen.Home,
+                                    modifier = Modifier.fillMaxSize()
                                 )
                             }
                         } else {

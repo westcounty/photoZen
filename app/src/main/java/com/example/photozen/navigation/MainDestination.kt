@@ -104,8 +104,28 @@ sealed class MainDestination(
          * 所有导航目的地列表
          * 
          * 按照底部导航栏从左到右的顺序排列
+         * 
+         * 注意：使用 lazy 初始化以避免静态初始化顺序问题
+         * 在 Kotlin sealed class 中，companion object 可能在嵌套的 data object 之前初始化
          */
-        val entries = listOf(Home, Timeline, Albums, Settings)
+        val entries: List<MainDestination> by lazy { 
+            listOf(Home, Timeline, Albums, Settings) 
+        }
+        
+        /**
+         * Screen 类型路由到 MainDestination 的映射
+         * 
+         * Navigation Compose 类型安全路由（Screen.*）会生成类似 "Screen.Home" 的路由字符串
+         * 这里定义了 Screen 路由前缀到 MainDestination 的映射关系
+         */
+        private val screenRouteMapping: Map<String, MainDestination> by lazy {
+            mapOf(
+                "Screen.Home" to Home,
+                "Screen.Timeline" to Timeline,
+                "Screen.AlbumBubble" to Albums,
+                "Screen.Settings" to Settings
+            )
+        }
         
         /**
          * 需要隐藏底部导航的路由前缀
@@ -124,64 +144,76 @@ sealed class MainDestination(
          */
         private val fullscreenRoutes = listOf(
             // 整理流程
-            "FlowSorter",
-            "Workflow",
+            "Screen.FlowSorter",
+            "Screen.Workflow",
             // 编辑器
-            "PhotoEditor",
+            "Screen.PhotoEditor",
             // 对比模式
-            "LightTable",
+            "Screen.LightTable",
             // 分享页面
-            "ShareCopy",
-            "ShareCompare",
+            "Screen.ShareCopy",
+            "Screen.ShareCompare",
             // 筛选选择
-            "PhotoFilterSelection",
+            "Screen.PhotoFilterSelection",
             // 照片列表（从首页进入的状态列表）
-            "PhotoList",
+            "Screen.PhotoList",
             // 相册照片列表
-            "AlbumPhotoList",
+            "Screen.AlbumPhotoList",
             // 回收站
-            "Trash",
+            "Screen.Trash",
             // 成就
-            "Achievements",
+            "Screen.Achievements",
+            // 统计
+            "Screen.Stats",
             // Smart Gallery 相关
-            "SmartGallery",
-            "LabelBrowser",
-            "LabelPhotos",
-            "PersonList",
-            "PersonDetail",
-            "SmartSearch",
-            "SimilarPhotos",
-            "MapView"
+            "Screen.SmartGallery",
+            "Screen.LabelBrowser",
+            "Screen.LabelPhotos",
+            "Screen.PersonList",
+            "Screen.PersonDetail",
+            "Screen.SmartSearch",
+            "Screen.SimilarPhotos",
+            "Screen.MapView"
         )
         
         /**
          * 判断指定路由是否需要显示底部导航
-         * 
+         *
          * @param route 当前路由，可为 null
          * @return true 表示显示底部导航，false 表示隐藏
-         * 
+         *
          * 规则：
          * 1. 如果路由为 null，返回 true（默认显示）
-         * 2. 如果路由是主 Tab 路由，返回 true
-         * 3. 如果路由以 fullscreenRoutes 中任一前缀开头，返回 false
+         * 2. 如果路由是主 Tab 路由（包括 Screen.* 格式），返回 true
+         * 3. 如果路由包含 fullscreenRoutes 中任一名称，返回 false
          * 4. 其他情况返回 true（兼容旧路由）
          */
         fun shouldShowBottomNav(route: String?): Boolean {
             if (route == null) return true
-            // 主 Tab 路由显示底部导航
+            // 主 Tab 路由显示底部导航（包括字符串路由和 Screen 类型路由）
             if (entries.any { it.route == route }) return true
-            // 全屏路由隐藏底部导航
-            return fullscreenRoutes.none { route.startsWith(it) }
+            if (screenRouteMapping.keys.any { route.startsWith(it) }) return true
+            // 全屏路由隐藏底部导航（使用 contains 匹配完整类路径）
+            return fullscreenRoutes.none { route.contains(it) }
         }
         
         /**
          * 根据路由查找对应的目的地
          * 
+         * 支持两种路由格式：
+         * 1. 字符串路由：如 "main_home"（MainDestination.Home.route）
+         * 2. Screen 类型路由：如 "Screen.Home"（类型安全导航生成）
+         * 
          * @param route 导航路由
          * @return 匹配的 MainDestination，未找到返回 null
          */
         fun fromRoute(route: String?): MainDestination? {
-            return entries.find { it.route == route }
+            if (route == null) return null
+            // 先尝试匹配字符串路由
+            entries.find { it.route == route }?.let { return it }
+            // 再尝试匹配 Screen 类型路由
+            screenRouteMapping.entries.find { route.startsWith(it.key) }?.let { return it.value }
+            return null
         }
     }
 }

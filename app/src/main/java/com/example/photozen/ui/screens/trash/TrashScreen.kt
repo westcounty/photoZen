@@ -43,6 +43,8 @@ import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material.icons.filled.ViewModule
+import androidx.compose.material.icons.filled.ViewComfy
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -85,6 +87,7 @@ import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.ui.components.ConfirmDeleteSheet
 import com.example.photozen.ui.components.DeleteType
 import com.example.photozen.ui.components.DragSelectPhotoGrid
+import com.example.photozen.ui.components.PhotoGridMode
 import com.example.photozen.ui.components.EmptyStates
 import com.example.photozen.ui.components.SelectionTopBar
 import com.example.photozen.ui.components.SelectionBottomBar
@@ -175,8 +178,21 @@ fun TrashScreen(
                         }
                     },
                     actions = {
-                        // Grid columns toggle
+                        // Grid mode toggle (square vs waterfall)
                         if (uiState.photos.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.toggleGridMode() }) {
+                                Icon(
+                                    imageVector = when (uiState.gridMode) {
+                                        PhotoGridMode.SQUARE -> Icons.Default.Dashboard
+                                        PhotoGridMode.WATERFALL -> Icons.Default.ViewComfy
+                                    },
+                                    contentDescription = when (uiState.gridMode) {
+                                        PhotoGridMode.SQUARE -> "切换到瀑布流"
+                                        PhotoGridMode.WATERFALL -> "切换到网格"
+                                    }
+                                )
+                            }
+                            // Grid columns toggle
                             IconButton(onClick = { viewModel.cycleGridColumns() }) {
                                 Icon(
                                     imageVector = when (uiState.gridColumns) {
@@ -185,19 +201,6 @@ fun TrashScreen(
                                         else -> Icons.Default.ViewModule
                                     },
                                     contentDescription = "${uiState.gridColumns}列视图"
-                                )
-                            }
-                        }
-                        
-                        // Batch management mode
-                        if (uiState.photos.isNotEmpty()) {
-                            IconButton(onClick = { 
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                viewModel.enterSelectionMode()
-                            }) {
-                                Icon(
-                                    Icons.Default.Checklist,
-                                    "批量管理"
                                 )
                             }
                         }
@@ -247,6 +250,7 @@ fun TrashScreen(
                             // No action sheet for trash items
                         },
                         columns = uiState.gridColumns,
+                        gridMode = uiState.gridMode,
                         selectionColor = TrashRed
                     )
                 }

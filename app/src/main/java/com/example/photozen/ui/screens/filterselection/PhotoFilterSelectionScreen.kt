@@ -8,6 +8,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,8 +61,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,6 +73,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.example.photozen.data.source.Album
+import com.example.photozen.domain.model.GuideKey
+import com.example.photozen.ui.components.ArrowDirection
+import com.example.photozen.ui.components.GuideTooltip
+import com.example.photozen.ui.guide.rememberGuideState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -84,9 +95,17 @@ fun PhotoFilterSelectionScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showDatePicker by remember { mutableStateOf(false) }
-    
+
+    // 筛选面板引导状态
+    val filterGuide = rememberGuideState(
+        guideKey = GuideKey.FILTER_PANEL,
+        guideRepository = viewModel.guideRepository
+    )
+    var albumSectionBounds by remember { mutableStateOf<Rect?>(null) }
+
     Scaffold(
         modifier = modifier,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text("选择整理范围") },
@@ -127,6 +146,7 @@ fun PhotoFilterSelectionScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
+                .windowInsetsPadding(WindowInsets.navigationBars)  // 系统导航栏 padding
         ) {
             // Date Range Section
             DateRangeSection(
@@ -143,7 +163,10 @@ fun PhotoFilterSelectionScreen(
                 albums = uiState.albums,
                 selectedIds = uiState.selectedAlbumIds,
                 isLoading = uiState.isLoading,
-                onAlbumToggle = { viewModel.toggleAlbum(it) }
+                onAlbumToggle = { viewModel.toggleAlbum(it) },
+                modifier = Modifier.onGloballyPositioned { coordinates ->
+                    albumSectionBounds = coordinates.boundsInRoot()
+                }
             )
         }
     }
@@ -158,6 +181,17 @@ fun PhotoFilterSelectionScreen(
                 viewModel.setDateRange(start, end)
                 showDatePicker = false
             }
+        )
+    }
+
+    // 筛选面板引导提示
+    if (filterGuide.shouldShow && uiState.albums.isNotEmpty()) {
+        GuideTooltip(
+            visible = true,
+            message = "📁 选择相册\n点击选择要整理的相册\n可多选或使用全选按钮",
+            targetBounds = albumSectionBounds,
+            arrowDirection = ArrowDirection.DOWN,
+            onDismiss = filterGuide.dismiss
         )
     }
 }
@@ -257,10 +291,11 @@ private fun AlbumsSection(
     albums: List<Album>,
     selectedIds: Set<String>,
     isLoading: Boolean,
-    onAlbumToggle: (String) -> Unit
+    onAlbumToggle: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
     ) {
@@ -463,6 +498,7 @@ private fun BottomActionBar(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()  // 处理系统导航栏
                 .padding(16.dp)
         ) {
             Row(

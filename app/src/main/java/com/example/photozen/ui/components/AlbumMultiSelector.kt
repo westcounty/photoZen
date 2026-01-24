@@ -1,52 +1,45 @@
 package com.example.photozen.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
 import com.example.photozen.data.local.entity.AlbumBubbleEntity
 
 /**
  * 相册多选组件
- * 
- * 以网格形式展示相册列表，支持多选。
- * 
+ *
+ * 以 FlowRow 形式展示相册列表，支持多选。
+ * 使用 FilterChip 替代原有的网格卡片布局，只显示相册名称。
+ *
  * ## 设计规范
- * - 3 列网格布局
- * - 每个相册显示缩略图 + 名称 + 选中状态
- * - 最大高度 200dp，超出可滚动
- * 
+ * - FlowRow 自动换行布局（解决与 BottomSheet 的手势冲突）
+ * - 每个相册只显示名称 + 选中状态
+ * - 最大高度 180dp，超出可滚动
+ *
  * @param albums 相册列表
  * @param selectedIds 已选中的相册 ID 集合
  * @param onSelectionChange 选择变更回调
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AlbumMultiSelector(
     albums: List<AlbumBubbleEntity>,
@@ -73,8 +66,8 @@ fun AlbumMultiSelector(
                 Text("清除")
             }
         }
-        
-        // 相册网格
+
+        // 相册列表（使用 FlowRow 避免与 BottomSheet 手势冲突）
         if (albums.isEmpty()) {
             Text(
                 text = "暂无可选相册",
@@ -83,31 +76,56 @@ fun AlbumMultiSelector(
                 modifier = Modifier.padding(vertical = 16.dp)
             )
         } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
+            // 使用 Column + verticalScroll 包裹 FlowRow，避免 LazyVerticalGrid 的嵌套滚动冲突
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 200.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .heightIn(max = 180.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
-                items(albums, key = { it.bucketId }) { album ->
-                    AlbumSelectItem(
-                        album = album,
-                        isSelected = album.bucketId in selectedIds,
-                        onToggle = {
-                            val newSelection = if (album.bucketId in selectedIds) {
-                                selectedIds - album.bucketId
-                            } else {
-                                selectedIds + album.bucketId
-                            }
-                            onSelectionChange(newSelection)
-                        }
-                    )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    albums.forEach { album ->
+                        val isSelected = album.bucketId in selectedIds
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                val newSelection = if (isSelected) {
+                                    selectedIds - album.bucketId
+                                } else {
+                                    selectedIds + album.bucketId
+                                }
+                                onSelectionChange(newSelection)
+                            },
+                            label = {
+                                Text(
+                                    text = album.displayName,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            leadingIcon = if (isSelected) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "已选中"
+                                    )
+                                }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
+                    }
                 }
             }
         }
-        
+
         // 已选提示
         if (selectedIds.isNotEmpty()) {
             Text(
@@ -116,80 +134,6 @@ fun AlbumMultiSelector(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp)
             )
-        }
-    }
-}
-
-/**
- * 单个相册选择项
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AlbumSelectItem(
-    album: AlbumBubbleEntity,
-    isSelected: Boolean,
-    onToggle: () -> Unit
-) {
-    Card(
-        onClick = onToggle,
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant
-            }
-        )
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // 相册名称（由于没有封面图，显示相册名首字）
-            Text(
-                text = album.displayName.take(1),
-                style = MaterialTheme.typography.headlineMedium,
-                color = if (isSelected) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier.align(Alignment.Center)
-            )
-            
-            // 选中指示
-            if (isSelected) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .size(24.dp),
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.primary
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = "已选中",
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.padding(4.dp)
-                    )
-                }
-            }
-            
-            // 相册名称
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth(),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
-            ) {
-                Text(
-                    text = album.displayName,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(4.dp)
-                )
-            }
         }
     }
 }

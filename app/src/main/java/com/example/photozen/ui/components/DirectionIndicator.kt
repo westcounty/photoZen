@@ -69,13 +69,13 @@ fun DirectionIndicator(
     // 实际缩放：到达阈值时应用脉冲
     val actualScale = if (hasReachedThreshold) pulseScale else 1f
     
-    // 透明度动画
+    // 透明度动画 - 只要有滑动就立即显示（阈值设为 0.01f）
     val alpha by animateFloatAsState(
-        targetValue = if (progress > 0.1f) 0.95f else 0f,
-        animationSpec = tween(150),
+        targetValue = if (progress > 0.01f) 0.95f else 0f,
+        animationSpec = tween(100),
         label = "alpha"
     )
-    
+
     if (alpha > 0f) {
         Column(
             modifier = modifier.graphicsLayer { this.alpha = alpha },
@@ -159,13 +159,13 @@ fun GlowingDirectionIndicator(
     val actualScale = if (hasReachedThreshold) pulseScale else 1f
     val actualGlow = if (hasReachedThreshold) glowAlpha else 0.2f
     
-    // 整体透明度
+    // 整体透明度 - 只要有滑动就立即显示（阈值设为 0.01f）
     val alpha by animateFloatAsState(
-        targetValue = if (progress > 0.1f) 1f else 0f,
-        animationSpec = tween(150),
+        targetValue = if (progress > 0.01f) 1f else 0f,
+        animationSpec = tween(100),
         label = "alpha"
     )
-    
+
     if (alpha > 0f) {
         Box(
             modifier = modifier
