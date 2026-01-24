@@ -36,13 +36,88 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Sort order for photos in list.
+ * 照片列表排序选项 (REQ-028, REQ-033, REQ-038)
  */
 enum class PhotoListSortOrder(val displayName: String) {
-    DATE_DESC("时间倒序"),  // Newest first (default)
-    DATE_ASC("时间正序"),   // Oldest first
-    RANDOM("随机排序")      // Random shuffle
+    DATE_DESC("时间倒序"),      // 照片真实时间倒序 (默认)
+    DATE_ASC("时间正序"),       // 照片真实时间正序
+    ADDED_DESC("添加时间倒序"), // 添加到当前状态的时间倒序 (REQ-028, REQ-033)
+    ADDED_ASC("添加时间正序"),  // 添加到当前状态的时间正序 (REQ-028, REQ-033)
+    RANDOM("随机排序")          // 随机排序
 }
+
+/**
+ * 各列表的排序选项配置 (REQ-028, REQ-033, REQ-038)
+ */
+object ListSortConfigs {
+    // 待定列表: 照片真实时间正序/倒序、添加至待定列表时间正序/倒序
+    val maybeList = listOf(
+        PhotoListSortOrder.DATE_DESC,
+        PhotoListSortOrder.DATE_ASC,
+        PhotoListSortOrder.ADDED_DESC,
+        PhotoListSortOrder.ADDED_ASC
+    )
+
+    // 回收站列表: 照片真实时间正序/倒序、添加至回收站时间正序/倒序
+    val trashList = listOf(
+        PhotoListSortOrder.DATE_DESC,
+        PhotoListSortOrder.DATE_ASC,
+        PhotoListSortOrder.ADDED_DESC,
+        PhotoListSortOrder.ADDED_ASC
+    )
+
+    // 已保留列表: 照片真实时间正序/倒序、添加时间正序/倒序、随机排序
+    val keepList = listOf(
+        PhotoListSortOrder.DATE_DESC,
+        PhotoListSortOrder.DATE_ASC,
+        PhotoListSortOrder.ADDED_DESC,
+        PhotoListSortOrder.ADDED_ASC,
+        PhotoListSortOrder.RANDOM
+    )
+
+    // 相册/时间线列表: 照片真实时间正序/倒序、随机排序
+    val albumList = listOf(
+        PhotoListSortOrder.DATE_DESC,
+        PhotoListSortOrder.DATE_ASC,
+        PhotoListSortOrder.RANDOM
+    )
+
+    // 筛选列表: 照片真实时间正序/倒序、随机排序
+    val filterList = listOf(
+        PhotoListSortOrder.DATE_DESC,
+        PhotoListSortOrder.DATE_ASC,
+        PhotoListSortOrder.RANDOM
+    )
+
+    /** 根据状态获取排序选项列表 */
+    fun forStatus(status: PhotoStatus): List<PhotoListSortOrder> = when (status) {
+        PhotoStatus.MAYBE -> maybeList
+        PhotoStatus.TRASH -> trashList
+        PhotoStatus.KEEP -> keepList
+        PhotoStatus.UNSORTED -> listOf(PhotoListSortOrder.DATE_DESC, PhotoListSortOrder.DATE_ASC)
+    }
+}
+
+/**
+ * 各列表的默认排序配置
+ */
+object DefaultSortOrders {
+    val maybeList = PhotoListSortOrder.DATE_DESC      // 待定: 照片时间倒序
+    val trashList = PhotoListSortOrder.ADDED_DESC     // 回收站: 添加时间倒序 (最近删除的在前)
+    val keepList = PhotoListSortOrder.DATE_DESC       // 已保留: 照片时间倒序
+    val albumList = PhotoListSortOrder.DATE_DESC      // 相册: 照片时间倒序
+
+    /** 根据状态获取默认排序 */
+    fun forStatus(status: PhotoStatus): PhotoListSortOrder = when (status) {
+        PhotoStatus.MAYBE -> maybeList
+        PhotoStatus.TRASH -> trashList
+        PhotoStatus.KEEP -> keepList
+        PhotoStatus.UNSORTED -> PhotoListSortOrder.DATE_DESC
+    }
+}
+
+/** 待定列表选择数量限制 (REQ-029, REQ-030) */
+const val MAYBE_LIST_SELECTION_LIMIT = 6
 
 data class PhotoListUiState(
     val photos: List<PhotoEntity> = emptyList(),
@@ -51,9 +126,10 @@ data class PhotoListUiState(
     val message: String? = null,
     val defaultExternalApp: String? = null,
     val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC,
+    val availableSortOptions: List<PhotoListSortOrder> = listOf(PhotoListSortOrder.DATE_DESC, PhotoListSortOrder.DATE_ASC), // REQ-028, REQ-033
     val isSelectionMode: Boolean = false,
     val selectedPhotoIds: Set<String> = emptySet(),
-    val gridColumns: Int = 2,
+    val gridColumns: Int = 3,  // REQ-002, REQ-007: 默认3列
     val gridMode: PhotoGridMode = PhotoGridMode.WATERFALL,
     // Album mode support
     val albumBubbleList: List<AlbumBubbleEntity> = emptyList(),
@@ -66,7 +142,9 @@ data class PhotoListUiState(
     // Album classify mode
     val isClassifyMode: Boolean = false,
     val classifyModePhotos: List<PhotoEntity> = emptyList(),
-    val classifyModeIndex: Int = 0
+    val classifyModeIndex: Int = 0,
+    // REQ-029: 待定列表选择数量限制
+    val selectionLimit: Int? = null
 ) {
     val selectedCount: Int get() = selectedPhotoIds.size
     val allSelected: Boolean get() = photos.isNotEmpty() && selectedPhotoIds.size == photos.size
@@ -76,6 +154,8 @@ data class PhotoListUiState(
     val canBatchAlbum: Boolean get() = status == PhotoStatus.KEEP
     // Current photo in classify mode
     val currentClassifyPhoto: PhotoEntity? get() = classifyModePhotos.getOrNull(classifyModeIndex)
+    // REQ-031: 对比按钮启用条件
+    val canCompare: Boolean get() = status == PhotoStatus.MAYBE && selectedCount in 2..6
 }
 
 // Phase 4 清理：isSelectionMode 和 selectedPhotoIds 已迁移到 PhotoSelectionStateHolder
@@ -84,7 +164,7 @@ private data class InternalState(
     val message: String? = null,
     val defaultExternalApp: String? = null,
     val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC,
-    val gridColumns: Int = 2,
+    val gridColumns: Int = 3,  // REQ-002, REQ-007: 默认3列
     val gridMode: PhotoGridMode = PhotoGridMode.WATERFALL,
     val showAlbumDialog: Boolean = false,
     // Phase 6: Keep list album filter
@@ -174,6 +254,7 @@ class PhotoListViewModel @Inject constructor(
             message = internal.message,
             defaultExternalApp = internal.defaultExternalApp,
             sortOrder = internal.sortOrder,
+            availableSortOptions = ListSortConfigs.forStatus(status), // REQ-028, REQ-033
             isSelectionMode = isSelectionMode || validSelectedIds.isNotEmpty(), // Phase 4: 使用 StateHolder
             selectedPhotoIds = validSelectedIds,
             gridColumns = internal.gridColumns,
@@ -187,7 +268,9 @@ class PhotoListViewModel @Inject constructor(
             myAlbumBucketIds = myAlbumBucketIds,
             isClassifyMode = internal.isClassifyMode,
             classifyModePhotos = photosNotInAlbum,
-            classifyModeIndex = internal.classifyModeIndex
+            classifyModeIndex = internal.classifyModeIndex,
+            // REQ-029, REQ-030: 待定列表选择限制
+            selectionLimit = if (status == PhotoStatus.MAYBE) MAYBE_LIST_SELECTION_LIMIT else null
         )
     }.stateIn(
         scope = viewModelScope,
@@ -247,13 +330,17 @@ class PhotoListViewModel @Inject constructor(
     
     /**
      * Apply sort order to photos list.
-     * Uses dateAdded (creation time) for sorting, NOT dateModified.
+     * - DATE_*: Uses dateTaken (actual photo taken time from EXIF)
+     * - ADDED_*: Uses updatedAt (when status was changed / added to this list)
      */
     private fun applySortOrder(photos: List<PhotoEntity>, sortOrder: PhotoListSortOrder): List<PhotoEntity> {
         return when (sortOrder) {
-            // Sort by dateAdded (creation time in seconds), convert to comparable value
-            PhotoListSortOrder.DATE_DESC -> photos.sortedByDescending { it.dateAdded }
-            PhotoListSortOrder.DATE_ASC -> photos.sortedBy { it.dateAdded }
+            // Sort by dateTaken (actual photo taken time)
+            PhotoListSortOrder.DATE_DESC -> photos.sortedByDescending { it.dateTaken }
+            PhotoListSortOrder.DATE_ASC -> photos.sortedBy { it.dateTaken }
+            // Sort by updatedAt (when added to current status/list) - REQ-028, REQ-033
+            PhotoListSortOrder.ADDED_DESC -> photos.sortedByDescending { it.updatedAt }
+            PhotoListSortOrder.ADDED_ASC -> photos.sortedBy { it.updatedAt }
             PhotoListSortOrder.RANDOM -> photos.shuffled(kotlin.random.Random(randomSeed))
         }
     }
@@ -270,13 +357,18 @@ class PhotoListViewModel @Inject constructor(
     
     /**
      * Cycle through sort orders.
+     * Note: This cycles through available options based on current status.
      */
     fun cycleSortOrder() {
-        val nextOrder = when (_internalState.value.sortOrder) {
-            PhotoListSortOrder.DATE_DESC -> PhotoListSortOrder.DATE_ASC
-            PhotoListSortOrder.DATE_ASC -> PhotoListSortOrder.RANDOM
-            PhotoListSortOrder.RANDOM -> PhotoListSortOrder.DATE_DESC
+        val availableOptions = ListSortConfigs.forStatus(status)
+        val currentOrder = _internalState.value.sortOrder
+        val currentIndex = availableOptions.indexOf(currentOrder)
+        val nextIndex = if (currentIndex >= 0) {
+            (currentIndex + 1) % availableOptions.size
+        } else {
+            0
         }
+        val nextOrder = availableOptions.getOrElse(nextIndex) { PhotoListSortOrder.DATE_DESC }
         setSortOrder(nextOrder)
     }
     
@@ -366,9 +458,48 @@ class PhotoListViewModel @Inject constructor(
     /**
      * Update selection with a new set of IDs (for drag-select).
      * Phase 4: 委托给 PhotoSelectionStateHolder
+     * REQ-029, REQ-030: 待定列表限制最多6张
+     *
+     * @return true if selection was applied as-is, false if it was limited
      */
-    fun updateSelection(newSelection: Set<String>) {
-        selectionStateHolder.setSelection(newSelection)
+    fun updateSelection(newSelection: Set<String>): Boolean {
+        val limit = if (status == PhotoStatus.MAYBE) MAYBE_LIST_SELECTION_LIMIT else null
+        if (limit != null && newSelection.size > limit) {
+            // 只保留前 limit 张 (按当前照片列表顺序)
+            val currentPhotos = uiState.value.photos
+            val ordered = newSelection.filter { id -> currentPhotos.any { it.id == id } }
+                .take(limit)
+                .toSet()
+            selectionStateHolder.setSelection(ordered)
+            return false // 表示被限制了
+        } else {
+            selectionStateHolder.setSelection(newSelection)
+            return true
+        }
+    }
+
+    /**
+     * 切换单张照片选中状态 (REQ-029)
+     * 待定列表限制最多6张
+     *
+     * @return true if toggled successfully, false if hit limit
+     */
+    fun togglePhotoSelectionWithLimit(photoId: String): Boolean {
+        val currentSelection = selectionStateHolder.getSelectedSet()
+        val limit = if (status == PhotoStatus.MAYBE) MAYBE_LIST_SELECTION_LIMIT else null
+
+        if (photoId in currentSelection) {
+            // 取消选中始终允许
+            selectionStateHolder.toggle(photoId)
+            return true
+        } else {
+            // 选中 - 检查限制
+            if (limit != null && currentSelection.size >= limit) {
+                return false // 达到上限
+            }
+            selectionStateHolder.toggle(photoId)
+            return true
+        }
     }
     
     /**
@@ -631,10 +762,12 @@ class PhotoListViewModel @Inject constructor(
         }
     }
     
-    // ==================== Grid Columns ====================
-    
+    // ==================== Grid Columns (REQ-002, REQ-003, REQ-007, REQ-008) ====================
+
     /**
-     * Cycle grid columns: 2 -> 3 -> 1 -> 2
+     * Cycle grid columns based on current mode.
+     * REQ-002: 网格视图 2-5 列
+     * REQ-007: 瀑布流视图 1-5 列
      */
     fun cycleGridColumns() {
         viewModelScope.launch {
@@ -644,14 +777,38 @@ class PhotoListViewModel @Inject constructor(
                 PhotoStatus.TRASH -> PreferencesRepository.GridScreen.TRASH
                 PhotoStatus.UNSORTED -> PreferencesRepository.GridScreen.KEEP
             }
-            val newColumns = preferencesRepository.cycleGridColumns(gridScreen)
+            val minColumns = if (_internalState.value.gridMode == PhotoGridMode.SQUARE) 2 else 1
+            val newColumns = preferencesRepository.cycleGridColumns(gridScreen, minColumns)
             _internalState.update { it.copy(gridColumns = newColumns) }
+        }
+    }
+
+    /**
+     * Set grid columns directly (for pinch-zoom gesture).
+     * REQ-003, REQ-008: 双指缩放切换列数
+     *
+     * @param columns Target column count
+     */
+    fun setGridColumns(columns: Int) {
+        viewModelScope.launch {
+            val gridScreen = when (status) {
+                PhotoStatus.KEEP -> PreferencesRepository.GridScreen.KEEP
+                PhotoStatus.MAYBE -> PreferencesRepository.GridScreen.MAYBE
+                PhotoStatus.TRASH -> PreferencesRepository.GridScreen.TRASH
+                PhotoStatus.UNSORTED -> PreferencesRepository.GridScreen.KEEP
+            }
+            // Apply limits based on current grid mode
+            val minColumns = if (_internalState.value.gridMode == PhotoGridMode.SQUARE) 2 else 1
+            val validColumns = columns.coerceIn(minColumns, 5)
+            preferencesRepository.setGridColumns(gridScreen, validColumns)
+            _internalState.update { it.copy(gridColumns = validColumns) }
         }
     }
 
     /**
      * Toggle between SQUARE (grid) and WATERFALL (staggered) modes.
      * SQUARE mode supports drag-to-select, WATERFALL mode does not.
+     * REQ-027: 视图模式切换按钮
      */
     fun toggleGridMode() {
         _internalState.update { state ->
@@ -659,7 +816,13 @@ class PhotoListViewModel @Inject constructor(
                 PhotoGridMode.SQUARE -> PhotoGridMode.WATERFALL
                 PhotoGridMode.WATERFALL -> PhotoGridMode.SQUARE
             }
-            state.copy(gridMode = newMode)
+            // Adjust columns if switching to SQUARE mode and current columns < 2
+            val newColumns = if (newMode == PhotoGridMode.SQUARE && state.gridColumns < 2) {
+                2
+            } else {
+                state.gridColumns
+            }
+            state.copy(gridMode = newMode, gridColumns = newColumns)
         }
     }
 

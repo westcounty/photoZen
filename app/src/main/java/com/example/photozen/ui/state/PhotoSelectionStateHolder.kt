@@ -207,10 +207,17 @@ class PhotoSelectionStateHolder @Inject constructor() {
     
     /**
      * 获取选中的 ID 列表
-     * 
+     *
      * @return 选中的照片 ID 列表（可用于批量操作）
      */
     fun getSelectedList(): List<String> = _selectedIds.value.toList()
+
+    /**
+     * 获取选中的 ID 集合
+     *
+     * @return 选中的照片 ID 集合
+     */
+    fun getSelectedSet(): Set<String> = _selectedIds.value
     
     /**
      * 获取当前选中数量

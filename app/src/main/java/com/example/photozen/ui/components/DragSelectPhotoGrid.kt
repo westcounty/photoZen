@@ -451,8 +451,9 @@ fun DragSelectPhotoGrid(
         when (gridMode) {
             PhotoGridMode.SQUARE -> {
                 // Square grid with uniform cells - supports drag select
+                // REQ-002: 网格视图支持 2-5 列切换
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(columns.coerceIn(1, 4)),
+                    columns = GridCells.Fixed(columns.coerceIn(2, 5)),
                     state = squareGridState,
                     contentPadding = PaddingValues(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -466,8 +467,9 @@ fun DragSelectPhotoGrid(
             }
             PhotoGridMode.WATERFALL -> {
                 // Staggered grid with natural aspect ratios - no drag select
+                // REQ-007: 瀑布流视图支持 1-5 列切换
                 LazyVerticalStaggeredGrid(
-                    columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 4)),
+                    columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 5)),
                     state = staggeredGridState,
                     contentPadding = PaddingValues(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),

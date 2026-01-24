@@ -41,8 +41,8 @@ object BottomBarConfigs {
     
     /**
      * 保留列表 - 单选模式
-     * 
-     * 显示所有可用操作：编辑、分享、相册、待定、删除、重置
+     *
+     * 显示所有可用操作：编辑、分享、相册、待定、回收站、重置
      */
     @Composable
     fun keepListSingleSelect(
@@ -60,27 +60,29 @@ object BottomBarConfigs {
         deleteAction(onTrash),
         resetAction(onReset)
     )
-    
+
     /**
-     * 保留列表 - 多选模式
-     * 
-     * 隐藏编辑和分享（不支持多文件），保留批量操作
+     * 保留列表 - 多选模式 (REQ-041)
+     *
+     * 5项操作：添加到相册、设置为待定、移至回收站、重置为未筛选、彻底删除
      */
     @Composable
     fun keepListMultiSelect(
         onAlbum: () -> Unit,
         onMaybe: () -> Unit,
         onTrash: () -> Unit,
-        onReset: () -> Unit
+        onReset: () -> Unit,
+        onPermanentDelete: () -> Unit
     ): List<BottomBarAction> = listOf(
         albumAction(onAlbum),
         maybeAction(onMaybe),
         deleteAction(onTrash),
-        resetAction(onReset)
+        resetAction(onReset),
+        permanentDeleteAction(onPermanentDelete)
     )
     
     // ============== 待定列表 (PhotoListScreen - MAYBE) ==============
-    
+
     /**
      * 待定列表 - 单选模式
      */
@@ -98,7 +100,7 @@ object BottomBarConfigs {
         deleteAction(onTrash),
         resetAction(onReset)
     )
-    
+
     /**
      * 待定列表 - 多选模式
      */
@@ -111,6 +113,27 @@ object BottomBarConfigs {
         keepAction(onKeep),
         deleteAction(onTrash),
         resetAction(onReset)
+    )
+
+    /**
+     * 待定列表 - 对比选择模式 (REQ-031)
+     *
+     * 用于待定列表中的照片对比选择场景：
+     * - 清除：取消所有选中
+     * - 对比：进入对比模式（仅在选中2-6张时可用）
+     *
+     * @param selectedCount 当前选中数量
+     * @param onClear 清除选中回调
+     * @param onCompare 进入对比模式回调
+     */
+    @Composable
+    fun maybeListCompareSelect(
+        selectedCount: Int,
+        onClear: () -> Unit,
+        onCompare: () -> Unit
+    ): List<BottomBarAction> = listOf(
+        clearAction(onClear),
+        compareAction(onCompare, enabled = selectedCount in 2..6)
     )
     
     // ============== 回收站列表 (TrashScreen) ==============
@@ -150,41 +173,45 @@ object BottomBarConfigs {
     // ============== 相册照片列表 (AlbumPhotoListScreen) ==============
     
     /**
-     * 相册照片列表 - 单选模式
+     * 相册照片列表 - 单选模式 (REQ-047)
      *
-     * 包含"从此开始"功能：将选中照片及之后的照片加入待筛选列表
+     * 操作: 编辑、分享、添加到其他相册、批量修改筛选状态、复制、从此开始筛选、彻底删除
      */
     @Composable
     fun albumPhotosSingleSelect(
         onEdit: () -> Unit,
         onShare: () -> Unit,
-        onMove: () -> Unit,
+        onAddToOtherAlbum: () -> Unit,
+        onBatchChangeStatus: () -> Unit,
         onCopy: () -> Unit,
         onStartFromHere: () -> Unit,
         onDelete: () -> Unit
     ): List<BottomBarAction> = listOf(
         editAction(onEdit),
         shareAction(onShare),
-        moveAction(onMove),
+        albumAction(onAddToOtherAlbum),
+        changeStatusAction(onBatchChangeStatus),
         copyAction(onCopy),
         startFromHereAction(onStartFromHere),
-        deleteAction(onDelete)
+        permanentDeleteAction(onDelete)
     )
-    
+
     /**
-     * 相册照片列表 - 多选模式
+     * 相册照片列表 - 多选模式 (REQ-047)
      *
-     * 不包含"从此开始"功能（该功能仅在单选时可用）
+     * 操作: 添加到其他相册、批量修改筛选状态、复制照片、彻底删除
      */
     @Composable
     fun albumPhotosMultiSelect(
-        onMove: () -> Unit,
+        onAddToOtherAlbum: () -> Unit,
+        onBatchChangeStatus: () -> Unit,
         onCopy: () -> Unit,
         onDelete: () -> Unit
     ): List<BottomBarAction> = listOf(
-        moveAction(onMove),
+        albumAction(onAddToOtherAlbum),
+        changeStatusAction(onBatchChangeStatus),
         copyAction(onCopy),
-        deleteAction(onDelete)
+        permanentDeleteAction(onDelete)
     )
     
     // ============== 时间线 (TimelineScreen) ==============

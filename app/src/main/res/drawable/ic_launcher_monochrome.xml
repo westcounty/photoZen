@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!--
+    PhotoZen Logo - Monochrome Version
+    用于Android 13+ 动态主题图标
+    简化设计确保在任何主题色下都清晰可辨
+    -->
+
+    <!-- 主取景框 -->
+    <path
+        android:fillColor="#000000"
+        android:fillAlpha="0"
+        android:strokeColor="#000000"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M32,30
+            C32,26.686 34.686,24 38,24
+            L70,24
+            C73.314,24 76,26.686 76,30
+            L76,78
+            C76,81.314 73.314,84 70,84
+            L38,84
+            C34.686,84 32,81.314 32,78
+            Z" />
+
+    <!-- 禅意主曲线 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#000000"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M40,68
+            Q48,58 54,54
+            Q60,50 68,40" />
+
+    <!-- 禅意辅助曲线 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#000000"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.5"
+        android:pathData="M40,60
+            Q47,52 54,48
+            Q61,44 68,34" />
+
+    <!-- 核心圆点 -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M54,54 m-6,0 a6,6 0 1,1 12,0 a6,6 0 1,1 -12,0" />
+
+    <!-- 角落装饰点 -->
+    <path
+        android:fillColor="#000000"
+        android:fillAlpha="0.3"
+        android:pathData="M38,30 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0" />
+    <path
+        android:fillColor="#000000"
+        android:fillAlpha="0.3"
+        android:pathData="M70,78 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0" />
+
+</vector>

@@ -111,6 +111,16 @@ class PreferencesRepository @Inject constructor(
         val KEY_GRID_COLUMNS_TRASH = intPreferencesKey("grid_columns_trash")
         val KEY_GRID_COLUMNS_TAGGED = intPreferencesKey("grid_columns_tagged")
         val KEY_GRID_COLUMNS_FLOW = intPreferencesKey("grid_columns_flow")
+        val KEY_GRID_COLUMNS_ALBUM = intPreferencesKey("grid_columns_album")
+        val KEY_GRID_COLUMNS_TIMELINE = intPreferencesKey("grid_columns_timeline")
+
+        // Sort preferences for different screens (REQ-023)
+        val KEY_SORT_ORDER_KEEP = stringPreferencesKey("sort_order_keep")
+        val KEY_SORT_ORDER_MAYBE = stringPreferencesKey("sort_order_maybe")
+        val KEY_SORT_ORDER_TRASH = stringPreferencesKey("sort_order_trash")
+        val KEY_SORT_ORDER_ALBUM = stringPreferencesKey("sort_order_album")
+        val KEY_SORT_ORDER_TIMELINE = stringPreferencesKey("sort_order_timeline")
+        val KEY_SORT_ORDER_FILTER = stringPreferencesKey("sort_order_filter")
         
         // Feature settings
         val KEY_CARD_ZOOM_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("card_zoom_enabled")
@@ -143,6 +153,9 @@ class PreferencesRepository @Inject constructor(
         // Changelog and Quick Start version tracking
         val KEY_LAST_SEEN_CHANGELOG_VERSION = stringPreferencesKey("last_seen_changelog_version")
         val KEY_COMPLETED_QUICK_START_VERSION = stringPreferencesKey("completed_quick_start_version")
+
+        // Onboarding guide flags (REQ-067)
+        val KEY_PINCH_ZOOM_GUIDE_SEEN = androidx.datastore.preferences.core.booleanPreferencesKey("pinch_zoom_guide_seen")
         
         // Achievement keys
         val KEY_TAGGED_COUNT = intPreferencesKey("total_tagged_count")
@@ -1019,18 +1032,22 @@ class PreferencesRepository @Inject constructor(
         }
     }
     
-    // ==================== GRID COLUMN PREFERENCES ====================
-    
+    // ==================== GRID COLUMN PREFERENCES (REQ-002, REQ-007) ====================
+
     /**
      * Grid column count for different screens.
-     * Default is 2 columns.
+     * Default is 3 columns (REQ-002, REQ-007).
+     *
+     * REQ-002: 网格视图支持 2-5 列切换，默认3列
+     * REQ-007: 瀑布流视图支持 1-5 列切换，默认3列
      */
     enum class GridScreen {
-        KEEP, MAYBE, TRASH, TAGGED, FLOW
+        KEEP, MAYBE, TRASH, TAGGED, FLOW, ALBUM, TIMELINE
     }
-    
+
     /**
      * Get grid column count for a specific screen.
+     * Default is 3 columns per REQ-002, REQ-007.
      */
     fun getGridColumns(screen: GridScreen): Flow<Int> = dataStore.data.map { preferences ->
         val key = when (screen) {
@@ -1039,19 +1056,23 @@ class PreferencesRepository @Inject constructor(
             GridScreen.TRASH -> KEY_GRID_COLUMNS_TRASH
             GridScreen.TAGGED -> KEY_GRID_COLUMNS_TAGGED
             GridScreen.FLOW -> KEY_GRID_COLUMNS_FLOW
+            GridScreen.ALBUM -> KEY_GRID_COLUMNS_ALBUM
+            GridScreen.TIMELINE -> KEY_GRID_COLUMNS_TIMELINE
         }
-        preferences[key] ?: 2 // Default 2 columns
+        preferences[key] ?: 3 // Default 3 columns (REQ-002, REQ-007)
     }
-    
+
     /**
      * Get grid column count synchronously.
      */
     suspend fun getGridColumnsSync(screen: GridScreen): Int {
         return getGridColumns(screen).first()
     }
-    
+
     /**
      * Set grid column count for a specific screen.
+     * REQ-002: 网格视图 2-5 列
+     * REQ-007: 瀑布流视图 1-5 列
      */
     suspend fun setGridColumns(screen: GridScreen, columns: Int) {
         val key = when (screen) {
@@ -1060,29 +1081,97 @@ class PreferencesRepository @Inject constructor(
             GridScreen.TRASH -> KEY_GRID_COLUMNS_TRASH
             GridScreen.TAGGED -> KEY_GRID_COLUMNS_TAGGED
             GridScreen.FLOW -> KEY_GRID_COLUMNS_FLOW
+            GridScreen.ALBUM -> KEY_GRID_COLUMNS_ALBUM
+            GridScreen.TIMELINE -> KEY_GRID_COLUMNS_TIMELINE
         }
         dataStore.edit { preferences ->
-            preferences[key] = columns.coerceIn(1, 4) // 1-4 columns
+            preferences[key] = columns.coerceIn(1, 5) // 1-5 columns (REQ-002, REQ-007)
         }
     }
-    
+
     /**
-     * Cycle grid columns: 1 -> 2 -> 3 -> 4 -> 1
+     * Cycle grid columns: 2 -> 3 -> 4 -> 5 -> 2 (for grid mode)
+     * Or: 1 -> 2 -> 3 -> 4 -> 5 -> 1 (for waterfall mode)
+     *
+     * @param minColumns Minimum columns (2 for grid, 1 for waterfall)
      */
-    suspend fun cycleGridColumns(screen: GridScreen): Int {
+    suspend fun cycleGridColumns(screen: GridScreen, minColumns: Int = 2): Int {
         val current = getGridColumnsSync(screen)
-        val next = when (current) {
-            1 -> 2
-            2 -> 3
-            3 -> 4
-            else -> 1
-        }
+        val next = if (current >= 5) minColumns else current + 1
         setGridColumns(screen, next)
         return next
     }
+
+    // ==================== SORT ORDER PREFERENCES (REQ-023) ====================
+
+    /**
+     * Sort screen identifier for sort order preferences.
+     */
+    enum class SortScreen {
+        KEEP, MAYBE, TRASH, ALBUM, TIMELINE, FILTER
+    }
+
+    /**
+     * Get sort order for a specific screen.
+     * Default is "photo_time_desc" (时间倒序).
+     */
+    fun getSortOrder(screen: SortScreen): Flow<String> = dataStore.data.map { preferences ->
+        val key = when (screen) {
+            SortScreen.KEEP -> KEY_SORT_ORDER_KEEP
+            SortScreen.MAYBE -> KEY_SORT_ORDER_MAYBE
+            SortScreen.TRASH -> KEY_SORT_ORDER_TRASH
+            SortScreen.ALBUM -> KEY_SORT_ORDER_ALBUM
+            SortScreen.TIMELINE -> KEY_SORT_ORDER_TIMELINE
+            SortScreen.FILTER -> KEY_SORT_ORDER_FILTER
+        }
+        preferences[key] ?: "photo_time_desc" // Default: 时间倒序
+    }
+
+    /**
+     * Get sort order synchronously.
+     */
+    suspend fun getSortOrderSync(screen: SortScreen): String {
+        return getSortOrder(screen).first()
+    }
+
+    /**
+     * Set sort order for a specific screen.
+     */
+    suspend fun setSortOrder(screen: SortScreen, sortOrderId: String) {
+        val key = when (screen) {
+            SortScreen.KEEP -> KEY_SORT_ORDER_KEEP
+            SortScreen.MAYBE -> KEY_SORT_ORDER_MAYBE
+            SortScreen.TRASH -> KEY_SORT_ORDER_TRASH
+            SortScreen.ALBUM -> KEY_SORT_ORDER_ALBUM
+            SortScreen.TIMELINE -> KEY_SORT_ORDER_TIMELINE
+            SortScreen.FILTER -> KEY_SORT_ORDER_FILTER
+        }
+        dataStore.edit { preferences ->
+            preferences[key] = sortOrderId
+        }
+    }
     
+    // ==================== ONBOARDING GUIDE FLAGS (REQ-067) ====================
+
+    /**
+     * Check if user has seen the pinch zoom guide.
+     * Default is false (not seen).
+     */
+    fun hasPinchZoomGuideSeen(): Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[KEY_PINCH_ZOOM_GUIDE_SEEN] ?: false
+    }
+
+    /**
+     * Mark pinch zoom guide as seen.
+     */
+    suspend fun setPinchZoomGuideSeen(seen: Boolean = true) {
+        dataStore.edit { preferences ->
+            preferences[KEY_PINCH_ZOOM_GUIDE_SEEN] = seen
+        }
+    }
+
     // ==================== CHANGELOG AND QUICK START VERSION TRACKING ====================
-    
+
     /**
      * Get the last seen changelog version.
      * Returns null if user has never seen any changelog.

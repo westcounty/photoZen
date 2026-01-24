@@ -257,8 +257,8 @@ fun SwipeIndicatorDirection.getConfig(): DirectionConfig = when (this) {
     )
     SwipeIndicatorDirection.DOWN -> DirectionConfig(
         color = MaybeAmber,
-        iconOutlined = Icons.Default.HelpOutline,
-        iconFilled = Icons.Default.Help,
+        iconOutlined = Icons.Default.QuestionMark,
+        iconFilled = Icons.Default.QuestionMark,
         label = "待定"
     )
     SwipeIndicatorDirection.NONE -> DirectionConfig(

@@ -6,6 +6,10 @@ import com.example.photozen.domain.model.UndoAction
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -58,12 +62,12 @@ class UndoManager @Inject constructor(
     
     /**
      * 执行撤销
-     * 
+     *
      * @return 撤销是否成功
      */
     suspend fun undo(): Result<Boolean> = runCatching {
         val action = _lastAction.value ?: return Result.success(false)
-        
+
         when (action) {
             is UndoAction.StatusChange -> {
                 undoStatusChange(action)
@@ -74,8 +78,18 @@ class UndoManager @Inject constructor(
             is UndoAction.RestoreFromTrash -> {
                 undoRestoreFromTrash(action)
             }
+            // REQ-060: 新增类型支持
+            is UndoAction.SortPhoto -> {
+                undoSortPhoto(action)
+            }
+            is UndoAction.AlbumOperation -> {
+                undoAlbumOperation(action)
+            }
+            is UndoAction.KeepAndAddToAlbum -> {
+                undoKeepAndAddToAlbum(action)
+            }
         }
-        
+
         _lastAction.value = null
         true
     }
@@ -110,16 +124,56 @@ class UndoManager @Inject constructor(
             photoRepository.updatePhotoStatus(id, PhotoStatus.TRASH)
         }
     }
-    
+
+    // ============== REQ-060: 新增撤销方法 ==============
+
+    /**
+     * 撤销单张照片筛选操作
+     * 恢复到操作前的状态（而非固定为 UNSORTED）
+     */
+    private suspend fun undoSortPhoto(action: UndoAction.SortPhoto) {
+        photoRepository.updatePhotoStatus(action.photoId, action.previousStatus)
+    }
+
+    /**
+     * 撤销相册操作
+     *
+     * 注意：当前简化实现仅恢复状态
+     * TODO: 完整实现需要:
+     * - 复制操作: 删除新创建的文件
+     * - 移动操作: 将照片移回原相册
+     */
+    private suspend fun undoAlbumOperation(action: UndoAction.AlbumOperation) {
+        // 恢复原状态
+        photoRepository.updatePhotoStatus(action.photoId, action.previousStatus)
+        // TODO: 实现文件级撤销（需要 FileOperationHelper）
+        // when (action.operationType) {
+        //     AlbumOperationType.COPY -> action.createdFilePath?.let { deleteFile(it) }
+        //     AlbumOperationType.MOVE -> action.sourceAlbumId?.let { moveBack(action.photoId, it) }
+        // }
+    }
+
+    /**
+     * 撤销保留+添加到相册复合操作
+     *
+     * 注意：当前简化实现仅恢复状态
+     * TODO: 完整实现需要撤销相册操作
+     */
+    private suspend fun undoKeepAndAddToAlbum(action: UndoAction.KeepAndAddToAlbum) {
+        // 恢复原状态（而非固定为 UNSORTED）
+        photoRepository.updatePhotoStatus(action.photoId, action.previousStatus)
+        // TODO: 实现相册操作撤销
+    }
+
     /**
      * 清除撤销记录
-     * 
+     *
      * 应在 Snackbar 消失后调用
      */
     fun clear() {
         _lastAction.value = null
     }
-    
+
     /**
      * 获取当前操作的描述
      */
@@ -127,6 +181,9 @@ class UndoManager @Inject constructor(
         is UndoAction.StatusChange -> action.getDescription()
         is UndoAction.MoveToAlbum -> action.getDescription()
         is UndoAction.RestoreFromTrash -> action.getDescription()
+        is UndoAction.SortPhoto -> action.getDescription()
+        is UndoAction.AlbumOperation -> action.getDescription()
+        is UndoAction.KeepAndAddToAlbum -> action.getDescription()
         null -> null
     }
 }

@@ -13,20 +13,20 @@ import javax.inject.Singleton
 
 /**
  * 引导状态存储仓库
- * 
+ *
  * 负责管理引导的完成状态，使用 DataStore 持久化存储。
- * 
+ *
  * ## 存储格式
  * 使用 StringSet 存储已完成的引导 Key 名称。
- * 
+ *
  * ## 使用方式
  * ```kotlin
  * // 检查引导是否完成
- * val isCompleted = guideRepository.isGuideCompleted(GuideKey.SWIPE_RIGHT).first()
- * 
+ * val isCompleted = guideRepository.isGuideCompleted(GuideKey.PHOTO_LIST_LONG_PRESS).first()
+ *
  * // 标记引导完成
- * guideRepository.markGuideCompleted(GuideKey.SWIPE_RIGHT)
- * 
+ * guideRepository.markGuideCompleted(GuideKey.PHOTO_LIST_LONG_PRESS)
+ *
  * // 重置所有引导
  * guideRepository.resetAllGuides()
  * ```

@@ -24,6 +24,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Assignment
+import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.platform.LocalContext
@@ -181,7 +183,7 @@ fun SettingsScreen(
             ) {
                 // 每日整理任务
                 ValueSettingsItem(
-                    icon = Icons.Default.Assignment,
+                    icon = Icons.AutoMirrored.Filled.Assignment,
                     title = "每日整理任务",
                     value = if (uiState.dailyTaskEnabled) "目标 ${uiState.dailyTaskTarget}" else "已关闭",
                     subtitle = if (uiState.dailyTaskEnabled) "养成整理好习惯" else null,
@@ -265,7 +267,7 @@ fun SettingsScreen(
             ) {
                 // 使用引导
                 EnhancedSettingsItem(
-                    icon = Icons.Default.Help,
+                    icon = Icons.AutoMirrored.Filled.Help,
                     title = "使用引导",
                     subtitle = if (guideCompletedCount > 0) 
                         "已完成 $guideCompletedCount/${viewModel.guideRepository.totalGuideCount}" 

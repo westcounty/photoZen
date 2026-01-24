@@ -90,12 +90,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.ui.components.ComboOverlay
+import com.example.photozen.ui.components.DailyTaskTitle
+import com.example.photozen.ui.components.FlowSorterTitle
 import com.example.photozen.ui.components.FullscreenPhotoViewer
 import com.example.photozen.ui.components.GuideTooltip
 import com.example.photozen.ui.components.ArrowDirection
-import com.example.photozen.ui.components.GuideStepInfo
 import com.example.photozen.ui.components.SelectableStaggeredPhotoGrid
-import com.example.photozen.ui.guide.rememberGuideSequenceState
+import com.example.photozen.ui.components.SelectionModeTitle
 import com.example.photozen.ui.guide.rememberGuideState
 import com.example.photozen.domain.model.GuideKey
 import com.example.photozen.ui.theme.KeepGreen
@@ -109,6 +110,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
 import com.example.photozen.ui.util.rememberHapticFeedbackManager
+import com.example.photozen.ui.components.onboarding.SwipeSortOnboarding
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -144,11 +146,7 @@ fun FlowSorterScreen(
     // Phase 3-7: 使用设置中的震动反馈开关
     val hapticManager = rememberHapticFeedbackManager(uiState.hapticFeedbackEnabled)
 
-    // 视图切换引导状态（滑动引导完成后显示）
-    val swipeGuideSequence = rememberGuideSequenceState(
-        guideKeys = GuideKey.flowSorterSequence,
-        guideRepository = viewModel.guideRepository
-    )
+    // 视图切换引导状态
     val viewToggleGuide = rememberGuideState(
         guideKey = GuideKey.FLOW_SORTER_VIEW_TOGGLE,
         guideRepository = viewModel.guideRepository
@@ -187,33 +185,25 @@ fun FlowSorterScreen(
             topBar = {
                 TopAppBar(
                     title = {
+                        // REQ-064: 优化后的标题布局
                         if (uiState.isSelectionMode) {
-                            Text(
-                                text = "已选择 ${uiState.selectedCount} 张",
-                                style = MaterialTheme.typography.titleLarge
+                            SelectionModeTitle(selectedCount = uiState.selectedCount)
+                        } else if (uiState.isDailyTask) {
+                            DailyTaskTitle(
+                                currentCount = uiState.dailyTaskCurrent,
+                                targetCount = uiState.dailyTaskTarget
+                            )
+                        } else if (uiState.totalCount > 0) {
+                            FlowSorterTitle(
+                                source = uiState.sourceName,
+                                currentCount = sortedCountImmediate,
+                                totalCount = uiState.totalCount
                             )
                         } else {
-                            // Display progress prominently, centered in the title area
-                            if (uiState.isDailyTask) {
-                                Text(
-                                    text = "${uiState.dailyTaskCurrent} / ${uiState.dailyTaskTarget} 今日目标",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            } else if (uiState.totalCount > 0) {
-                                // Use sortedCountImmediate for instant feedback on first swipe
-                                Text(
-                                    text = "$sortedCountImmediate / ${uiState.totalCount} 已整理",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            } else {
-                                Text(
-                                    text = if (uiState.viewMode == FlowSorterViewMode.CARD) "快速整理" else "列表整理",
-                                    style = MaterialTheme.typography.titleLarge
-                                )
-                            }
+                            Text(
+                                text = if (uiState.viewMode == FlowSorterViewMode.CARD) "快速整理" else "列表整理",
+                                style = MaterialTheme.typography.titleMedium
+                            )
                         }
                     },
                     navigationIcon = {
@@ -372,8 +362,8 @@ fun FlowSorterScreen(
         )
     }
 
-    // 视图切换引导提示（滑动引导完成后显示）
-    if (viewToggleGuide.shouldShow && !swipeGuideSequence.isActive &&
+    // 视图切换引导提示
+    if (viewToggleGuide.shouldShow &&
         uiState.viewMode == FlowSorterViewMode.CARD && !uiState.isComplete) {
         GuideTooltip(
             visible = true,
@@ -415,7 +405,13 @@ fun FlowSorterContent(
     var showAlbumPicker by remember { mutableStateOf(false) }
     val availableAlbums by viewModel.availableAlbums.collectAsState()
     var selectedAlbumIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    
+
+    // REQ-067: 滑动筛选全屏新手引导（替代分步引导）
+    val swipeSortFullscreenGuide = rememberGuideState(
+        guideKey = GuideKey.SWIPE_SORT_FULLSCREEN_GUIDE,
+        guideRepository = viewModel.guideRepository
+    )
+
     // Local view mode state for workflow mode (since we don't have TopAppBar)
     var localViewMode by remember { mutableStateOf(FlowSorterViewMode.CARD) }
     val effectiveViewMode = if (isWorkflowMode) localViewMode else uiState.viewMode
@@ -522,13 +518,6 @@ fun FlowSorterContent(
                     }
                     else -> {
                         // Card stack with combo overlay
-                        // 引导序列状态
-                        val guideSequence = rememberGuideSequenceState(
-                            guideKeys = GuideKey.flowSorterSequence,
-                            guideRepository = viewModel.guideRepository
-                        )
-                        var cardBounds by remember { mutableStateOf<Rect?>(null) }
-                        
                         Box(modifier = Modifier.fillMaxSize()) {
                             CardStack(
                                 uiState = uiState,
@@ -557,10 +546,7 @@ fun FlowSorterContent(
                                     onPhotoSorted?.invoke(photoId, PhotoStatus.MAYBE, combo)
                                 },
                                 // When album tags are shown, move photo info to the image itself
-                                showInfoOnImage = uiState.cardSortingAlbumEnabled,
-                                modifier = Modifier.onGloballyPositioned { coordinates ->
-                                    cardBounds = coordinates.boundsInRoot()
-                                }
+                                showInfoOnImage = uiState.cardSortingAlbumEnabled
                             )
                             
                             // Combo overlay
@@ -591,28 +577,6 @@ fun FlowSorterContent(
                                           uiState.currentPhoto != null,
                                 modifier = Modifier.align(Alignment.BottomCenter)
                             )
-                            
-                            // 滑动引导层
-                            guideSequence.currentGuide?.let { guide ->
-                                val (message, _) = when (guide) {
-                                    GuideKey.SWIPE_RIGHT -> "👉 右滑保留\n喜欢的照片向右滑动" to cardBounds
-                                    GuideKey.SWIPE_LEFT -> "👈 左滑删除\n不需要的照片向左滑动" to cardBounds
-                                    GuideKey.SWIPE_UP -> "👆 上滑待定\n犹豫的照片向上滑动，稍后对比" to cardBounds
-                                    else -> return@let
-                                }
-                                
-                                GuideTooltip(
-                                    visible = true,
-                                    message = message,
-                                    targetBounds = cardBounds,
-                                    arrowDirection = ArrowDirection.UP,
-                                    stepInfo = GuideStepInfo(
-                                        current = guideSequence.currentStep,
-                                        total = guideSequence.totalSteps
-                                    ),
-                                    onDismiss = guideSequence.dismissCurrent
-                                )
-                            }
                         }
                     }
                 }
@@ -791,8 +755,17 @@ fun FlowSorterContent(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter)
         )
+
+        // REQ-067: 滑动筛选全屏新手引导（首次进入卡片模式时显示）
+        if (swipeSortFullscreenGuide.shouldShow &&
+            effectiveViewMode == FlowSorterViewMode.CARD &&
+            uiState.photos.isNotEmpty()) {
+            SwipeSortOnboarding(
+                onDismiss = swipeSortFullscreenGuide.dismiss
+            )
+        }
     }
-    
+
     // Album picker dialog for managing quick album list (using unified component)
     if (showAlbumPicker) {
         SystemAlbumPickerDialog(

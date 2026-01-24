@@ -47,6 +47,7 @@ import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.domain.GroupingMode
 import com.example.photozen.domain.PhotoEvent
 import com.example.photozen.ui.components.ArrowDirection
+import com.example.photozen.ui.components.CompactSortingButton
 import com.example.photozen.ui.components.EmptyStates
 import com.example.photozen.ui.components.GuideTooltip
 import com.example.photozen.ui.components.TimelineEventPhotoRow
@@ -614,18 +615,12 @@ private fun TimelineEventCard(
                     }
                 }
                 
-                // Sort group button
-                IconButton(
-                    onClick = onSortGroup,
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SwipeRight,
-                        contentDescription = "整理此分组",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                // Sort group button (REQ-062: 统一样式)
+                CompactSortingButton(
+                    totalCount = event.photoCount,
+                    sortedCount = event.sortedCount,
+                    onClick = onSortGroup
+                )
             }
             
             // Expanded content - Photo grid
@@ -944,7 +939,7 @@ private fun TimelineSelectionBottomBar(
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.HelpOutline,
+                    imageVector = Icons.Default.QuestionMark,
                     contentDescription = "待定",
                     tint = Color(0xFFFBBF24),  // MaybeAmber
                     modifier = Modifier.size(24.dp)

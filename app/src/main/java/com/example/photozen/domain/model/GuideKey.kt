@@ -17,16 +17,6 @@ enum class GuideKey(
     val description: String,
     val priority: Int = 0  // 优先级，数字越小优先级越高
 ) {
-    // ==================== FlowSorter 滑动引导 ====================
-    /** 右滑保留引导 - 滑动整理第 1 步 */
-    SWIPE_RIGHT("滑动整理 - 右滑保留引导", priority = 0),
-
-    /** 左滑删除引导 - 滑动整理第 2 步 */
-    SWIPE_LEFT("滑动整理 - 左滑删除引导", priority = 1),
-
-    /** 上滑待定引导 - 滑动整理第 3 步 */
-    SWIPE_UP("滑动整理 - 上滑待定引导", priority = 2),
-
     // ==================== 照片列表引导 ====================
     /** 长按多选引导 */
     PHOTO_LIST_LONG_PRESS("照片列表 - 长按多选引导", priority = 10),
@@ -53,19 +43,16 @@ enum class GuideKey(
 
     // ==================== 分享功能提示 ====================
     /** 分享功能提示 - 首页卡片 */
-    SHARE_FEATURE_TIP("首页 - 分享功能提示", priority = 50);
+    SHARE_FEATURE_TIP("首页 - 分享功能提示", priority = 50),
+
+    // ==================== 新手引导 (REQ-067) ====================
+    /** 双指缩放引导 - 照片网格列数切换 */
+    PINCH_ZOOM_GUIDE("照片网格 - 双指缩放切换列数引导", priority = 5),
+
+    /** 滑动筛选全屏引导 - 快速筛选滑动手势 */
+    SWIPE_SORT_FULLSCREEN_GUIDE("快速筛选 - 滑动手势全屏引导", priority = 3);
     
     companion object {
-        /**
-         * 获取 FlowSorter 滑动引导序列
-         * 按优先级排序
-         */
-        val flowSorterSequence: List<GuideKey> = listOf(
-            SWIPE_RIGHT,
-            SWIPE_LEFT,
-            SWIPE_UP
-        )
-        
         /**
          * 安全地从字符串解析 GuideKey
          */

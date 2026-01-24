@@ -36,7 +36,10 @@ data class TrashUiState(
     val message: String? = null,
     val gridColumns: Int = 2,
     val gridMode: PhotoGridMode = PhotoGridMode.WATERFALL,
-    val inSelectionMode: Boolean = false
+    val inSelectionMode: Boolean = false,
+    // REQ-033: 排序
+    val sortOrder: com.example.photozen.ui.screens.photolist.PhotoListSortOrder =
+        com.example.photozen.ui.screens.photolist.PhotoListSortOrder.ADDED_DESC // 默认按添加时间倒序
 ) {
     val isSelectionMode: Boolean get() = inSelectionMode || selectedIds.isNotEmpty()
     val selectedCount: Int get() = selectedIds.size
@@ -50,7 +53,10 @@ private data class InternalState(
     val deleteIntentSender: IntentSender? = null,
     val message: String? = null,
     val gridColumns: Int = 2,
-    val gridMode: PhotoGridMode = PhotoGridMode.WATERFALL
+    val gridMode: PhotoGridMode = PhotoGridMode.WATERFALL,
+    // REQ-033: 排序
+    val sortOrder: com.example.photozen.ui.screens.photolist.PhotoListSortOrder =
+        com.example.photozen.ui.screens.photolist.PhotoListSortOrder.ADDED_DESC
 )
 
 @HiltViewModel
@@ -66,6 +72,9 @@ class TrashViewModel @Inject constructor(
     
     private val _internalState = MutableStateFlow(InternalState())
     
+    // Random seed for consistent random sorting
+    private var randomSeed = System.currentTimeMillis()
+
     // Phase 4: 使用 selectionStateHolder 的状态
     val uiState: StateFlow<TrashUiState> = combine(
         getPhotosUseCase.getPhotosByStatus(PhotoStatus.TRASH),
@@ -73,13 +82,16 @@ class TrashViewModel @Inject constructor(
         selectionStateHolder.selectedIds,
         selectionStateHolder.isSelectionMode
     ) { photos, internal, selectedIds, isSelectionMode ->
+        // REQ-033: Apply sorting
+        val sortedPhotos = applySortOrder(photos, internal.sortOrder)
+
         // Filter out selected photos that no longer exist
         val validSelectedIds = selectedIds.filter { id ->
-            photos.any { it.id == id }
+            sortedPhotos.any { it.id == id }
         }.toSet()
-        
+
         TrashUiState(
-            photos = photos,
+            photos = sortedPhotos,
             selectedIds = validSelectedIds,
             isLoading = internal.isLoading && photos.isEmpty(),
             isDeleting = internal.isDeleting,
@@ -87,13 +99,45 @@ class TrashViewModel @Inject constructor(
             message = internal.message,
             gridColumns = internal.gridColumns,
             gridMode = internal.gridMode,
-            inSelectionMode = isSelectionMode || validSelectedIds.isNotEmpty()
+            inSelectionMode = isSelectionMode || validSelectedIds.isNotEmpty(),
+            sortOrder = internal.sortOrder
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = TrashUiState()
     )
+
+    /**
+     * Apply sort order to photos list (REQ-033)
+     */
+    private fun applySortOrder(
+        photos: List<PhotoEntity>,
+        sortOrder: com.example.photozen.ui.screens.photolist.PhotoListSortOrder
+    ): List<PhotoEntity> {
+        return when (sortOrder) {
+            com.example.photozen.ui.screens.photolist.PhotoListSortOrder.DATE_DESC ->
+                photos.sortedByDescending { it.dateTaken }
+            com.example.photozen.ui.screens.photolist.PhotoListSortOrder.DATE_ASC ->
+                photos.sortedBy { it.dateTaken }
+            com.example.photozen.ui.screens.photolist.PhotoListSortOrder.ADDED_DESC ->
+                photos.sortedByDescending { it.updatedAt }
+            com.example.photozen.ui.screens.photolist.PhotoListSortOrder.ADDED_ASC ->
+                photos.sortedBy { it.updatedAt }
+            com.example.photozen.ui.screens.photolist.PhotoListSortOrder.RANDOM ->
+                photos.shuffled(kotlin.random.Random(randomSeed))
+        }
+    }
+
+    /**
+     * Set sort order (REQ-033)
+     */
+    fun setSortOrder(order: com.example.photozen.ui.screens.photolist.PhotoListSortOrder) {
+        if (order == com.example.photozen.ui.screens.photolist.PhotoListSortOrder.RANDOM) {
+            randomSeed = System.currentTimeMillis()
+        }
+        _internalState.update { it.copy(sortOrder = order) }
+    }
     
     init {
         // Phase 4: 进入页面时清空选择状态

@@ -4,8 +4,44 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Clean solid background -->
+
+    <!--
+    PhotoZen Logo Background
+    设计：深邃的渐变背景，带微妙纹理
+    色彩：从深蓝黑到纯黑的优雅过渡
+    -->
+
+    <!-- 基础背景 - 深邃的蓝黑色 -->
     <path
-        android:fillColor="#0F172A"
-        android:pathData="M0,0h108v108h-108z" />
+        android:fillColor="#0A0A0F"
+        android:pathData="M0,0 L108,0 L108,108 L0,108 Z" />
+
+    <!-- 渐变叠加层 - 从中心向外的微妙亮度变化 -->
+    <path
+        android:fillColor="#0F1419"
+        android:fillAlpha="0.6"
+        android:pathData="M54,54 m-40,0 a40,40 0 1,1 80,0 a40,40 0 1,1 -80,0" />
+
+    <!-- 顶部微光 - 增加空间感 -->
+    <path
+        android:fillColor="#1a2332"
+        android:fillAlpha="0.3"
+        android:pathData="M0,0 L108,0 L108,40 Q54,50 0,40 Z" />
+
+    <!-- 底部深化 - 增加层次 -->
+    <path
+        android:fillColor="#000000"
+        android:fillAlpha="0.3"
+        android:pathData="M0,108 L108,108 L108,75 Q54,65 0,75 Z" />
+
+    <!-- 微妙的对角线纹理 - 高级质感 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.02"
+        android:pathData="M0,0 L108,108 L106,108 L0,2 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.015"
+        android:pathData="M10,0 L108,98 L108,108 L8,0 Z" />
+
 </vector>

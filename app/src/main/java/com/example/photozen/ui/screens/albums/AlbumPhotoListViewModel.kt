@@ -504,6 +504,88 @@ class AlbumPhotoListViewModel @Inject constructor(
         }
     }
     
+    // ==================== REQ-047, REQ-048: 相册列表批量操作 ====================
+
+    /**
+     * 复制选中的照片 (REQ-047)
+     */
+    fun copySelectedPhotos() {
+        viewModelScope.launch {
+            val selectedIds = selectionStateHolder.getSelectedList().toSet()
+            val selectedPhotos = _uiState.value.photos.filter { it.id in selectedIds }
+            var successCount = 0
+
+            for (photo in selectedPhotos) {
+                val photoUri = Uri.parse(photo.systemUri)
+                // 复制到同一相册
+                val bucketId = _uiState.value.bucketId
+                val targetAlbum = _uiState.value.albumBubbleList.find { it.bucketId == bucketId }
+                val targetPath = mediaStoreDataSource.getAlbumPath(bucketId)
+                    ?: "Pictures/${targetAlbum?.displayName ?: "PhotoZen"}"
+
+                val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
+                if (result.isSuccess) {
+                    successCount++
+                }
+            }
+
+            if (successCount > 0) {
+                _uiState.update { it.copy(message = "已复制 $successCount 张照片") }
+                clearSelection()
+            }
+        }
+    }
+
+    /**
+     * 复制指定照片 (全屏预览中使用)
+     */
+    fun copyPhotos(photoIds: List<String>) {
+        viewModelScope.launch {
+            val photos = _uiState.value.photos.filter { it.id in photoIds }
+            var successCount = 0
+
+            for (photo in photos) {
+                val photoUri = Uri.parse(photo.systemUri)
+                val bucketId = _uiState.value.bucketId
+                val targetAlbum = _uiState.value.albumBubbleList.find { it.bucketId == bucketId }
+                val targetPath = mediaStoreDataSource.getAlbumPath(bucketId)
+                    ?: "Pictures/${targetAlbum?.displayName ?: "PhotoZen"}"
+
+                val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
+                if (result.isSuccess) {
+                    successCount++
+                }
+            }
+
+            if (successCount > 0) {
+                _uiState.update { it.copy(message = "已复制照片") }
+            }
+        }
+    }
+
+    /**
+     * 批量修改选中照片的筛选状态 (REQ-048)
+     */
+    fun changeSelectedPhotosStatus(newStatus: PhotoStatus) {
+        viewModelScope.launch {
+            val selectedIds = selectionStateHolder.getSelectedList().toSet()
+
+            // Update status in Room database
+            for (photoId in selectedIds) {
+                photoDao.updateStatus(photoId, newStatus)
+            }
+
+            val statusName = when (newStatus) {
+                PhotoStatus.KEEP -> "保留"
+                PhotoStatus.MAYBE -> "待定"
+                PhotoStatus.TRASH -> "回收站"
+                PhotoStatus.UNSORTED -> "未筛选"
+            }
+            _uiState.update { it.copy(message = "已将 ${selectedIds.size} 张照片标记为$statusName") }
+            clearSelection()
+        }
+    }
+
     /**
      * Phase 4: 页面销毁时清理选择状态
      */

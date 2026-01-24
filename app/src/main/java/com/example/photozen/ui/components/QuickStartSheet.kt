@@ -32,7 +32,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
@@ -41,7 +41,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.SwipeRight
@@ -342,7 +341,7 @@ private fun DailyTaskStep(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Assignment,
+                    imageVector = Icons.AutoMirrored.Filled.Assignment,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(24.dp)
@@ -724,7 +723,7 @@ private fun VirtualSwipeCard(
                 }
                 swipeDirection == SwipeDirection.DOWN -> {
                     // DOWN → Maybe (Amber)
-                    icon = if (thresholdMet) Icons.Default.QuestionMark else Icons.Default.HelpOutline
+                    icon = Icons.Default.QuestionMark
                     iconTint = MaybeAmber
                 }
                 else -> {

@@ -91,27 +91,26 @@ fun rememberGuideState(
 
 /**
  * 记住引导序列状态
- * 
- * 用于管理多步引导序列，如 FlowSorter 的滑动引导。
- * 
+ *
+ * 用于管理多步引导序列。
+ *
  * @param guideKeys 引导序列（按顺序）
  * @param guideRepository 引导仓库
  * @return GuideSequenceState 序列状态
- * 
+ *
  * ## 使用示例
  * ```kotlin
  * @Composable
- * fun FlowSorterScreen(guideRepository: GuideRepository) {
+ * fun MyScreen(guideRepository: GuideRepository) {
  *     val guideSequence = rememberGuideSequenceState(
- *         guideKeys = GuideKey.flowSorterSequence,
+ *         guideKeys = listOf(GuideKey.PHOTO_LIST_LONG_PRESS, GuideKey.HOME_START_BUTTON),
  *         guideRepository = guideRepository
  *     )
- *     
+ *
  *     // 根据当前引导显示不同内容
  *     when (guideSequence.currentGuide) {
- *         GuideKey.SWIPE_RIGHT -> GuideTooltip(message = "右滑保留", ...)
- *         GuideKey.SWIPE_LEFT -> GuideTooltip(message = "左滑删除", ...)
- *         GuideKey.SWIPE_UP -> GuideTooltip(message = "上滑待定", ...)
+ *         GuideKey.PHOTO_LIST_LONG_PRESS -> GuideTooltip(message = "长按选择", ...)
+ *         GuideKey.HOME_START_BUTTON -> GuideTooltip(message = "点击开始", ...)
  *         else -> { /* 引导完成 */ }
  *     }
  * }

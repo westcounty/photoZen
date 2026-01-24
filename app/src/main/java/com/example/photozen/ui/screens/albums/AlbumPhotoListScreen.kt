@@ -61,6 +61,9 @@ import com.example.photozen.ui.util.FeatureFlags
 import com.example.photozen.ui.components.SelectionTopBar
 import com.example.photozen.ui.components.SelectionBottomBar
 import com.example.photozen.ui.components.BottomBarConfigs
+import com.example.photozen.ui.components.BatchChangeStatusDialog
+import com.example.photozen.ui.components.fullscreen.UnifiedFullscreenViewer
+import com.example.photozen.ui.components.fullscreen.FullscreenActionType
 import com.example.photozen.ui.theme.KeepGreen
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.text.style.TextAlign
@@ -103,7 +106,10 @@ fun AlbumPhotoListScreen(
     
     // Phase 3-9: 删除确认弹窗状态
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
-    
+
+    // REQ-048: 批量修改筛选状态弹窗
+    var showBatchChangeStatusDialog by remember { mutableStateOf(false) }
+
     // Delete confirmation launcher
     val deleteResultLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
@@ -311,21 +317,19 @@ fun AlbumPhotoListScreen(
                     uiState.photos.find { it.id in uiState.selectedIds }
                 } else null
                 
-                // Phase 4: 使用 BottomBarConfigs.adaptive 根据选择数量自动配置
+                // Phase 4 + REQ-047, REQ-048: 使用 BottomBarConfigs.adaptive 根据选择数量自动配置
                 val bottomBarActions = BottomBarConfigs.adaptive(
                     selectedCount = uiState.selectedCount,
                     singleSelectActions = {
                         BottomBarConfigs.albumPhotosSingleSelect(
                             onEdit = { singleSelectedPhoto?.let { onNavigateToEditor(it.id) } },
                             onShare = { singleSelectedPhoto?.let { shareImage(context, Uri.parse(it.systemUri)) } },
-                            onMove = {
+                            onAddToOtherAlbum = {
                                 pickerMode = "move"
                                 showAlbumPicker = true
                             },
-                            onCopy = {
-                                pickerMode = "copy"
-                                showAlbumPicker = true
-                            },
+                            onBatchChangeStatus = { showBatchChangeStatusDialog = true },
+                            onCopy = { viewModel.copySelectedPhotos() },
                             onStartFromHere = {
                                 // 从选中照片开始，将该照片及之后的所有照片加入待筛选列表
                                 val firstSelectedIndex = uiState.photos.indexOfFirst { it.id in uiState.selectedIds }
@@ -347,14 +351,12 @@ fun AlbumPhotoListScreen(
                     },
                     multiSelectActions = {
                         BottomBarConfigs.albumPhotosMultiSelect(
-                            onMove = {
+                            onAddToOtherAlbum = {
                                 pickerMode = "move"
                                 showAlbumPicker = true
                             },
-                            onCopy = {
-                                pickerMode = "copy"
-                                showAlbumPicker = true
-                            },
+                            onBatchChangeStatus = { showBatchChangeStatusDialog = true },
+                            onCopy = { viewModel.copySelectedPhotos() },
                             onDelete = { showDeleteConfirmSheet = true }
                         )
                     }
@@ -365,13 +367,26 @@ fun AlbumPhotoListScreen(
         }
     }
     
-    // Fullscreen viewer
+    // REQ-045: 全屏预览 - 使用统一的 UnifiedFullscreenViewer
     if (showFullscreen && uiState.photos.isNotEmpty()) {
-        AlbumPhotoFullscreenViewer(
+        UnifiedFullscreenViewer(
             photos = uiState.photos,
-            initialIndex = fullscreenStartIndex,
-            onDismiss = { showFullscreen = false }
+            initialIndex = fullscreenStartIndex.coerceIn(0, uiState.photos.lastIndex),
+            onExit = { showFullscreen = false },
+            onAction = { actionType, photo ->
+                when (actionType) {
+                    FullscreenActionType.COPY -> viewModel.copyPhotos(listOf(photo.id))
+                    FullscreenActionType.OPEN_WITH -> { /* 外部app打开 */ }
+                    FullscreenActionType.EDIT -> onNavigateToEditor(photo.id)
+                    FullscreenActionType.SHARE -> shareImage(context, Uri.parse(photo.systemUri))
+                    FullscreenActionType.DELETE -> {
+                        viewModel.enterSelectionMode(photo.id)
+                        showDeleteConfirmSheet = true
+                    }
+                }
+            }
         )
+        return // 全屏模式下不显示列表
     }
     
     // Album picker bottom sheet
@@ -417,6 +432,19 @@ fun AlbumPhotoListScreen(
                 }
             },
             onDismiss = { showDeleteConfirmSheet = false }
+        )
+    }
+
+    // REQ-048: 批量修改筛选状态弹窗
+    if (showBatchChangeStatusDialog) {
+        BatchChangeStatusDialog(
+            selectedCount = uiState.selectedCount,
+            onStatusSelected = { newStatus ->
+                viewModel.changeSelectedPhotosStatus(newStatus)
+                showBatchChangeStatusDialog = false
+                viewModel.clearSelection()
+            },
+            onDismiss = { showBatchChangeStatusDialog = false }
         )
     }
 }

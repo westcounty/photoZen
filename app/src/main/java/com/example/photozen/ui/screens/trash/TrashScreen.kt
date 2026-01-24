@@ -92,6 +92,11 @@ import com.example.photozen.ui.components.EmptyStates
 import com.example.photozen.ui.components.SelectionTopBar
 import com.example.photozen.ui.components.SelectionBottomBar
 import com.example.photozen.ui.components.BottomBarConfigs
+import com.example.photozen.ui.components.SortDropdownButton
+import com.example.photozen.ui.components.SortOption
+import com.example.photozen.ui.components.SortOptions
+import com.example.photozen.ui.components.fullscreen.UnifiedFullscreenViewer
+import com.example.photozen.ui.components.fullscreen.FullscreenActionType
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
@@ -110,7 +115,11 @@ fun TrashScreen(
     
     // Phase 3-9: 删除确认弹窗状态
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
-    
+
+    // REQ-034: 全屏预览状态
+    var showFullscreenViewer by remember { mutableStateOf(false) }
+    var fullscreenInitialIndex by remember { mutableStateOf(0) }
+
     // Launcher for system delete request
     val deleteLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
@@ -139,7 +148,29 @@ fun TrashScreen(
     BackHandler(enabled = uiState.isSelectionMode) {
         viewModel.clearSelection()
     }
-    
+
+    // REQ-034: 全屏预览界面
+    if (showFullscreenViewer && uiState.photos.isNotEmpty()) {
+        UnifiedFullscreenViewer(
+            photos = uiState.photos,
+            initialIndex = fullscreenInitialIndex.coerceIn(0, uiState.photos.lastIndex),
+            onExit = { showFullscreenViewer = false },
+            onAction = { actionType, photo ->
+                when (actionType) {
+                    FullscreenActionType.DELETE -> {
+                        // 回收站中的删除是永久删除
+                        viewModel.toggleSelection(photo.id)
+                        showDeleteConfirmSheet = true
+                    }
+                    else -> {
+                        // 回收站照片其他操作暂不支持
+                    }
+                }
+            }
+        )
+        return
+    }
+
     Scaffold(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -203,6 +234,28 @@ fun TrashScreen(
                                     contentDescription = "${uiState.gridColumns}列视图"
                                 )
                             }
+                            // Sort dropdown (REQ-033)
+                            val currentSortOption = when (uiState.sortOrder) {
+                                com.example.photozen.ui.screens.photolist.PhotoListSortOrder.DATE_DESC -> SortOptions.photoTimeDesc
+                                com.example.photozen.ui.screens.photolist.PhotoListSortOrder.DATE_ASC -> SortOptions.photoTimeAsc
+                                com.example.photozen.ui.screens.photolist.PhotoListSortOrder.ADDED_DESC -> SortOptions.addedTimeDesc
+                                com.example.photozen.ui.screens.photolist.PhotoListSortOrder.ADDED_ASC -> SortOptions.addedTimeAsc
+                                com.example.photozen.ui.screens.photolist.PhotoListSortOrder.RANDOM -> SortOptions.random
+                            }
+                            SortDropdownButton(
+                                currentSort = currentSortOption,
+                                options = SortOptions.trashListOptions,
+                                onSortSelected = { option ->
+                                    val order = when (option.id) {
+                                        "photo_time_desc" -> com.example.photozen.ui.screens.photolist.PhotoListSortOrder.DATE_DESC
+                                        "photo_time_asc" -> com.example.photozen.ui.screens.photolist.PhotoListSortOrder.DATE_ASC
+                                        "added_time_desc" -> com.example.photozen.ui.screens.photolist.PhotoListSortOrder.ADDED_DESC
+                                        "added_time_asc" -> com.example.photozen.ui.screens.photolist.PhotoListSortOrder.ADDED_ASC
+                                        else -> com.example.photozen.ui.screens.photolist.PhotoListSortOrder.ADDED_DESC
+                                    }
+                                    viewModel.setSortOrder(order)
+                                }
+                            )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -243,11 +296,19 @@ fun TrashScreen(
                         onSelectionChanged = { newSelection ->
                             viewModel.updateSelection(newSelection)
                         },
-                        onPhotoClick = { _, _ ->
-                            // Non-selection mode click - no action in trash
+                        onPhotoClick = { photoId, index ->
+                            if (!uiState.isSelectionMode) {
+                                // REQ-034: 非选择模式点击进入全屏预览
+                                fullscreenInitialIndex = index
+                                showFullscreenViewer = true
+                            } else {
+                                // 选择模式下切换选中
+                                viewModel.toggleSelection(photoId)
+                            }
                         },
-                        onPhotoLongPress = { _, _ ->
-                            // No action sheet for trash items
+                        onPhotoLongPress = { photoId, _ ->
+                            // REQ-035: 长按进入选择模式
+                            viewModel.toggleSelection(photoId)
                         },
                         columns = uiState.gridColumns,
                         gridMode = uiState.gridMode,

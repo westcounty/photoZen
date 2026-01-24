@@ -31,6 +31,8 @@ import com.example.photozen.data.repository.FilterPresetRepository
 import com.example.photozen.domain.model.FilterConfig
 import com.example.photozen.domain.model.FilterPreset
 import com.example.photozen.domain.model.FilterType
+import com.example.photozen.domain.model.UndoAction
+import com.example.photozen.ui.state.UndoManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -137,7 +139,9 @@ data class FlowSorterUiState(
     // Permission dialog state
     val showPermissionDialog: Boolean = false,
     val permissionRetryError: Boolean = false,
-    val pendingAlbumBucketId: String? = null
+    val pendingAlbumBucketId: String? = null,
+    // REQ-064: 来源名称（相册名/时间线分组名）
+    val sourceName: String? = null
 ) {
     val currentPhoto: PhotoEntity?
         get() = photos.getOrNull(currentIndex)
@@ -191,13 +195,17 @@ class FlowSorterViewModel @Inject constructor(
     private val filterPresetRepository: FilterPresetRepository,
     private val statsRepository: StatsRepository,
     // Phase 4: 预加载器
-    private val photoPreloader: PhotoPreloader
+    private val photoPreloader: PhotoPreloader,
+    // REQ-060: 全局撤销管理器
+    private val undoManager: UndoManager
 ) : ViewModel() {
     
     private val isDailyTask: Boolean = savedStateHandle["isDailyTask"] ?: false
     private val targetCount: Int = savedStateHandle["targetCount"] ?: -1
     private val albumBucketId: String? = savedStateHandle["albumBucketId"]
     private val initialListMode: Boolean = savedStateHandle["initialListMode"] ?: false
+    // REQ-064: 来源名称（从导航参数获取，如相册名或时间线分组名）
+    private val sourceNameArg: String? = savedStateHandle["sourceName"]
     
     private val _isLoading = MutableStateFlow(true)
     private val _isSyncing = MutableStateFlow(false)
@@ -977,7 +985,9 @@ class FlowSorterViewModel @Inject constructor(
             // Permission dialog
             showPermissionDialog = albumState.showPermissionDialog,
             permissionRetryError = albumState.permissionRetryError,
-            pendingAlbumBucketId = albumState.pendingAlbumBucketId
+            pendingAlbumBucketId = albumState.pendingAlbumBucketId,
+            // REQ-064: 来源名称
+            sourceName = sourceNameArg
         )
     }.stateIn(
         scope = viewModelScope,
@@ -1184,10 +1194,20 @@ class FlowSorterViewModel @Inject constructor(
         // Phase 4: 预加载下一批照片
         preloadNextPhotos()
         
+        // REQ-060: 获取照片当前状态用于撤销
+        val photo = uiState.value.photos.find { it.id == photoId }
+        val previousStatus = photo?.status ?: PhotoStatus.UNSORTED
+
         viewModelScope.launch {
             try {
                 sortPhotoUseCase.keepPhoto(photoId)
                 _lastAction.value = SortAction(photoId, PhotoStatus.KEEP)
+                // REQ-060: 记录到全局撤销管理器（支持恢复到原状态）
+                undoManager.recordAction(UndoAction.SortPhoto(
+                    photoId = photoId,
+                    previousStatus = previousStatus,
+                    newStatus = PhotoStatus.KEEP
+                ))
                 preferencesRepository.incrementSortedCount()
                 preferencesRepository.incrementKeepCount()
                 // Record to stats repository for detailed statistics
@@ -1203,7 +1223,7 @@ class FlowSorterViewModel @Inject constructor(
         }
         return comboCount
     }
-    
+
     /**
      * Trash a photo by ID.
      * @param photoId The ID of the photo to trash
@@ -1211,20 +1231,30 @@ class FlowSorterViewModel @Inject constructor(
      */
     fun trashPhoto(photoId: String): Int {
         if (photoId.isEmpty()) return 0
+        // REQ-060: 获取照片当前状态用于撤销
+        val photo = uiState.value.photos.find { it.id == photoId }
+        val previousStatus = photo?.status ?: PhotoStatus.UNSORTED
+
         val comboCount = updateCombo()
         // Mark photo as sorted immediately (removes from display list)
         markPhotoAsSorted(photoId)
         // Update counters SYNCHRONOUSLY to ensure UI reflects change immediately
         _counters.value = _counters.value.copy(trash = _counters.value.trash + 1)
         _sortedCountImmediate.value++  // Immediate counter for UI
-        
+
         // Phase 4: 预加载下一批照片
         preloadNextPhotos()
-        
+
         viewModelScope.launch {
             try {
                 sortPhotoUseCase.trashPhoto(photoId)
                 _lastAction.value = SortAction(photoId, PhotoStatus.TRASH)
+                // REQ-060: 记录到全局撤销管理器
+                undoManager.recordAction(UndoAction.SortPhoto(
+                    photoId = photoId,
+                    previousStatus = previousStatus,
+                    newStatus = PhotoStatus.TRASH
+                ))
                 preferencesRepository.incrementSortedCount()
                 preferencesRepository.incrementTrashCount()
                 // Record to stats repository for detailed statistics
@@ -1248,20 +1278,30 @@ class FlowSorterViewModel @Inject constructor(
      */
     fun maybePhoto(photoId: String): Int {
         if (photoId.isEmpty()) return 0
+        // REQ-060: 获取照片当前状态用于撤销
+        val photo = uiState.value.photos.find { it.id == photoId }
+        val previousStatus = photo?.status ?: PhotoStatus.UNSORTED
+
         val comboCount = updateCombo()
         // Mark photo as sorted immediately (removes from display list)
         markPhotoAsSorted(photoId)
         // Update counters SYNCHRONOUSLY to ensure UI reflects change immediately
         _counters.value = _counters.value.copy(maybe = _counters.value.maybe + 1)
         _sortedCountImmediate.value++  // Immediate counter for UI
-        
+
         // Phase 4: 预加载下一批照片
         preloadNextPhotos()
-        
+
         viewModelScope.launch {
             try {
                 sortPhotoUseCase.maybePhoto(photoId)
                 _lastAction.value = SortAction(photoId, PhotoStatus.MAYBE)
+                // REQ-060: 记录到全局撤销管理器
+                undoManager.recordAction(UndoAction.SortPhoto(
+                    photoId = photoId,
+                    previousStatus = previousStatus,
+                    newStatus = PhotoStatus.MAYBE
+                ))
                 preferencesRepository.incrementSortedCount()
                 preferencesRepository.incrementMaybeCount()
                 // Record to stats repository for detailed statistics
@@ -1328,25 +1368,52 @@ class FlowSorterViewModel @Inject constructor(
     
     /**
      * Undo the last sorting action.
+     * REQ-060: 使用全局 UndoManager，支持恢复到原状态（而非固定为 UNSORTED）
      * Note: Undo does NOT decrement the cumulative count - it's a permanent achievement.
      */
     fun undoLastAction() {
-        val lastAction = _lastAction.value ?: return
-        viewModelScope.launch {
-            try {
-                sortPhotoUseCase.resetPhoto(lastAction.photoId)
-                // Remove from sorted list so it reappears in the display
-                _sortedPhotoIds.value = _sortedPhotoIds.value - lastAction.photoId
-                // Update session counters only (cumulative count stays)
-                _counters.value = when (lastAction.status) {
-                    PhotoStatus.KEEP -> _counters.value.copy(keep = (_counters.value.keep - 1).coerceAtLeast(0))
-                    PhotoStatus.TRASH -> _counters.value.copy(trash = (_counters.value.trash - 1).coerceAtLeast(0))
-                    PhotoStatus.MAYBE -> _counters.value.copy(maybe = (_counters.value.maybe - 1).coerceAtLeast(0))
-                    else -> _counters.value
+        // 同时检查内部状态和全局 UndoManager
+        val lastAction = _lastAction.value
+        val undoAction = undoManager.lastAction.value
+
+        // 优先使用全局 UndoManager（如果有 SortPhoto 类型的操作）
+        if (undoAction is UndoAction.SortPhoto) {
+            viewModelScope.launch {
+                try {
+                    // 使用全局 UndoManager 执行撤销（会恢复到原状态）
+                    undoManager.undo()
+                    // Remove from sorted list so it reappears in the display
+                    _sortedPhotoIds.value = _sortedPhotoIds.value - undoAction.photoId
+                    // Update session counters only (cumulative count stays)
+                    _counters.value = when (undoAction.newStatus) {
+                        PhotoStatus.KEEP -> _counters.value.copy(keep = (_counters.value.keep - 1).coerceAtLeast(0))
+                        PhotoStatus.TRASH -> _counters.value.copy(trash = (_counters.value.trash - 1).coerceAtLeast(0))
+                        PhotoStatus.MAYBE -> _counters.value.copy(maybe = (_counters.value.maybe - 1).coerceAtLeast(0))
+                        else -> _counters.value
+                    }
+                    _lastAction.value = null
+                } catch (e: Exception) {
+                    _error.value = "撤销失败: ${e.message}"
                 }
-                _lastAction.value = null
-            } catch (e: Exception) {
-                _error.value = "撤销失败: ${e.message}"
+            }
+        } else if (lastAction != null) {
+            // 回退到旧逻辑（兼容性）
+            viewModelScope.launch {
+                try {
+                    sortPhotoUseCase.resetPhoto(lastAction.photoId)
+                    // Remove from sorted list so it reappears in the display
+                    _sortedPhotoIds.value = _sortedPhotoIds.value - lastAction.photoId
+                    // Update session counters only (cumulative count stays)
+                    _counters.value = when (lastAction.status) {
+                        PhotoStatus.KEEP -> _counters.value.copy(keep = (_counters.value.keep - 1).coerceAtLeast(0))
+                        PhotoStatus.TRASH -> _counters.value.copy(trash = (_counters.value.trash - 1).coerceAtLeast(0))
+                        PhotoStatus.MAYBE -> _counters.value.copy(maybe = (_counters.value.maybe - 1).coerceAtLeast(0))
+                        else -> _counters.value
+                    }
+                    _lastAction.value = null
+                } catch (e: Exception) {
+                    _error.value = "撤销失败: ${e.message}"
+                }
             }
         }
     }

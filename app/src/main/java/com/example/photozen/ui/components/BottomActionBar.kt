@@ -7,26 +7,40 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.CompareArrows
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.PhotoAlbum
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -106,33 +120,86 @@ data class BottomBarAction(
 /**
  * Standard selection bottom bar container with horizontal scrolling support.
  * Uses LazyRow when there are more than 5 buttons to enable scrolling.
+ *
+ * REQ-025: 底部操作栏滑动提示
+ * - 按钮展示不全时支持左右滑动
+ * - 右侧有渐变遮罩提示用户有更多按钮
  */
 @Composable
 fun SelectionBottomBar(
     actions: List<BottomBarAction>,
     modifier: Modifier = Modifier
 ) {
+    val lazyListState = rememberLazyListState()
+
+    // 检查是否可以继续向右滚动 (REQ-025)
+    val showEndIndicator by remember {
+        derivedStateOf {
+            val layoutInfo = lazyListState.layoutInfo
+            val totalItemsCount = layoutInfo.totalItemsCount
+            if (totalItemsCount == 0) return@derivedStateOf false
+
+            val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull()
+            lastVisibleItem != null && lastVisibleItem.index < totalItemsCount - 1
+        }
+    }
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         tonalElevation = 8.dp,
         shadowElevation = 8.dp
     ) {
-        LazyRow(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(vertical = 8.dp),
-            horizontalArrangement = if (actions.size <= 5) Arrangement.SpaceEvenly else Arrangement.spacedBy(4.dp),
-            contentPadding = if (actions.size <= 5) PaddingValues(horizontal = 4.dp) else PaddingValues(horizontal = 8.dp)
         ) {
-            items(actions) { action ->
-                BottomBarActionItem(
-                    icon = action.icon,
-                    label = action.label,
-                    color = action.color,
-                    onClick = action.onClick,
-                    enabled = action.enabled
-                )
+            LazyRow(
+                state = lazyListState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = if (actions.size <= 5) Arrangement.SpaceEvenly else Arrangement.spacedBy(4.dp),
+                contentPadding = if (actions.size <= 5) PaddingValues(horizontal = 4.dp) else PaddingValues(horizontal = 8.dp, vertical = 0.dp).also {
+                    // 为右侧渐变指示器预留空间
+                    if (showEndIndicator) PaddingValues(start = 8.dp, end = 40.dp)
+                }
+            ) {
+                items(actions) { action ->
+                    BottomBarActionItem(
+                        icon = action.icon,
+                        label = action.label,
+                        color = action.color,
+                        onClick = action.onClick,
+                        enabled = action.enabled
+                    )
+                }
+            }
+
+            // 右侧渐变遮罩提示 (REQ-025)
+            if (showEndIndicator) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .width(40.dp)
+                        .fillMaxHeight()
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+                                )
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = "更多操作",
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
     }
@@ -189,7 +256,7 @@ fun permanentDeleteAction(onClick: () -> Unit, enabled: Boolean = true) = Bottom
  */
 @Composable
 fun resetAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
-    icon = Icons.Default.Undo,
+    icon = Icons.AutoMirrored.Filled.Undo,
     label = "重置",
     color = MaterialTheme.colorScheme.onSurfaceVariant,
     onClick = onClick,
@@ -287,6 +354,42 @@ fun discardAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarActio
     icon = Icons.Default.Delete,
     label = "丢弃",
     color = TrashRed,
+    onClick = onClick,
+    enabled = enabled
+)
+
+/**
+ * Create a "Clear" (清除) action - clear all selections (REQ-031).
+ */
+@Composable
+fun clearAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
+    icon = Icons.Default.Clear,
+    label = "清除",
+    color = MaterialTheme.colorScheme.onSurfaceVariant,
+    onClick = onClick,
+    enabled = enabled
+)
+
+/**
+ * Create a "Compare" (对比) action - enter compare mode (REQ-031).
+ */
+@Composable
+fun compareAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
+    icon = Icons.AutoMirrored.Filled.CompareArrows,
+    label = "对比",
+    color = MaterialTheme.colorScheme.primary,
+    onClick = onClick,
+    enabled = enabled
+)
+
+/**
+ * Create a "Change Status" (改状态) action - batch change status (REQ-048).
+ */
+@Composable
+fun changeStatusAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
+    icon = Icons.Default.SwapVert,
+    label = "改状态",
+    color = MaterialTheme.colorScheme.secondary,
     onClick = onClick,
     enabled = enabled
 )

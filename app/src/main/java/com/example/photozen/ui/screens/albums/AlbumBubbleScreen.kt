@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -55,6 +56,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.source.Album
+import com.example.photozen.ui.components.CompactSortingButton
 import com.example.photozen.ui.components.SystemAlbumPickerDialog
 import com.example.photozen.ui.components.bubble.BubbleGraphView
 import com.example.photozen.ui.theme.KeepGreen
@@ -156,8 +158,8 @@ fun AlbumBubbleScreen(
                     // View mode toggle
                     IconButton(onClick = { viewModel.toggleViewMode() }) {
                         Icon(
-                            imageVector = if (uiState.viewMode == AlbumViewMode.BUBBLE) 
-                                Icons.Default.FormatListBulleted else Icons.Default.BubbleChart,
+                            imageVector = if (uiState.viewMode == AlbumViewMode.BUBBLE)
+                                Icons.AutoMirrored.Filled.List else Icons.Default.BubbleChart,
                             contentDescription = "切换视图"
                         )
                     }
@@ -535,20 +537,12 @@ private fun AlbumListItem(
                 )
             }
             
-            // Start sorting button (only if unsorted photos exist)
-            if (album.unsortedCount > 0) {
-                FilledTonalIconButton(
-                    onClick = onSortClick,
-                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "开始整理"
-                    )
-                }
-            }
+            // Start sorting button (REQ-062: 统一样式)
+            CompactSortingButton(
+                totalCount = album.totalCount,
+                sortedCount = album.sortedCount,
+                onClick = onSortClick
+            )
         }
     }
 }
@@ -664,20 +658,12 @@ private fun sh.calvin.reorderable.ReorderableCollectionItemScope.AlbumListItemWi
                 )
             }
             
-            // Start sorting button (only if unsorted photos exist)
-            if (album.unsortedCount > 0) {
-                FilledTonalIconButton(
-                    onClick = onSortClick,
-                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "开始整理"
-                    )
-                }
-            }
+            // Start sorting button (REQ-062: 统一样式)
+            CompactSortingButton(
+                totalCount = album.totalCount,
+                sortedCount = album.sortedCount,
+                onClick = onSortClick
+            )
         }
     }
 }

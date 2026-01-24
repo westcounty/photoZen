@@ -46,7 +46,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Undo
-import androidx.compose.material.icons.filled.CompareArrows
+import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.FilterAltOff
 import androidx.compose.material.icons.filled.GridView
@@ -122,12 +122,18 @@ import com.example.photozen.ui.components.openImageWithApp
 import com.example.photozen.ui.components.SelectionTopBar
 import com.example.photozen.ui.components.SelectionBottomBar
 import com.example.photozen.ui.components.BottomBarConfigs
+import com.example.photozen.ui.components.SortDropdownButton
+import com.example.photozen.ui.components.SortOption
+import com.example.photozen.ui.components.SortOptions
+import com.example.photozen.ui.components.fullscreen.UnifiedFullscreenViewer
+import com.example.photozen.ui.components.fullscreen.FullscreenActionType
 import com.example.photozen.ui.state.UiEvent
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.SnackbarResult
+import com.example.photozen.ui.components.onboarding.PinchZoomOnboarding
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -156,6 +162,10 @@ fun PhotoListScreen(
     
     // Phase 3-9: 删除确认弹窗状态
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
+
+    // REQ-032, REQ-034: 全屏预览状态
+    var showFullscreenViewer by remember { mutableStateOf(false) }
+    var fullscreenInitialIndex by remember { mutableStateOf(0) }
     
     // 长按引导状态
     val longPressGuide = rememberGuideState(
@@ -163,6 +173,12 @@ fun PhotoListScreen(
         guideRepository = viewModel.guideRepository
     )
     var gridBounds by remember { mutableStateOf<Rect?>(null) }
+
+    // REQ-067: 双指缩放新手引导
+    val pinchZoomGuide = rememberGuideState(
+        guideKey = GuideKey.PINCH_ZOOM_GUIDE,
+        guideRepository = viewModel.guideRepository
+    )
     
     // 处理 UI 事件（撤销等）
     LaunchedEffect(Unit) {
@@ -201,7 +217,30 @@ fun PhotoListScreen(
         PhotoStatus.MAYBE -> "待定的照片" to MaybeAmber
         PhotoStatus.UNSORTED -> "未整理的照片" to MaterialTheme.colorScheme.primary
     }
-    
+
+    // REQ-032, REQ-034: 全屏预览界面
+    if (showFullscreenViewer && uiState.photos.isNotEmpty()) {
+        UnifiedFullscreenViewer(
+            photos = uiState.photos,
+            initialIndex = fullscreenInitialIndex.coerceIn(0, uiState.photos.lastIndex),
+            onExit = { showFullscreenViewer = false },
+            onAction = { actionType, photo ->
+                when (actionType) {
+                    FullscreenActionType.COPY -> viewModel.duplicatePhoto(photo.id)
+                    FullscreenActionType.OPEN_WITH -> {
+                        uiState.defaultExternalApp?.let { pkg ->
+                            openImageWithApp(context, Uri.parse(photo.systemUri), pkg)
+                        }
+                    }
+                    FullscreenActionType.EDIT -> onNavigateToEditor(photo.id)
+                    FullscreenActionType.SHARE -> shareImage(context, Uri.parse(photo.systemUri))
+                    FullscreenActionType.DELETE -> viewModel.moveToTrash(photo.id)
+                }
+            }
+        )
+        return
+    }
+
     // Handle back press in selection mode
     val handleBack: () -> Unit = {
         if (uiState.isSelectionMode) {
@@ -250,7 +289,7 @@ fun PhotoListScreen(
                         if (uiState.status == PhotoStatus.MAYBE && uiState.photos.isNotEmpty()) {
                             IconButton(onClick = onNavigateToLightTable) {
                                 Icon(
-                                    imageVector = Icons.Default.CompareArrows,
+                                    imageVector = Icons.AutoMirrored.Filled.CompareArrows,
                                     contentDescription = "对比模式"
                                 )
                             }
@@ -283,18 +322,41 @@ fun PhotoListScreen(
                             }
                         }
                         
-                        // Sort button
+                        // Sort dropdown button (REQ-022, REQ-028, REQ-033, REQ-038)
                         if (uiState.photos.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.cycleSortOrder() }) {
-                                Icon(
-                                    imageVector = when (uiState.sortOrder) {
-                                        PhotoListSortOrder.DATE_DESC -> Icons.Default.ArrowDownward
-                                        PhotoListSortOrder.DATE_ASC -> Icons.Default.ArrowUpward
-                                        PhotoListSortOrder.RANDOM -> Icons.Default.Shuffle
-                                    },
-                                    contentDescription = "排序: ${uiState.sortOrder.displayName}"
-                                )
+                            // 将 PhotoListSortOrder 转换为 SortOption
+                            val currentSortOption = when (uiState.sortOrder) {
+                                PhotoListSortOrder.DATE_DESC -> SortOptions.photoTimeDesc
+                                PhotoListSortOrder.DATE_ASC -> SortOptions.photoTimeAsc
+                                PhotoListSortOrder.ADDED_DESC -> SortOptions.addedTimeDesc
+                                PhotoListSortOrder.ADDED_ASC -> SortOptions.addedTimeAsc
+                                PhotoListSortOrder.RANDOM -> SortOptions.random
                             }
+                            val sortOptions = uiState.availableSortOptions.map { order ->
+                                when (order) {
+                                    PhotoListSortOrder.DATE_DESC -> SortOptions.photoTimeDesc
+                                    PhotoListSortOrder.DATE_ASC -> SortOptions.photoTimeAsc
+                                    PhotoListSortOrder.ADDED_DESC -> SortOptions.addedTimeDesc
+                                    PhotoListSortOrder.ADDED_ASC -> SortOptions.addedTimeAsc
+                                    PhotoListSortOrder.RANDOM -> SortOptions.random
+                                }
+                            }
+
+                            SortDropdownButton(
+                                currentSort = currentSortOption,
+                                options = sortOptions,
+                                onSortSelected = { option ->
+                                    val order = when (option.id) {
+                                        "photo_time_desc" -> PhotoListSortOrder.DATE_DESC
+                                        "photo_time_asc" -> PhotoListSortOrder.DATE_ASC
+                                        "added_time_desc" -> PhotoListSortOrder.ADDED_DESC
+                                        "added_time_asc" -> PhotoListSortOrder.ADDED_ASC
+                                        "random" -> PhotoListSortOrder.RANDOM
+                                        else -> PhotoListSortOrder.DATE_DESC
+                                    }
+                                    viewModel.setSortOrder(order)
+                                }
+                            )
                         }
                         
                         // Phase 6.2: Album filter toggle button (KEEP status only)
@@ -347,29 +409,19 @@ fun PhotoListScreen(
                                 onAlbum = { viewModel.showAlbumDialog() },
                                 onMaybe = { viewModel.moveSelectedToMaybe() },
                                 onTrash = { showDeleteConfirmSheet = true },
-                                onReset = { viewModel.resetSelectedToUnsorted() }
+                                onReset = { viewModel.resetSelectedToUnsorted() },
+                                onPermanentDelete = { showDeleteConfirmSheet = true } // REQ-041
                             )
                         }
                     )
-                    PhotoStatus.MAYBE -> BottomBarConfigs.adaptive(
-                        selectedCount = uiState.selectedCount,
-                        singleSelectActions = {
-                            BottomBarConfigs.maybeListSingleSelect(
-                                onEdit = { singleSelectedPhoto?.let { onNavigateToEditor(it.id) } },
-                                onShare = { singleSelectedPhoto?.let { shareImage(context, Uri.parse(it.systemUri)) } },
-                                onKeep = { viewModel.moveSelectedToKeep() },
-                                onTrash = { showDeleteConfirmSheet = true },
-                                onReset = { viewModel.resetSelectedToUnsorted() }
-                            )
-                        },
-                        multiSelectActions = {
-                            BottomBarConfigs.maybeListMultiSelect(
-                                onKeep = { viewModel.moveSelectedToKeep() },
-                                onTrash = { showDeleteConfirmSheet = true },
-                                onReset = { viewModel.resetSelectedToUnsorted() }
-                            )
-                        }
-                    )
+                    PhotoStatus.MAYBE -> {
+                        // REQ-031: 待定列表使用清除+对比按钮
+                        BottomBarConfigs.maybeListCompareSelect(
+                            selectedCount = uiState.selectedCount,
+                            onClear = { viewModel.exitSelectionMode() },
+                            onCompare = { onNavigateToLightTable() }
+                        )
+                    }
                     PhotoStatus.TRASH -> BottomBarConfigs.adaptive(
                         selectedCount = uiState.selectedCount,
                         singleSelectActions = {
@@ -464,10 +516,29 @@ fun PhotoListScreen(
                                 photos = uiState.photos,
                                 selectedIds = uiState.selectedPhotoIds,
                                 onSelectionChanged = { newSelection ->
-                                    viewModel.updateSelection(newSelection)
+                                    // REQ-029, REQ-030: 待定列表选择限制
+                                    val applied = viewModel.updateSelection(newSelection)
+                                    if (!applied) {
+                                        // 超过限制，显示提示
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("最多可对比${MAYBE_LIST_SELECTION_LIMIT}张照片")
+                                        }
+                                    }
                                 },
-                                onPhotoClick = { photoId, _ ->
-                                    // Non-selection mode click - could open fullscreen viewer
+                                onPhotoClick = { photoId, index ->
+                                    if (!uiState.isSelectionMode) {
+                                        // 非选择模式 - 进入全屏预览 (REQ-032)
+                                        fullscreenInitialIndex = index
+                                        showFullscreenViewer = true
+                                    } else {
+                                        // 选择模式 - 切换选中状态
+                                        val success = viewModel.togglePhotoSelectionWithLimit(photoId)
+                                        if (!success) {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar("最多可对比${MAYBE_LIST_SELECTION_LIMIT}张照片")
+                                            }
+                                        }
+                                    }
                                 },
                                 onPhotoLongPress = { photoId, photoUri ->
                                     // Show action sheet for single photo
@@ -501,6 +572,13 @@ fun PhotoListScreen(
                                     },
                                     arrowDirection = ArrowDirection.UP,
                                     onDismiss = longPressGuide.dismiss
+                                )
+                            }
+
+                            // REQ-067: 双指缩放新手引导（首次进入且有照片时显示）
+                            if (pinchZoomGuide.shouldShow && uiState.photos.isNotEmpty()) {
+                                PinchZoomOnboarding(
+                                    onDismiss = pinchZoomGuide.dismiss
                                 )
                             }
                         }
