@@ -3,6 +3,7 @@ package com.example.photozen.data.repository
 import com.example.photozen.data.local.dao.SortingRecordDao
 import com.example.photozen.data.local.entity.SortingRecordEntity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import java.text.SimpleDateFormat
 import java.util.*
@@ -150,7 +151,34 @@ class StatsRepository @Inject constructor(
             consecutiveDays = consecutiveDays
         )
     }
-    
+
+    /**
+     * 观察统计摘要（响应式版本）
+     * 当整理记录变化时自动更新
+     */
+    fun observeStatsSummary(): Flow<StatsSummary> {
+        val calendar = Calendar.getInstance()
+        val today = dateFormat.format(calendar.time)
+        val weekStart = getWeekStartDate()
+        val monthPrefix = today.substring(0, 7)
+
+        return combine(
+            sortingRecordDao.observeTotalStats(),
+            sortingRecordDao.observeStatsFromDate(weekStart),
+            sortingRecordDao.observeMonthStats(monthPrefix)
+        ) { totalStats, weekStats, monthStats ->
+            StatsSummary(
+                totalSorted = totalStats?.safeTotal ?: 0,
+                weekSorted = weekStats?.safeTotal ?: 0,
+                monthSorted = monthStats?.safeTotal ?: 0,
+                weekKept = weekStats?.safeKept ?: 0,
+                weekTrashed = weekStats?.safeTrashed ?: 0,
+                weekMaybe = weekStats?.safeMaybe ?: 0,
+                consecutiveDays = 0 // Consecutive days calculation is expensive, use cached value
+            )
+        }
+    }
+
     /**
      * 观察今日整理记录
      */

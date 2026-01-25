@@ -118,63 +118,23 @@ sealed interface Screen {
     ) : Screen
     
     /**
-     * Smart Gallery screen - AI-powered photo features (experimental).
-     * Includes: AI search, similar photos, person grouping, map view.
-     */
-    @Serializable
-    data object SmartGallery : Screen
-    
-    // ==================== Smart Gallery Sub-screens ====================
-    
-    /**
-     * Label Browser screen - browse photos by AI-detected labels.
-     */
-    @Serializable
-    data object LabelBrowser : Screen
-    
-    /**
-     * Label Photos screen - display photos with a specific AI label.
-     * @param label The label to filter by
-     */
-    @Serializable
-    data class LabelPhotos(val label: String) : Screen
-    
-    /**
-     * Person List screen - browse all detected persons.
-     */
-    @Serializable
-    data object PersonList : Screen
-    
-    /**
-     * Person Detail screen - view photos of a specific person.
-     * @param personId The ID of the person
-     */
-    @Serializable
-    data class PersonDetail(val personId: String) : Screen
-    
-    /**
-     * Smart Search screen - natural language photo search.
-     */
-    @Serializable
-    data object SmartSearch : Screen
-    
-    /**
-     * Similar Photos screen - find similar and duplicate photos.
-     */
-    @Serializable
-    data object SimilarPhotos : Screen
-    
-    /**
-     * Map View screen - view photos on a map (MapLibre).
-     */
-    @Serializable
-    data object MapView : Screen
-    
-    /**
      * Timeline screen - smart event-based timeline view.
      */
     @Serializable
     data object Timeline : Screen
+
+    /**
+     * Timeline Detail screen - displays all photos in a specific time range.
+     * @param title The display title (e.g., "2024年1月")
+     * @param startTime Start time in milliseconds
+     * @param endTime End time in milliseconds
+     */
+    @Serializable
+    data class TimelineDetail(
+        val title: String,
+        val startTime: Long,
+        val endTime: Long
+    ) : Screen
     
     // ==================== Share Screens ====================
     

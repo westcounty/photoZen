@@ -4,14 +4,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.domain.usecase.GetMaybePhotosUseCase
 import com.example.photozen.domain.usecase.PhotoBatchOperationUseCase
 import com.example.photozen.domain.usecase.SortPhotoUseCase
+import com.example.photozen.ui.components.PhotoGridMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -26,6 +29,16 @@ enum class LightTableMode {
 }
 
 /**
+ * Sort order for Light Table photos.
+ */
+enum class LightTableSortOrder(val displayName: String) {
+    PHOTO_DATE_DESC("照片时间倒序"),
+    PHOTO_DATE_ASC("照片时间正序"),
+    ADDED_DATE_DESC("添加时间倒序"),
+    ADDED_DATE_ASC("添加时间正序")
+}
+
+/**
  * UI State for Light Table screen.
  */
 data class LightTableUiState(
@@ -34,24 +47,28 @@ data class LightTableUiState(
     val selectedInComparison: Set<String> = emptySet(), // 对比模式中选中的照片（用于保留）
     val mode: LightTableMode = LightTableMode.SELECTION,
     val isLoading: Boolean = true,
-    val error: String? = null
+    val error: String? = null,
+    // 新增：排序和视图模式
+    val sortOrder: LightTableSortOrder = LightTableSortOrder.PHOTO_DATE_DESC,
+    val gridMode: PhotoGridMode = PhotoGridMode.WATERFALL,
+    val gridColumns: Int = 3
 ) {
     val comparisonPhotos: List<PhotoEntity>
         get() = allMaybePhotos.filter { it.id in selectedForComparison }
             .sortedBy { selectedForComparison.toList().indexOf(it.id) }
-    
+
     val selectionCount: Int
         get() = selectedForComparison.size
-    
+
     val canCompare: Boolean
         get() = selectedForComparison.size >= 2
-    
+
     val maxSelectionReached: Boolean
         get() = selectedForComparison.size >= MAX_COMPARISON_PHOTOS
-    
+
     val hasSelectedInComparison: Boolean
         get() = selectedInComparison.isNotEmpty()
-    
+
     companion object {
         const val MAX_COMPARISON_PHOTOS = 6
     }
@@ -67,7 +84,11 @@ private data class InternalState(
     val isLoading: Boolean = true,
     val error: String? = null,
     /** When set, only show photos with these IDs (for workflow session mode) */
-    val sessionPhotoIds: Set<String>? = null
+    val sessionPhotoIds: Set<String>? = null,
+    // 新增：排序和视图模式
+    val sortOrder: LightTableSortOrder = LightTableSortOrder.PHOTO_DATE_DESC,
+    val gridMode: PhotoGridMode = PhotoGridMode.WATERFALL,
+    val gridColumns: Int = 3
 )
 
 /**
@@ -77,12 +98,13 @@ private data class InternalState(
 class LightTableViewModel @Inject constructor(
     private val getMaybePhotosUseCase: GetMaybePhotosUseCase,
     private val sortPhotoUseCase: SortPhotoUseCase,
+    private val preferencesRepository: PreferencesRepository,
     // Phase 4: 批量操作 UseCase
     private val batchOperationUseCase: PhotoBatchOperationUseCase
 ) : ViewModel() {
-    
+
     private val _internalState = MutableStateFlow(InternalState())
-    
+
     val uiState: StateFlow<LightTableUiState> = combine(
         getMaybePhotosUseCase(),
         _internalState
@@ -93,24 +115,44 @@ class LightTableViewModel @Inject constructor(
         } else {
             photos
         }
-        
+
+        // Sort photos based on current sort order
+        val sortedPhotos = when (internal.sortOrder) {
+            LightTableSortOrder.PHOTO_DATE_DESC -> filteredPhotos.sortedByDescending { it.dateTaken }
+            LightTableSortOrder.PHOTO_DATE_ASC -> filteredPhotos.sortedBy { it.dateTaken }
+            LightTableSortOrder.ADDED_DATE_DESC -> filteredPhotos.sortedByDescending { it.dateAdded }
+            LightTableSortOrder.ADDED_DATE_ASC -> filteredPhotos.sortedBy { it.dateAdded }
+        }
+
         LightTableUiState(
-            allMaybePhotos = filteredPhotos,
+            allMaybePhotos = sortedPhotos,
             selectedForComparison = internal.selectedForComparison,
             selectedInComparison = internal.selectedInComparison,
             mode = internal.mode,
-            isLoading = internal.isLoading && filteredPhotos.isEmpty(),
-            error = internal.error
+            isLoading = internal.isLoading && sortedPhotos.isEmpty(),
+            error = internal.error,
+            sortOrder = internal.sortOrder,
+            gridMode = internal.gridMode,
+            gridColumns = internal.gridColumns
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = LightTableUiState()
     )
-    
+
     init {
         viewModelScope.launch {
-            _internalState.update { it.copy(isLoading = false) }
+            // Load saved grid settings
+            val savedColumns = preferencesRepository.getGridColumns(PreferencesRepository.GridScreen.MAYBE).first()
+            val savedMode = preferencesRepository.getGridMode(PreferencesRepository.GridScreen.MAYBE).first()
+            _internalState.update {
+                it.copy(
+                    isLoading = false,
+                    gridColumns = savedColumns,
+                    gridMode = savedMode
+                )
+            }
         }
     }
     
@@ -236,5 +278,34 @@ class LightTableViewModel @Inject constructor(
     
     fun clearError() {
         _internalState.update { it.copy(error = null) }
+    }
+
+    /**
+     * Set sort order for photos.
+     */
+    fun setSortOrder(order: LightTableSortOrder) {
+        _internalState.update { it.copy(sortOrder = order) }
+    }
+
+    /**
+     * Set grid display mode.
+     */
+    fun setGridMode(mode: PhotoGridMode) {
+        _internalState.update { it.copy(gridMode = mode) }
+        viewModelScope.launch {
+            preferencesRepository.setGridMode(PreferencesRepository.GridScreen.MAYBE, mode)
+        }
+    }
+
+    /**
+     * Set grid columns.
+     */
+    fun setGridColumns(columns: Int) {
+        val minCols = if (_internalState.value.gridMode == PhotoGridMode.WATERFALL) 1 else 2
+        val newColumns = columns.coerceIn(minCols, 5)
+        _internalState.update { it.copy(gridColumns = newColumns) }
+        viewModelScope.launch {
+            preferencesRepository.setGridColumns(PreferencesRepository.GridScreen.MAYBE, newColumns)
+        }
     }
 }

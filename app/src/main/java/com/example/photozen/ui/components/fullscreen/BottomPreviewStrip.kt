@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -36,6 +38,7 @@ import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.ui.theme.PicZenTokens
 import kotlin.math.abs
+import kotlin.math.max
 
 /**
  * PhotoZen 底部照片预览条 (REQ-014, DES-026)
@@ -71,66 +74,78 @@ fun BottomPreviewStrip(
     currentItemWidth: Dp = PicZenTokens.ComponentSize.PreviewStripCurrentItem
 ) {
     val listState = rememberLazyListState()
+    val density = LocalDensity.current
 
-    // 当前索引变化时，滚动到居中位置
-    LaunchedEffect(currentIndex) {
-        // 计算滚动偏移使当前项居中
-        val viewportWidth = listState.layoutInfo.viewportSize.width
-        if (viewportWidth > 0 && photos.isNotEmpty()) {
-            // 简化处理：滚动到当前项
-            listState.animateScrollToItem(
-                index = maxOf(0, currentIndex),
-                scrollOffset = 0
-            )
-        }
-    }
-
-    // 检测滑动时的中央项
-    val centerIndex by remember {
-        derivedStateOf {
-            val layoutInfo = listState.layoutInfo
-            if (layoutInfo.visibleItemsInfo.isEmpty()) {
-                currentIndex
-            } else {
-                val viewportCenter = layoutInfo.viewportStartOffset + layoutInfo.viewportSize.width / 2
-                layoutInfo.visibleItemsInfo.minByOrNull { itemInfo ->
-                    abs(itemInfo.offset + itemInfo.size / 2 - viewportCenter)
-                }?.index ?: currentIndex
-            }
-        }
-    }
-
-    // 滑动结束时更新当前索引
-    LaunchedEffect(listState.isScrollInProgress, centerIndex) {
-        if (!listState.isScrollInProgress && centerIndex != currentIndex) {
-            onIndexChange(centerIndex)
-        }
-    }
-
-    LazyRow(
-        state = listState,
+    // 使用 BoxWithConstraints 获取可用宽度，计算让首尾照片能居中的内边距
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .background(Color.Black.copy(alpha = 0.7f))
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp)
+            .padding(vertical = 8.dp)
     ) {
-        itemsIndexed(
-            items = photos,
-            key = { _, photo -> "preview_${photo.id}" }
-        ) { index, photo ->
-            val isCurrent = index == currentIndex
-            val width = if (isCurrent) currentItemWidth else itemWidth
-            val height = width * 2  // 高宽比 2:1
+        // 计算水平内边距：(视口宽度 - 当前项宽度) / 2
+        // 这样第一张和最后一张照片也能滚动到屏幕中央
+        val horizontalPadding = with(density) {
+            val viewportWidth = maxWidth.toPx()
+            val currentItemWidthPx = currentItemWidth.toPx()
+            val padding = (viewportWidth - currentItemWidthPx) / 2f
+            max(16f, padding).toDp()  // 最小 16dp
+        }
 
-            PreviewStripItem(
-                photo = photo,
-                isCurrent = isCurrent,
-                width = width,
-                height = height,
-                onClick = { onIndexChange(index) }
-            )
+        // 当前索引变化时，滚动到居中位置
+        LaunchedEffect(currentIndex) {
+            if (photos.isNotEmpty()) {
+                listState.animateScrollToItem(
+                    index = maxOf(0, currentIndex),
+                    scrollOffset = 0
+                )
+            }
+        }
+
+        // 检测滑动时的中央项
+        val centerIndex by remember {
+            derivedStateOf {
+                val layoutInfo = listState.layoutInfo
+                if (layoutInfo.visibleItemsInfo.isEmpty()) {
+                    currentIndex
+                } else {
+                    val viewportCenter = layoutInfo.viewportStartOffset + layoutInfo.viewportSize.width / 2
+                    layoutInfo.visibleItemsInfo.minByOrNull { itemInfo ->
+                        abs(itemInfo.offset + itemInfo.size / 2 - viewportCenter)
+                    }?.index ?: currentIndex
+                }
+            }
+        }
+
+        // 滑动结束时更新当前索引
+        LaunchedEffect(listState.isScrollInProgress, centerIndex) {
+            if (!listState.isScrollInProgress && centerIndex != currentIndex) {
+                onIndexChange(centerIndex)
+            }
+        }
+
+        LazyRow(
+            state = listState,
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            contentPadding = PaddingValues(horizontal = horizontalPadding)
+        ) {
+            itemsIndexed(
+                items = photos,
+                key = { _, photo -> "preview_${photo.id}" }
+            ) { index, photo ->
+                val isCurrent = index == currentIndex
+                val width = if (isCurrent) currentItemWidth else itemWidth
+                val height = width * 2  // 高宽比 2:1
+
+                PreviewStripItem(
+                    photo = photo,
+                    isCurrent = isCurrent,
+                    width = width,
+                    height = height,
+                    onClick = { onIndexChange(index) }
+                )
+            }
         }
     }
 }

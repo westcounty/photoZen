@@ -12,9 +12,6 @@ import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.MediaStoreDataSource
 import com.example.photozen.domain.usecase.DailyTaskStatus
 import com.example.photozen.domain.usecase.GetDailyTaskStatusUseCase
-import com.example.photozen.data.local.dao.FaceDao
-import com.example.photozen.data.local.dao.PhotoAnalysisDao
-import com.example.photozen.data.local.dao.PhotoLabelDao
 import com.example.photozen.domain.usecase.GetPhotosUseCase
 import com.example.photozen.domain.usecase.GetUnsortedPhotosUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
@@ -59,13 +56,6 @@ data class HomeUiState(
     val photoFilterMode: PhotoFilterMode = PhotoFilterMode.ALL,
     val photoClassificationMode: PhotoClassificationMode = PhotoClassificationMode.TAG,
     val dailyTaskStatus: DailyTaskStatus? = null,
-    val experimentalEnabled: Boolean = false,
-    // Smart Gallery stats
-    val smartGalleryPersonCount: Int = 0,
-    val smartGalleryLabelCount: Int = 0,
-    val smartGalleryGpsPhotoCount: Int = 0,
-    val smartGalleryAnalysisProgress: Float = 0f,
-    val smartGalleryIsAnalyzing: Boolean = false,
     // Changelog and Quick Start
     val shouldShowChangelog: Boolean = false,
     val shouldShowQuickStart: Boolean = false,
@@ -115,11 +105,6 @@ class HomeViewModel @Inject constructor(
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val photoRepository: PhotoRepository,
     private val getDailyTaskStatusUseCase: GetDailyTaskStatusUseCase,
-    // Smart Gallery DAOs
-    private val faceDao: FaceDao,
-    private val photoLabelDao: PhotoLabelDao,
-    private val photoAnalysisDao: PhotoAnalysisDao,
-    private val photoDao: com.example.photozen.data.local.dao.PhotoDao,
     val guideRepository: GuideRepository,
     private val statsRepository: StatsRepository
 ) : ViewModel() {
@@ -140,8 +125,7 @@ class HomeViewModel @Inject constructor(
     // Phase 1-D: 整理模式选择弹窗状态
     private val _showSortModeSheet = MutableStateFlow(false)
     
-    // Phase 3: 整理统计摘要
-    private val _statsSummary = MutableStateFlow(StatsSummary.EMPTY)
+    // Phase 3: 整理统计摘要（已改为使用响应式 observeStatsSummary）
     
     /**
      * Get filtered unsorted count based on filter mode.
@@ -273,60 +257,8 @@ class HomeViewModel @Inject constructor(
             }
         }
     }
-    
-    /**
-     * Phase 4: 智能画廊子状态 Flow
-     * 使用 SmartGalleryState 替换旧的 SmartGalleryStats
-     * 
-     * NOTE: Only queries the database when ENABLE_SMART_GALLERY is true.
-     * When disabled, returns empty stats to avoid unnecessary database operations.
-     * 
-     * enabled 字段来自用户偏好设置（experimentalEnabled）
-     */
-    private val smartGalleryFlow: Flow<SmartGalleryState> = if (BuildConfig.ENABLE_SMART_GALLERY) {
-        // 先组合前 5 个 Flow
-        combine(
-            preferencesRepository.getExperimentalEnabled(),
-            faceDao.getPersonCountFlow(),
-            photoLabelDao.getUniqueLabelCountFlow(),
-            photoDao.getPhotosWithGpsCount(),
-            photoAnalysisDao.getAnalyzedCountFlow()
-        ) { enabled, personCount, labelCount, gpsCount, analyzedCount ->
-            // 使用 data class 临时存储
-            SmartGalleryIntermediate(enabled, personCount, labelCount, gpsCount, analyzedCount)
-        }.let { intermediateFlow ->
-            // 添加 totalPhotos 计算 analysisProgress
-            combine(intermediateFlow, getPhotosUseCase.getTotalCount()) { intermediate, totalPhotos ->
-                val analysisProgress = if (totalPhotos > 0) {
-                    intermediate.analyzedCount.toFloat() / totalPhotos
-                } else 0f
-                SmartGalleryState(
-                    enabled = intermediate.enabled,
-                    personCount = intermediate.personCount,
-                    labelCount = intermediate.labelCount,
-                    gpsPhotoCount = intermediate.gpsPhotoCount,
-                    analysisProgress = analysisProgress,
-                    isAnalyzing = false
-                )
-            }
-        }
-    } else {
-        // When Smart Gallery is disabled, just track experimentalEnabled setting
-        preferencesRepository.getExperimentalEnabled().map { enabled ->
-            SmartGalleryState(enabled = enabled)
-        }
-    }
-    
-    // Phase 4: 智能画廊中间数据（用于 combine 分组）
-    private data class SmartGalleryIntermediate(
-        val enabled: Boolean,
-        val personCount: Int,
-        val labelCount: Int,
-        val gpsPhotoCount: Int,
-        val analyzedCount: Int
-    )
-    
-    // ==================== Phase 4: 新的子状态 Flow ====================
+
+    // ==================== Phase 4: 子状态 Flow ====================
     
     /**
      * Phase 4: 照片统计子状态 Flow
@@ -387,13 +319,14 @@ class HomeViewModel @Inject constructor(
     /**
      * Phase 4: 功能配置子状态 Flow
      * 合并了旧的 extraDataFlow 和 dialogStatesFlow 中的配置部分
+     * 使用响应式 observeStatsSummary 替代一次性加载，确保数据一致性
      */
     private val featureConfigFlow: Flow<FeatureConfigState> = combine(
         preferencesRepository.getPhotoFilterMode(),
         preferencesRepository.getPhotoClassificationMode(),
         getDailyTaskStatusUseCase(),
         preferencesRepository.getAllAchievementData(),
-        _statsSummary
+        statsRepository.observeStatsSummary()
     ) { filterMode, classificationMode, dailyTask, achievement, statsSummary ->
         FeatureConfigState(
             photoFilterMode = filterMode,
@@ -406,18 +339,17 @@ class HomeViewModel @Inject constructor(
     
     /**
      * Phase 4: UI State exposed to the screen.
-     * 使用 4 个子状态 Flow 组合
+     * 使用 3 个子状态 Flow 组合
      */
     val uiState: StateFlow<HomeUiState> = combine(
         photoStatsFlow,
         uiControlFlow,
-        featureConfigFlow,
-        smartGalleryFlow
-    ) { stats, uiControl, featureConfig, smartGallery ->
+        featureConfigFlow
+    ) { stats, uiControl, featureConfig ->
         // 计算 isLoading：只有在有权限且正在同步时才显示 loading
         // 保持与旧逻辑一致
         val effectiveLoading = uiControl.hasPermission && uiControl.syncState.isLoading
-        
+
         HomeUiState(
             // 照片统计
             totalPhotos = stats.totalPhotos,
@@ -441,14 +373,7 @@ class HomeViewModel @Inject constructor(
             photoClassificationMode = featureConfig.photoClassificationMode,
             dailyTaskStatus = featureConfig.dailyTaskStatus,
             achievementData = featureConfig.achievementData,
-            statsSummary = featureConfig.statsSummary,
-            // 智能画廊
-            experimentalEnabled = smartGallery.enabled,
-            smartGalleryPersonCount = smartGallery.personCount,
-            smartGalleryLabelCount = smartGallery.labelCount,
-            smartGalleryGpsPhotoCount = smartGallery.gpsPhotoCount,
-            smartGalleryAnalysisProgress = smartGallery.analysisProgress,
-            smartGalleryIsAnalyzing = smartGallery.isAnalyzing
+            statsSummary = featureConfig.statsSummary
         )
     }.stateIn(
         scope = viewModelScope,
@@ -476,31 +401,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             checkVersionDialogs()
         }
-        // Load stats summary for home page display
-        viewModelScope.launch {
-            loadStatsSummary()
-        }
-    }
-    
-    /**
-     * Load stats summary from StatsRepository.
-     */
-    private suspend fun loadStatsSummary() {
-        try {
-            val summary = statsRepository.getStatsSummary()
-            _statsSummary.value = summary
-        } catch (e: Exception) {
-            // Stats loading failure doesn't affect main functionality
-        }
-    }
-    
-    /**
-     * Refresh stats summary (call after sorting operations).
-     */
-    fun refreshStatsSummary() {
-        viewModelScope.launch {
-            loadStatsSummary()
-        }
+        // Stats summary is now observed via reactive flow (observeStatsSummary)
     }
     
     /**

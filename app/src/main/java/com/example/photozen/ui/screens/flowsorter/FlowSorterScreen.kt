@@ -52,8 +52,12 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -83,6 +87,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -92,7 +97,8 @@ import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.ui.components.ComboOverlay
 import com.example.photozen.ui.components.DailyTaskTitle
 import com.example.photozen.ui.components.FlowSorterTitle
-import com.example.photozen.ui.components.FullscreenPhotoViewer
+import com.example.photozen.ui.components.fullscreen.UnifiedFullscreenViewer
+import com.example.photozen.ui.components.fullscreen.FullscreenActionType
 import com.example.photozen.ui.components.GuideTooltip
 import com.example.photozen.ui.components.ArrowDirection
 import com.example.photozen.ui.components.SelectableStaggeredPhotoGrid
@@ -103,6 +109,7 @@ import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.components.FilterButton
 import com.example.photozen.ui.components.FilterChipRow
 import com.example.photozen.ui.components.FilterBottomSheet
+import com.example.photozen.ui.components.shareImage
 import com.example.photozen.domain.model.FilterType
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
@@ -143,6 +150,7 @@ fun FlowSorterScreen(
     val sortedCountImmediate by viewModel.sortedCountImmediate.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     // Phase 3-7: 使用设置中的震动反馈开关
     val hapticManager = rememberHapticFeedbackManager(uiState.hapticFeedbackEnabled)
 
@@ -160,13 +168,14 @@ fun FlowSorterScreen(
     val albumsForFilter by viewModel.albumBubblesForFilter.collectAsState()
     var showFilterSheet by remember { mutableStateOf(false) }
     
-    // Fullscreen viewer state
-    var fullscreenPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
-    
+    // Fullscreen viewer state - 使用索引而非单个照片对象
+    var fullscreenPhotoIndex by remember { mutableIntStateOf(-1) }
+    val showFullscreen = fullscreenPhotoIndex >= 0
+
     // Handle back press - exit selection mode first, then fullscreen, then navigate back
-    BackHandler(enabled = fullscreenPhoto != null || uiState.isSelectionMode) {
+    BackHandler(enabled = showFullscreen || uiState.isSelectionMode) {
         when {
-            fullscreenPhoto != null -> fullscreenPhoto = null
+            showFullscreen -> fullscreenPhotoIndex = -1
             uiState.isSelectionMode -> viewModel.clearSelection()
         }
     }
@@ -236,48 +245,68 @@ fun FlowSorterScreen(
                                 onClick = { showFilterSheet = true }
                             )
                             
-                            // Sort order button - distinct icons for each mode
-                            IconButton(onClick = { viewModel.cycleSortOrder() }) {
-                                Icon(
-                                    imageVector = when (uiState.sortOrder) {
-                                        PhotoSortOrder.DATE_DESC -> Icons.Default.ArrowDownward
-                                        PhotoSortOrder.DATE_ASC -> Icons.Default.ArrowUpward
-                                        PhotoSortOrder.RANDOM -> Icons.Default.Shuffle
-                                    },
-                                    contentDescription = "排序: ${uiState.sortOrder.displayName}"
-                                )
-                            }
-                            
-                            // Grid columns toggle (only in list view)
-                            if (uiState.viewMode == FlowSorterViewMode.LIST) {
-                                IconButton(onClick = { viewModel.cycleGridColumns() }) {
+                            // Sort order button - dropdown menu for consistency with other screens
+                            var showSortMenu by remember { mutableStateOf(false) }
+                            Box {
+                                IconButton(onClick = { showSortMenu = true }) {
                                     Icon(
-                                        imageVector = when (uiState.gridColumns) {
-                                            1 -> Icons.Default.ViewColumn
-                                            2 -> Icons.Default.GridView
-                                            else -> Icons.Default.ViewModule
+                                        imageVector = when (uiState.sortOrder) {
+                                            PhotoSortOrder.DATE_DESC -> Icons.Default.ArrowDownward
+                                            PhotoSortOrder.DATE_ASC -> Icons.Default.ArrowUpward
+                                            PhotoSortOrder.RANDOM -> Icons.Default.Shuffle
                                         },
-                                        contentDescription = "${uiState.gridColumns}列视图"
+                                        contentDescription = "排序: ${uiState.sortOrder.displayName}"
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = showSortMenu,
+                                    onDismissRequest = { showSortMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("时间正序") },
+                                        onClick = {
+                                            viewModel.setSortOrder(PhotoSortOrder.DATE_ASC)
+                                            showSortMenu = false
+                                        },
+                                        leadingIcon = if (uiState.sortOrder == PhotoSortOrder.DATE_ASC) {
+                                            { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
+                                        } else null
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("时间倒序") },
+                                        onClick = {
+                                            viewModel.setSortOrder(PhotoSortOrder.DATE_DESC)
+                                            showSortMenu = false
+                                        },
+                                        leadingIcon = if (uiState.sortOrder == PhotoSortOrder.DATE_DESC) {
+                                            { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
+                                        } else null
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("随机") },
+                                        onClick = {
+                                            viewModel.setSortOrder(PhotoSortOrder.RANDOM)
+                                            showSortMenu = false
+                                        },
+                                        leadingIcon = if (uiState.sortOrder == PhotoSortOrder.RANDOM) {
+                                            { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
+                                        } else null
                                     )
                                 }
                             }
                             
-                            // View mode toggle
-                            IconButton(
-                                onClick = { viewModel.toggleViewMode() },
+                            // View mode toggle with column selector (merged for list mode)
+                            FlowSorterViewModeDropdown(
+                                viewMode = uiState.viewMode,
+                                gridColumns = uiState.gridColumns,
+                                onViewModeChanged = { viewModel.setViewMode(it) },
+                                onColumnsChanged = { viewModel.setGridColumns(it) },
                                 modifier = Modifier.onGloballyPositioned { coordinates ->
                                     viewToggleBounds = coordinates.boundsInRoot()
                                 }
-                            ) {
-                                Icon(
-                                    imageVector = if (uiState.viewMode == FlowSorterViewMode.CARD)
-                                        Icons.Default.GridView else Icons.Default.ViewCarousel,
-                                    contentDescription = if (uiState.viewMode == FlowSorterViewMode.CARD)
-                                        "列表视图" else "卡片视图"
-                                )
-                            }
-                            
-                            // Undo button
+                            )
+
+                            // Undo button (only in card mode)
                             AnimatedVisibility(
                                 visible = uiState.lastAction != null && uiState.viewMode == FlowSorterViewMode.CARD,
                                 enter = fadeIn() + scaleIn(),
@@ -292,24 +321,6 @@ fun FlowSorterScreen(
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.Undo,
                                         contentDescription = "撤销"
-                                    )
-                                }
-                            }
-                            
-                            // Refresh button
-                            IconButton(
-                                onClick = { viewModel.syncPhotos() },
-                                enabled = !uiState.isSyncing
-                            ) {
-                                if (uiState.isSyncing) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        strokeWidth = 2.dp
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.Refresh,
-                                        contentDescription = "刷新"
                                     )
                                 }
                             }
@@ -398,9 +409,12 @@ fun FlowSorterContent(
     val hapticManager = rememberHapticFeedbackManager(uiState.hapticFeedbackEnabled)
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    
-    var fullscreenPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
-    
+    val context = LocalContext.current
+
+    // Fullscreen viewer state - 使用索引而非单个照片对象
+    var fullscreenPhotoIndex by remember { mutableIntStateOf(-1) }
+    val showFullscreen = fullscreenPhotoIndex >= 0
+
     // Album picker state
     var showAlbumPicker by remember { mutableStateOf(false) }
     val availableAlbums by viewModel.availableAlbums.collectAsState()
@@ -415,11 +429,11 @@ fun FlowSorterContent(
     // Local view mode state for workflow mode (since we don't have TopAppBar)
     var localViewMode by remember { mutableStateOf(FlowSorterViewMode.CARD) }
     val effectiveViewMode = if (isWorkflowMode) localViewMode else uiState.viewMode
-    
+
     // Handle back press in fullscreen or selection mode
-    BackHandler(enabled = fullscreenPhoto != null || uiState.isSelectionMode) {
+    BackHandler(enabled = showFullscreen || uiState.isSelectionMode) {
         when {
-            fullscreenPhoto != null -> fullscreenPhoto = null
+            showFullscreen -> fullscreenPhotoIndex = -1
             uiState.isSelectionMode -> viewModel.clearSelection()
         }
     }
@@ -507,10 +521,8 @@ fun FlowSorterContent(
                             selectedIds = uiState.selectedPhotoIds,
                             onSelectionChanged = { viewModel.updateSelection(it) },
                             onPhotoClick = { photoId, index ->
-                                val photo = uiState.photos.find { it.id == photoId }
-                                if (photo != null) {
-                                    fullscreenPhoto = photo
-                                }
+                                // 点击进入全屏预览
+                                fullscreenPhotoIndex = index
                             },
                             columns = uiState.gridColumns
                             // onPhotoLongClick removed - long press now only enters selection mode
@@ -667,86 +679,94 @@ fun FlowSorterContent(
                             )
                         }
                     } else {
-                        // Sort order button - distinct icons for each mode
-                        IconButton(
-                            onClick = { viewModel.cycleSortOrder() },
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
-                        ) {
-                            Icon(
-                                imageVector = when (uiState.sortOrder) {
-                                    PhotoSortOrder.DATE_DESC -> Icons.Default.ArrowDownward
-                                    PhotoSortOrder.DATE_ASC -> Icons.Default.ArrowUpward
-                                    PhotoSortOrder.RANDOM -> Icons.Default.Shuffle
-                                },
-                                contentDescription = "排序: ${uiState.sortOrder.displayName}",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        // Grid columns toggle (only in list view)
-                        if (effectiveViewMode == FlowSorterViewMode.LIST) {
-                            Spacer(modifier = Modifier.width(4.dp))
+                        // Sort order button - dropdown menu for consistency with other screens
+                        var showWorkflowSortMenu by remember { mutableStateOf(false) }
+                        Box {
                             IconButton(
-                                onClick = { viewModel.cycleGridColumns() },
+                                onClick = { showWorkflowSortMenu = true },
                                 modifier = Modifier
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
                             ) {
                                 Icon(
-                                    imageVector = when (uiState.gridColumns) {
-                                        1 -> Icons.Default.ViewColumn
-                                        2 -> Icons.Default.GridView
-                                        else -> Icons.Default.ViewModule
+                                    imageVector = when (uiState.sortOrder) {
+                                        PhotoSortOrder.DATE_DESC -> Icons.Default.ArrowDownward
+                                        PhotoSortOrder.DATE_ASC -> Icons.Default.ArrowUpward
+                                        PhotoSortOrder.RANDOM -> Icons.Default.Shuffle
                                     },
-                                    contentDescription = "${uiState.gridColumns}列视图",
+                                    contentDescription = "排序: ${uiState.sortOrder.displayName}",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showWorkflowSortMenu,
+                                onDismissRequest = { showWorkflowSortMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("时间正序") },
+                                    onClick = {
+                                        viewModel.setSortOrder(PhotoSortOrder.DATE_ASC)
+                                        showWorkflowSortMenu = false
+                                    },
+                                    leadingIcon = if (uiState.sortOrder == PhotoSortOrder.DATE_ASC) {
+                                        { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
+                                    } else null
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("时间倒序") },
+                                    onClick = {
+                                        viewModel.setSortOrder(PhotoSortOrder.DATE_DESC)
+                                        showWorkflowSortMenu = false
+                                    },
+                                    leadingIcon = if (uiState.sortOrder == PhotoSortOrder.DATE_DESC) {
+                                        { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
+                                    } else null
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("随机") },
+                                    onClick = {
+                                        viewModel.setSortOrder(PhotoSortOrder.RANDOM)
+                                        showWorkflowSortMenu = false
+                                    },
+                                    leadingIcon = if (uiState.sortOrder == PhotoSortOrder.RANDOM) {
+                                        { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
+                                    } else null
                                 )
                             }
                         }
                         Spacer(modifier = Modifier.width(4.dp))
-                        // View mode toggle button
-                        IconButton(
-                            onClick = {
-                                localViewMode = if (localViewMode == FlowSorterViewMode.CARD) {
-                                    FlowSorterViewMode.LIST
-                                } else {
-                                    FlowSorterViewMode.CARD
-                                }
-                                // Clear selection when switching modes
+                        // View mode dropdown (unified)
+                        WorkflowViewModeDropdown(
+                            viewMode = effectiveViewMode,
+                            gridColumns = uiState.gridColumns,
+                            onViewModeChanged = { newMode ->
+                                localViewMode = newMode
                                 viewModel.clearSelection()
                             },
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
+                            onColumnsChanged = { viewModel.setGridColumns(it) }
+                        )
+                        // Undo button (card mode only)
+                        AnimatedVisibility(
+                            visible = uiState.lastAction != null && effectiveViewMode == FlowSorterViewMode.CARD,
+                            enter = fadeIn() + scaleIn(),
+                            exit = fadeOut() + scaleOut()
                         ) {
-                            Icon(
-                                imageVector = if (localViewMode == FlowSorterViewMode.CARD) 
-                                    Icons.Default.GridView else Icons.Default.ViewCarousel,
-                                contentDescription = if (localViewMode == FlowSorterViewMode.CARD)
-                                    "列表视图" else "卡片视图",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            IconButton(
+                                onClick = { viewModel.undoLastAction() },
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Undo,
+                                    contentDescription = "撤销",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
-            }
-        }
-        
-        // Fullscreen viewer
-        AnimatedContent(
-            targetState = fullscreenPhoto,
-            transitionSpec = {
-                (fadeIn() + scaleIn(initialScale = 0.92f))
-                    .togetherWith(fadeOut() + scaleOut(targetScale = 0.92f))
-            },
-            label = "fullscreen"
-        ) { photo ->
-            if (photo != null) {
-                FullscreenPhotoViewer(
-                    photo = photo,
-                    onDismiss = { fullscreenPhoto = null }
-                )
             }
         }
         
@@ -762,6 +782,28 @@ fun FlowSorterContent(
             uiState.photos.isNotEmpty()) {
             SwipeSortOnboarding(
                 onDismiss = swipeSortFullscreenGuide.dismiss
+            )
+        }
+
+        // Fullscreen viewer - 使用统一的全屏预览组件
+        if (showFullscreen && uiState.photos.isNotEmpty()) {
+            UnifiedFullscreenViewer(
+                photos = uiState.photos,
+                initialIndex = fullscreenPhotoIndex.coerceIn(0, uiState.photos.lastIndex),
+                onExit = { fullscreenPhotoIndex = -1 },
+                onAction = { action, photo ->
+                    when (action) {
+                        FullscreenActionType.COPY -> { /* 复制功能 */ }
+                        FullscreenActionType.OPEN_WITH -> { /* 用其他app打开 */ }
+                        FullscreenActionType.EDIT -> { /* 编辑功能 */ }
+                        FullscreenActionType.SHARE -> {
+                            shareImage(context, android.net.Uri.parse(photo.systemUri))
+                        }
+                        FullscreenActionType.DELETE -> {
+                            // 筛选页面不支持删除，可以提示用户
+                        }
+                    }
+                }
             )
         }
     }
@@ -1214,5 +1256,258 @@ private fun FlowSorterBottomBarActionItem(
             textAlign = TextAlign.Center,
             maxLines = 1
         )
+    }
+}
+
+/**
+ * Workflow 模式下的视图模式下拉菜单（浮动按钮样式）
+ *
+ * 提供卡片/列表模式切换和列数调整功能：
+ * - 卡片模式: 滑动整理
+ * - 列表模式: 网格浏览，支持 1-4 列
+ */
+@Composable
+private fun WorkflowViewModeDropdown(
+    viewMode: FlowSorterViewMode,
+    gridColumns: Int,
+    onViewModeChanged: (FlowSorterViewMode) -> Unit,
+    onColumnsChanged: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier) {
+        IconButton(
+            onClick = { expanded = true },
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
+        ) {
+            Icon(
+                imageVector = if (viewMode == FlowSorterViewMode.CARD)
+                    Icons.Default.ViewCarousel else Icons.Default.GridView,
+                contentDescription = "视图模式",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            // 卡片模式选项
+            DropdownMenuItem(
+                text = { Text("卡片模式") },
+                onClick = {
+                    onViewModeChanged(FlowSorterViewMode.CARD)
+                    expanded = false
+                },
+                leadingIcon = {
+                    if (viewMode == FlowSorterViewMode.CARD) {
+                        Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
+                    } else {
+                        Spacer(modifier = Modifier.size(24.dp))
+                    }
+                },
+                trailingIcon = { Icon(Icons.Default.ViewCarousel, null) }
+            )
+
+            // 列表模式选项
+            DropdownMenuItem(
+                text = { Text("列表模式") },
+                onClick = {
+                    onViewModeChanged(FlowSorterViewMode.LIST)
+                    expanded = false
+                },
+                leadingIcon = {
+                    if (viewMode == FlowSorterViewMode.LIST) {
+                        Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
+                    } else {
+                        Spacer(modifier = Modifier.size(24.dp))
+                    }
+                },
+                trailingIcon = { Icon(Icons.Default.GridView, null) }
+            )
+
+            // 列数选项（仅列表模式时显示）
+            if (viewMode == FlowSorterViewMode.LIST) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text(
+                    text = "列数",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    for (col in 1..4) {
+                        FilterChip(
+                            selected = col == gridColumns,
+                            onClick = {
+                                onColumnsChanged(col)
+                                expanded = false
+                            },
+                            label = { Text("$col") }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * FlowSorter 视图模式下拉菜单
+ *
+ * 提供卡片/列表模式切换和列数调整功能：
+ * - 卡片模式: 滑动整理
+ * - 列表模式: 网格浏览，支持 1-4 列
+ *
+ * @param viewMode 当前视图模式
+ * @param gridColumns 当前列数（仅列表模式有效）
+ * @param onViewModeChanged 视图模式改变回调
+ * @param onColumnsChanged 列数改变回调
+ * @param modifier Modifier
+ */
+@Composable
+private fun FlowSorterViewModeDropdown(
+    viewMode: FlowSorterViewMode,
+    gridColumns: Int,
+    onViewModeChanged: (FlowSorterViewMode) -> Unit,
+    onColumnsChanged: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier) {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                imageVector = if (viewMode == FlowSorterViewMode.CARD)
+                    Icons.Default.ViewCarousel else Icons.Default.GridView,
+                contentDescription = "视图模式"
+            )
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            // 卡片模式选项
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = "卡片模式",
+                        color = if (viewMode == FlowSorterViewMode.CARD) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                },
+                onClick = {
+                    onViewModeChanged(FlowSorterViewMode.CARD)
+                    expanded = false
+                },
+                leadingIcon = {
+                    if (viewMode == FlowSorterViewMode.CARD) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.size(24.dp))
+                    }
+                },
+                trailingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.ViewCarousel,
+                        contentDescription = null,
+                        tint = if (viewMode == FlowSorterViewMode.CARD) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+            )
+
+            // 列表模式选项
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = "列表模式",
+                        color = if (viewMode == FlowSorterViewMode.LIST) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                },
+                onClick = {
+                    onViewModeChanged(FlowSorterViewMode.LIST)
+                    expanded = false
+                },
+                leadingIcon = {
+                    if (viewMode == FlowSorterViewMode.LIST) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.size(24.dp))
+                    }
+                },
+                trailingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.GridView,
+                        contentDescription = null,
+                        tint = if (viewMode == FlowSorterViewMode.LIST) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+            )
+
+            // 列数选项（仅列表模式时显示）
+            if (viewMode == FlowSorterViewMode.LIST) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                Text(
+                    text = "列数",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    for (col in 1..4) {
+                        val isSelected = col == gridColumns
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                onColumnsChanged(col)
+                                expanded = false
+                            },
+                            label = { Text("$col") },
+                            modifier = Modifier.padding(horizontal = 2.dp)
+                        )
+                    }
+                }
+            }
+        }
     }
 }

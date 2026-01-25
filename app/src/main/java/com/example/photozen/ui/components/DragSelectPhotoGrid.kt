@@ -39,6 +39,9 @@ package com.example.photozen.ui.components
  */
 
 import android.net.Uri
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -82,6 +85,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -89,7 +93,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -244,7 +247,7 @@ fun DragSelectPhotoGrid(
     
     // Auto-scroll state
     var autoScrollDirection by remember { mutableStateOf(0) } // -1: up, 0: none, 1: down
-    
+
     // Threshold for distinguishing "long press without move" vs "drag select"
     val dragThreshold = with(density) { config.dragThresholdDp.dp.toPx() }
     
@@ -314,6 +317,7 @@ fun DragSelectPhotoGrid(
         modifier = modifier
             .fillMaxSize()
             .onSizeChanged { gridSize = it }
+            // 长按拖动选择（单指手势，仅在 SQUARE 模式下启用）
             .then(
                 if (effectiveDragSelect) {
                     Modifier.pointerInput(photos, selectedIds) {
@@ -515,6 +519,19 @@ private fun DragSelectPhotoItem(
     // This fixes the issue where releasing after long press would toggle selection off
     var longPressJustHappened by remember { mutableStateOf(false) }
 
+    // DES-036: 按压状态追踪，用于缩放动画
+    var isPressed by remember { mutableStateOf(false) }
+
+    // DES-036: 按压缩放动画
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "photoItemScale"
+    )
+
     // Calculate aspect ratio from photo dimensions (1:1 if forceSquare)
     val aspectRatio = remember(photo.width, photo.height, forceSquare) {
         if (forceSquare) {
@@ -529,6 +546,11 @@ private fun DragSelectPhotoItem(
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            // DES-036: 应用缩放效果
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(RoundedCornerShape(8.dp))
             .then(
                 if (isSelected) {
@@ -543,6 +565,15 @@ private fun DragSelectPhotoItem(
             // This prevents the issue where releasing after long press triggers a click
             .pointerInput(enableLongPressOnItem, hapticEnabled) {
                 detectTapGestures(
+                    onPress = {
+                        // DES-036: 开始按压时缩放
+                        isPressed = true
+                        try {
+                            awaitRelease()
+                        } finally {
+                            isPressed = false
+                        }
+                    },
                     onTap = {
                         // Skip this tap if it's the release after a long press
                         if (longPressJustHappened) {

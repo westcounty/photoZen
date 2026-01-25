@@ -1,5 +1,8 @@
 package com.example.photozen.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -38,12 +41,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.domain.model.FilterConfig
 import com.example.photozen.domain.model.FilterPreset
+import com.example.photozen.ui.theme.PicZenMotion
 
 /**
  * 筛选面板 - 底部抽屉形式
@@ -117,7 +122,30 @@ fun FilterBottomSheet(
             // 相册选择
             FilterSection(
                 title = "相册",
-                icon = Icons.Default.Collections
+                icon = Icons.Default.Collections,
+                trailing = {
+                    val selectedAlbumIds = localConfig.albumIds?.toSet() ?: emptySet()
+                    Row {
+                        TextButton(
+                            onClick = {
+                                localConfig = localConfig.copy(
+                                    albumIds = albums.map { it.bucketId }
+                                )
+                            },
+                            enabled = selectedAlbumIds.size < albums.size
+                        ) {
+                            Text("全选")
+                        }
+                        TextButton(
+                            onClick = {
+                                localConfig = localConfig.copy(albumIds = null)
+                            },
+                            enabled = selectedAlbumIds.isNotEmpty()
+                        ) {
+                            Text("清除")
+                        }
+                    }
+                }
             ) {
                 AlbumMultiSelector(
                     albums = albums,
@@ -249,15 +277,24 @@ private fun FilterPresetsSection(
 
 /**
  * 筛选区域容器
+ *
+ * @param title 区域标题
+ * @param icon 标题图标
+ * @param trailing 可选的尾部内容（如按钮），显示在标题行右侧
+ * @param content 区域内容
  */
 @Composable
 private fun FilterSection(
     title: String,
     icon: ImageVector,
+    trailing: @Composable (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
@@ -270,6 +307,8 @@ private fun FilterSection(
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium
             )
+            Spacer(modifier = Modifier.weight(1f))
+            trailing?.invoke()
         }
         Spacer(modifier = Modifier.height(12.dp))
         content()
@@ -278,6 +317,9 @@ private fun FilterSection(
 
 /**
  * 底部操作按钮
+ *
+ * 增强动画:
+ * - 按钮按压缩放 (0.97f)
  */
 @Composable
 private fun FilterActionButtons(
@@ -285,6 +327,24 @@ private fun FilterActionButtons(
     onSavePreset: () -> Unit,
     onApply: () -> Unit
 ) {
+    // 保存按钮交互
+    val saveInteractionSource = remember { MutableInteractionSource() }
+    val isSavePressed by saveInteractionSource.collectIsPressedAsState()
+    val saveScale by animateFloatAsState(
+        targetValue = if (isSavePressed) 0.97f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "saveScale"
+    )
+
+    // 应用按钮交互
+    val applyInteractionSource = remember { MutableInteractionSource() }
+    val isApplyPressed by applyInteractionSource.collectIsPressedAsState()
+    val applyScale by animateFloatAsState(
+        targetValue = if (isApplyPressed) 0.97f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "applyScale"
+    )
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -292,8 +352,14 @@ private fun FilterActionButtons(
         // 保存为预设
         OutlinedButton(
             onClick = onSavePreset,
-            modifier = Modifier.weight(1f),
-            enabled = canSavePreset
+            modifier = Modifier
+                .weight(1f)
+                .graphicsLayer {
+                    scaleX = saveScale
+                    scaleY = saveScale
+                },
+            enabled = canSavePreset,
+            interactionSource = saveInteractionSource
         ) {
             Icon(
                 imageVector = Icons.Default.Save,
@@ -303,11 +369,17 @@ private fun FilterActionButtons(
             Spacer(modifier = Modifier.width(4.dp))
             Text("保存预设")
         }
-        
+
         // 应用
         Button(
             onClick = onApply,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier
+                .weight(1f)
+                .graphicsLayer {
+                    scaleX = applyScale
+                    scaleY = applyScale
+                },
+            interactionSource = applyInteractionSource
         ) {
             Text("应用")
         }

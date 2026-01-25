@@ -703,6 +703,20 @@ interface PhotoDao {
      */
     @Query("SELECT * FROM photos WHERE bucket_id = :bucketId AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     fun getPhotosByBucketId(bucketId: String): Flow<List<PhotoEntity>>
+
+    /**
+     * Get all photos within a time range (for Timeline Detail).
+     * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
+     * startTime and endTime are in milliseconds.
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE is_virtual_copy = 0
+        AND COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startTime
+        AND COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endTime
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
+    """)
+    fun getPhotosByTimeRange(startTime: Long, endTime: Long): Flow<List<PhotoEntity>>
     
     /**
      * Get all photos in a specific album (bucket) - synchronous version.

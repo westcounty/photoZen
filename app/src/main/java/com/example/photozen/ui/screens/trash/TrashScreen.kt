@@ -88,6 +88,7 @@ import com.example.photozen.ui.components.ConfirmDeleteSheet
 import com.example.photozen.ui.components.DeleteType
 import com.example.photozen.ui.components.DragSelectPhotoGrid
 import com.example.photozen.ui.components.PhotoGridMode
+import com.example.photozen.ui.components.ViewModeDropdownButton
 import com.example.photozen.ui.components.EmptyStates
 import com.example.photozen.ui.components.SelectionTopBar
 import com.example.photozen.ui.components.SelectionBottomBar
@@ -211,29 +212,31 @@ fun TrashScreen(
                     actions = {
                         // Grid mode toggle (square vs waterfall)
                         if (uiState.photos.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.toggleGridMode() }) {
-                                Icon(
-                                    imageVector = when (uiState.gridMode) {
-                                        PhotoGridMode.SQUARE -> Icons.Default.Dashboard
-                                        PhotoGridMode.WATERFALL -> Icons.Default.ViewComfy
-                                    },
-                                    contentDescription = when (uiState.gridMode) {
-                                        PhotoGridMode.SQUARE -> "切换到瀑布流"
-                                        PhotoGridMode.WATERFALL -> "切换到网格"
+                            // 全选/取消全选按钮
+                            IconButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    if (uiState.allSelected) {
+                                        viewModel.clearSelection()
+                                    } else {
+                                        viewModel.selectAll()
                                     }
-                                )
-                            }
-                            // Grid columns toggle
-                            IconButton(onClick = { viewModel.cycleGridColumns() }) {
+                                }
+                            ) {
                                 Icon(
-                                    imageVector = when (uiState.gridColumns) {
-                                        1 -> Icons.Default.ViewColumn
-                                        2 -> Icons.Default.GridView
-                                        else -> Icons.Default.ViewModule
-                                    },
-                                    contentDescription = "${uiState.gridColumns}列视图"
+                                    imageVector = if (uiState.allSelected) Icons.Default.Close else Icons.Default.Checklist,
+                                    contentDescription = if (uiState.allSelected) "取消全选" else "全选",
+                                    tint = if (uiState.allSelected) TrashRed else MaterialTheme.colorScheme.onSurface
                                 )
                             }
+
+                            // 视图模式切换（统一下拉菜单）
+                            ViewModeDropdownButton(
+                                currentMode = uiState.gridMode,
+                                currentColumns = uiState.gridColumns,
+                                onModeChanged = { mode -> viewModel.setGridMode(mode) },
+                                onColumnsChanged = { cols -> viewModel.setGridColumns(cols) }
+                            )
                             // Sort dropdown (REQ-033)
                             val currentSortOption = when (uiState.sortOrder) {
                                 com.example.photozen.ui.screens.photolist.PhotoListSortOrder.DATE_DESC -> SortOptions.photoTimeDesc
@@ -308,7 +311,11 @@ fun TrashScreen(
                         },
                         onPhotoLongPress = { photoId, _ ->
                             // REQ-035: 长按进入选择模式
-                            viewModel.toggleSelection(photoId)
+                            // 注意：onDragStart 已经选中该照片，此处仅在未选中时才添加
+                            // 避免 toggle 导致选中又取消的问题
+                            if (photoId !in uiState.selectedIds) {
+                                viewModel.toggleSelection(photoId)
+                            }
                         },
                         columns = uiState.gridColumns,
                         gridMode = uiState.gridMode,

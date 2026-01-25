@@ -6,10 +6,18 @@ import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import com.example.photozen.ui.theme.PicZenMotion
+import com.example.photozen.ui.theme.PicZenTokens
 import com.example.photozen.BuildConfig
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -117,8 +125,6 @@ import androidx.compose.runtime.setValue
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
-import com.example.photozen.ui.util.FeatureFlags
-
 /**
  * Home Screen - Entry point for PicZen app.
  * Shows statistics and navigation to main features.
@@ -138,7 +144,6 @@ fun HomeScreen(
     onNavigateToWorkflow: (Boolean, Int) -> Unit,
     onNavigateToAchievements: () -> Unit,
     onNavigateToFilterSelection: (String, Int) -> Unit = { _, _ -> },
-    onNavigateToSmartGallery: () -> Unit = { },
     // Phase 1-C: 以下参数标记为可选，由底部导航处理
     onNavigateToSettings: () -> Unit = {},
     onNavigateToTimeline: () -> Unit = {},
@@ -244,60 +249,38 @@ fun HomeScreen(
             )
         }
     ) { paddingValues ->
-        // Phase 1-D: Feature Flag 控制新旧布局
-        if (FeatureFlags.USE_NEW_HOME_LAYOUT) {
-            NewHomeLayout(
-                uiState = uiState,
-                paddingValues = paddingValues,
-                onStartSorting = { viewModel.showSortModeSheet() },
-                onNavigateToLightTable = onNavigateToLightTable,
-                onNavigateToTrash = onNavigateToTrash,
-                onNavigateToPhotoList = onNavigateToPhotoList,
-                onNavigateToAchievements = onNavigateToAchievements,
-                onStartDailyTask = {
-                    val status = uiState.dailyTaskStatus
-                    if (status != null) {
-                        val mode = status.mode
-                        val target = status.target
-                        if (mode == DailyTaskMode.FLOW) {
-                            if (uiState.needsFilterSelection) {
-                                onNavigateToFilterSelection("workflow_daily", target)
-                            } else {
-                                onNavigateToWorkflow(true, target)
-                            }
+        NewHomeLayout(
+            uiState = uiState,
+            paddingValues = paddingValues,
+            onStartSorting = { viewModel.showSortModeSheet() },
+            onNavigateToLightTable = onNavigateToLightTable,
+            onNavigateToTrash = onNavigateToTrash,
+            onNavigateToPhotoList = onNavigateToPhotoList,
+            onNavigateToAchievements = onNavigateToAchievements,
+            onStartDailyTask = {
+                val status = uiState.dailyTaskStatus
+                if (status != null) {
+                    val mode = status.mode
+                    val target = status.target
+                    if (mode == DailyTaskMode.FLOW) {
+                        if (uiState.needsFilterSelection) {
+                            onNavigateToFilterSelection("workflow_daily", target)
                         } else {
-                            if (uiState.needsFilterSelection) {
-                                onNavigateToFilterSelection("flow_daily", target)
-                            } else {
-                                onNavigateToFlowSorter(true, target)
-                            }
+                            onNavigateToWorkflow(true, target)
+                        }
+                    } else {
+                        if (uiState.needsFilterSelection) {
+                            onNavigateToFilterSelection("flow_daily", target)
+                        } else {
+                            onNavigateToFlowSorter(true, target)
                         }
                     }
-                },
-                onNavigateToSmartGallery = onNavigateToSmartGallery,
-                onNavigateToStats = onNavigateToStats,  // Phase 3
-                permissionLauncher = permissionLauncher,
-                guideRepository = viewModel.guideRepository
-            )
-        } else {
-            LegacyHomeLayout(
-                uiState = uiState,
-                paddingValues = paddingValues,
-                onNavigateToFlowSorter = onNavigateToFlowSorter,
-                onNavigateToLightTable = onNavigateToLightTable,
-                onNavigateToPhotoList = onNavigateToPhotoList,
-                onNavigateToTrash = onNavigateToTrash,
-                onNavigateToWorkflow = onNavigateToWorkflow,
-                onNavigateToAchievements = onNavigateToAchievements,
-                onNavigateToFilterSelection = onNavigateToFilterSelection,
-                onNavigateToSmartGallery = onNavigateToSmartGallery,
-                onNavigateToTimeline = onNavigateToTimeline,
-                onNavigateToAlbumBubble = onNavigateToAlbumBubble,
-                onNavigateToStats = onNavigateToStats,  // Phase 3
-                permissionLauncher = permissionLauncher,
-                guideRepository = viewModel.guideRepository
-            )
-        }
+                }
+            },
+            onNavigateToStats = onNavigateToStats,
+            permissionLauncher = permissionLauncher,
+            guideRepository = viewModel.guideRepository
+        )
     }
     
     // Quick Start Sheet - Higher priority than Changelog
@@ -364,8 +347,7 @@ private fun NewHomeLayout(
     onNavigateToPhotoList: (PhotoStatus) -> Unit,
     onNavigateToAchievements: () -> Unit,
     onStartDailyTask: () -> Unit,
-    onNavigateToSmartGallery: () -> Unit,
-    onNavigateToStats: () -> Unit,  // Phase 3: 统计页面入口
+    onNavigateToStats: () -> Unit,
     permissionLauncher: ManagedActivityResultLauncher<Array<String>, Map<String, Boolean>>,
     guideRepository: com.example.photozen.data.repository.GuideRepository
 ) {
@@ -440,25 +422,7 @@ private fun NewHomeLayout(
                 trashCount = uiState.trashCount
             )
 
-            // 4. 智能画廊（实验功能）
-            if (BuildConfig.ENABLE_SMART_GALLERY) {
-                AnimatedVisibility(
-                    visible = uiState.experimentalEnabled,
-                    enter = fadeIn() + expandVertically(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    SmartGalleryCard(
-                        onClick = onNavigateToSmartGallery,
-                        personCount = uiState.smartGalleryPersonCount,
-                        labelCount = uiState.smartGalleryLabelCount,
-                        gpsPhotoCount = uiState.smartGalleryGpsPhotoCount,
-                        analysisProgress = uiState.smartGalleryAnalysisProgress,
-                        isAnalyzing = uiState.smartGalleryIsAnalyzing
-                    )
-                }
-            }
-
-            // 5. 分享功能提示（成就区域上方）
+            // 4. 分享功能提示（成就区域上方）
             val shareFeatureTip = rememberGuideState(
                 guideKey = GuideKey.SHARE_FEATURE_TIP,
                 guideRepository = guideRepository
@@ -500,452 +464,7 @@ private fun NewHomeLayout(
     }
 }
 
-// ==================== 旧首页布局（保留向后兼容） ====================
-
-/**
- * 旧首页布局 - 向后兼容
- * 
- * 保留原有布局，当 FeatureFlags.USE_NEW_HOME_LAYOUT = false 时使用
- */
-@Composable
-private fun LegacyHomeLayout(
-    uiState: HomeUiState,
-    paddingValues: PaddingValues,
-    onNavigateToFlowSorter: (Boolean, Int) -> Unit,
-    onNavigateToLightTable: () -> Unit,
-    onNavigateToPhotoList: (PhotoStatus) -> Unit,
-    onNavigateToTrash: () -> Unit,
-    onNavigateToWorkflow: (Boolean, Int) -> Unit,
-    onNavigateToAchievements: () -> Unit,
-    onNavigateToFilterSelection: (String, Int) -> Unit,
-    onNavigateToSmartGallery: () -> Unit,
-    onNavigateToTimeline: () -> Unit,
-    onNavigateToAlbumBubble: () -> Unit,
-    onNavigateToStats: () -> Unit,  // Phase 3: 统计页面入口
-    permissionLauncher: ManagedActivityResultLauncher<Array<String>, Map<String, Boolean>>,
-    guideRepository: com.example.photozen.data.repository.GuideRepository
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(paddingValues)
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Loading state
-        AnimatedVisibility(
-            visible = uiState.isLoading,
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
-            LoadingCard()
-        }
-        
-        // Action Cards
-        if (!uiState.isLoading) {
-            // Compact stats header
-            if (uiState.hasPhotos) {
-                CompactStatsHeader(
-                    unsortedCount = uiState.unsortedCount,
-                    sortedCount = uiState.sortedCount
-                )
-            }
-            
-            // Daily Task Card - Now the PRIMARY prominent card at top
-            if (uiState.dailyTaskStatus?.isEnabled == true) {
-                PrimaryDailyTaskCard(
-                    status = uiState.dailyTaskStatus!!,
-                    onStartClick = {
-                        val mode = uiState.dailyTaskStatus!!.mode
-                        val target = uiState.dailyTaskStatus!!.target
-                        if (mode == DailyTaskMode.FLOW) {
-                            if (uiState.needsFilterSelection) {
-                                onNavigateToFilterSelection("workflow_daily", target)
-                            } else {
-                                onNavigateToWorkflow(true, target)
-                            }
-                        } else {
-                            if (uiState.needsFilterSelection) {
-                                onNavigateToFilterSelection("flow_daily", target)
-                            } else {
-                                onNavigateToFlowSorter(true, target)
-                            }
-                        }
-                    }
-                )
-            }
-            
-            // Smart Gallery Card - Only shown when:
-            // 1. BuildConfig.ENABLE_SMART_GALLERY is true (compile-time flag)
-            // 2. Experimental features are enabled in settings (runtime flag)
-            if (BuildConfig.ENABLE_SMART_GALLERY) {
-                AnimatedVisibility(
-                    visible = uiState.experimentalEnabled,
-                    enter = fadeIn() + expandVertically(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    SmartGalleryCard(
-                        onClick = onNavigateToSmartGallery,
-                        personCount = uiState.smartGalleryPersonCount,
-                        labelCount = uiState.smartGalleryLabelCount,
-                        gpsPhotoCount = uiState.smartGalleryGpsPhotoCount,
-                        analysisProgress = uiState.smartGalleryAnalysisProgress,
-                        isAnalyzing = uiState.smartGalleryIsAnalyzing
-                    )
-                }
-            }
-        }
-        
-        // Quick Stats Row - clickable
-        if (!uiState.isLoading && uiState.hasPhotos) {
-            QuickStatsRow(
-                uiState = uiState,
-                onKeepClick = { onNavigateToPhotoList(PhotoStatus.KEEP) },
-                onTrashClick = { onNavigateToTrash() },
-                onMaybeClick = { onNavigateToPhotoList(PhotoStatus.MAYBE) }
-            )
-        }
-        
-        // Action Cards
-        if (!uiState.isLoading) {
-            // Quick Action: Flow Sorter (standalone)
-            ActionCard(
-                title = "快速整理",
-                subtitle = if (uiState.unsortedCount > 0) {
-                    "${uiState.unsortedCount} 张照片待整理"
-                } else {
-                    "所有照片已整理完成"
-                },
-                icon = Icons.Default.SwipeRight,
-                iconTint = MaterialTheme.colorScheme.primary,
-                enabled = uiState.unsortedCount > 0,
-                onClick = {
-                    if (uiState.needsFilterSelection) {
-                        onNavigateToFilterSelection("flow", -1)
-                    } else {
-                        onNavigateToFlowSorter(false, -1)
-                    }
-                }
-            )
-            
-            // Light Table Card
-            ActionCard(
-                title = "照片对比",
-                subtitle = if (uiState.maybeCount > 0) {
-                    "${uiState.maybeCount} 张待定照片可对比"
-                } else {
-                    "没有待定照片"
-                },
-                icon = Icons.AutoMirrored.Filled.CompareArrows,
-                iconTint = MaybeAmber,
-                enabled = uiState.maybeCount > 0,
-                onClick = onNavigateToLightTable
-            )
-            
-            // Timeline Card
-            ActionCard(
-                title = "时间线",
-                subtitle = "按时间分组浏览和整理照片",
-                icon = Icons.Default.Timeline,
-                iconTint = Color(0xFFEC4899), // Pink
-                enabled = uiState.hasPhotos,
-                onClick = onNavigateToTimeline
-            )
-            
-            // Album Bubble Card
-            ActionCard(
-                title = "我的相册",
-                subtitle = "可视化管理我的相册",
-                icon = Icons.Default.Collections,
-                iconTint = Color(0xFF4FC3F7), // Light Blue
-                enabled = true,
-                onClick = onNavigateToAlbumBubble
-            )
-            
-            // Stats Card
-            MiniStatsCard(
-                totalSorted = uiState.statsSummary.totalSorted,
-                weekSorted = uiState.statsSummary.weekSorted,
-                consecutiveDays = uiState.statsSummary.consecutiveDays,
-                onClick = onNavigateToStats
-            )
-
-            // 分享功能提示（成就区域上方）
-            val shareFeatureTip = rememberGuideState(
-                guideKey = GuideKey.SHARE_FEATURE_TIP,
-                guideRepository = guideRepository
-            )
-            if (shareFeatureTip.shouldShow) {
-                ShareFeatureTipCard(
-                    onDismiss = { shareFeatureTip.dismiss() }
-                )
-            }
-
-            // Achievement Card
-            val achievements = generateAchievements(uiState.achievementData)
-            AchievementSummaryCard(
-                achievements = achievements,
-                onClick = onNavigateToAchievements
-            )
-        }
-        
-        // Empty state
-        if (!uiState.isLoading && !uiState.hasPhotos && uiState.hasPermission) {
-            EmptyStateCard()
-        }
-        
-        // Permission denied state
-        if (!uiState.hasPermission && !uiState.isLoading) {
-            PermissionDeniedCard(
-                onRequestPermission = {
-                    val permissions = mutableListOf<String>()
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
-                        permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-                    } else {
-                        permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-                    }
-                    permissionLauncher.launch(permissions.toTypedArray())
-                }
-            )
-        }
-    }
-}
-
 // ==================== Helper Composables ====================
-
-/**
- * Compact stats header - Small display of unsorted/sorted counts.
- * Shown when one-stop sorting is disabled.
- */
-@Composable
-private fun CompactStatsHeader(
-    unsortedCount: Int,
-    sortedCount: Int
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Unsorted count - left aligned
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.PhotoLibrary,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "待整理",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = unsortedCount.toString(),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-        
-        // Sorted count - right aligned
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = sortedCount.toString(),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = KeepGreen
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = "已整理",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                tint = KeepGreen,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-    }
-}
-
-/**
- * Primary Daily Task Card - The main prominent card (big style).
- * Now styled like the old MissionCard.
- */
-@Composable
-private fun PrimaryDailyTaskCard(
-    status: DailyTaskStatus,
-    onStartClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-        ),
-        shape = RoundedCornerShape(20.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Assignment,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "每日任务",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (status.isCompleted) "🎉 今日任务已完成！" else "保持整理习惯，每天进步一点",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                // Progress percentage or completed icon
-                if (status.isCompleted) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(KeepGreen.copy(alpha = 0.15f))
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = "Completed",
-                            tint = KeepGreen,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = "${(status.progress * 100).toInt()}%",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Progress bar
-            LinearProgressIndicator(
-                progress = { status.progress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp)),
-                color = if (status.isCompleted) KeepGreen else MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Stats row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                // Current - Highlighted
-                Column {
-                    Text(
-                        text = status.current.toString(),
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "已完成",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                // Target
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = status.target.toString(),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "今日目标",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            
-            if (!status.isCompleted) {
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Start button
-                Button(
-                    onClick = onStartClick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "开始今日任务",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-    }
-}
 
 /**
  * Loading state card.
@@ -971,178 +490,6 @@ private fun LoadingCard() {
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        }
-    }
-}
-
-/**
- * Quick statistics row - clickable to navigate to photo lists.
- */
-@Composable
-private fun QuickStatsRow(
-    uiState: HomeUiState,
-    onKeepClick: () -> Unit,
-    onTrashClick: () -> Unit,
-    onMaybeClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        StatChip(
-            count = uiState.keepCount,
-            label = "保留",
-            icon = Icons.Default.Check,
-            color = KeepGreen,
-            onClick = onKeepClick,
-            modifier = Modifier.weight(1f)
-        )
-        StatChip(
-            count = uiState.maybeCount,
-            label = "待定",
-            icon = Icons.Default.QuestionMark,
-            color = MaybeAmber,
-            onClick = onMaybeClick,
-            modifier = Modifier.weight(1f)
-        )
-        StatChip(
-            count = uiState.trashCount,
-            label = "回收站",
-            icon = Icons.Default.Delete,
-            color = TrashRed,
-            onClick = onTrashClick,
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-/**
- * Single stat chip - clickable.
- */
-@Composable
-private fun StatChip(
-    count: Int,
-    label: String,
-    icon: ImageVector,
-    color: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier.clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = color.copy(alpha = 0.1f)
-        )
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
-        ) {
-            // Main content centered
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = color,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = count.toString(),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = color
-                )
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            
-            // Arrow positioned at right center
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = color.copy(alpha = 0.5f),
-                modifier = Modifier
-                    .size(16.dp)
-                    .align(Alignment.CenterEnd)
-            )
-        }
-    }
-}
-
-/**
- * Action card for navigation.
- */
-@Composable
-private fun ActionCard(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    iconTint: Color,
-    enabled: Boolean,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(iconTint.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = iconTint,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                
-                Spacer(modifier = Modifier.width(16.dp))
-                
-                Column {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            
-            Button(
-                onClick = onClick,
-                enabled = enabled
-            ) {
-                Text("开始")
-            }
         }
     }
 }
@@ -1238,176 +585,5 @@ private fun PermissionDeniedCard(
                 Text("授予权限")
             }
         }
-    }
-}
-
-/**
- * Smart Gallery Card - Entry point to AI-powered features.
- * Enhanced with quick stats preview and analysis progress.
- */
-@Composable
-private fun SmartGalleryCard(
-    onClick: () -> Unit,
-    personCount: Int = 0,
-    labelCount: Int = 0,
-    gpsPhotoCount: Int = 0,
-    analysisProgress: Float = 0f,
-    isAnalyzing: Boolean = false,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            // Header row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.tertiary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "智能画廊",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Quick stats row - 4 preview icons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                SmartGalleryStatItem(
-                    icon = Icons.Default.Person,
-                    count = personCount,
-                    label = "人物",
-                    tint = Color(0xFF8B5CF6) // Purple
-                )
-                SmartGalleryStatItem(
-                    icon = Icons.Default.Sell,
-                    count = labelCount,
-                    label = "标签",
-                    tint = Color(0xFF10B981) // Green
-                )
-                SmartGalleryStatItem(
-                    icon = Icons.Default.Search,
-                    count = null,
-                    label = "搜索",
-                    tint = Color(0xFF3B82F6) // Blue
-                )
-                SmartGalleryStatItem(
-                    icon = Icons.Filled.Place,
-                    count = gpsPhotoCount,
-                    label = "位置",
-                    tint = Color(0xFFF59E0B) // Amber
-                )
-            }
-            
-            // Analysis progress (only show if there's progress or analyzing)
-            if (isAnalyzing || analysisProgress > 0f) {
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    LinearProgressIndicator(
-                        progress = { analysisProgress },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp)),
-                        color = MaterialTheme.colorScheme.tertiary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (isAnalyzing) "分析中 ${(analysisProgress * 100).toInt()}%" else "已分析 ${(analysisProgress * 100).toInt()}%",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Single stat item for Smart Gallery preview.
- */
-@Composable
-private fun SmartGalleryStatItem(
-    icon: ImageVector,
-    count: Int?,
-    label: String,
-    tint: Color,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(tint.copy(alpha = 0.1f)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (count != null && count > 0) {
-                Text(
-                    text = if (count > 999) "999+" else count.toString(),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = tint
-                )
-            } else {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = tint,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }

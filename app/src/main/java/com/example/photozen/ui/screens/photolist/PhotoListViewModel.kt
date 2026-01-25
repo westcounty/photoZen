@@ -826,6 +826,22 @@ class PhotoListViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Set grid mode directly.
+     * @param mode The new grid mode
+     */
+    fun setGridMode(mode: PhotoGridMode) {
+        _internalState.update { state ->
+            // Adjust columns if switching to SQUARE mode and current columns < 2
+            val newColumns = if (mode == PhotoGridMode.SQUARE && state.gridColumns < 2) {
+                2
+            } else {
+                state.gridColumns
+            }
+            state.copy(gridMode = mode, gridColumns = newColumns)
+        }
+    }
+
     // ==================== Phase 6: Keep List Album Features ====================
     
     /**

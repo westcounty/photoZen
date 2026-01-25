@@ -1,8 +1,18 @@
 package com.example.photozen.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -18,7 +28,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +42,8 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.source.Album
+import com.example.photozen.ui.theme.PicZenMotion
+import com.example.photozen.ui.theme.PicZenTokens
 
 /**
  * A reusable bottom sheet for selecting an album.
@@ -143,11 +157,43 @@ fun AlbumPickerBottomSheet(
     }
 }
 
+/**
+ * 相册列表项
+ *
+ * 增强动画:
+ * - 按压缩放 (0.98f)
+ * - 背景色按压变化
+ * - 图标按压右移 (2dp)
+ */
 @Composable
 private fun AlbumPickerItem(
     album: AlbumBubbleEntity,
     onClick: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // 按压缩放动画
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "itemScale"
+    )
+
+    // 图标按压右移
+    val iconOffset by animateDpAsState(
+        targetValue = if (isPressed) 2.dp else 0.dp,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "iconOffset"
+    )
+
+    // 背景色按压变化
+    val backgroundAlpha by animateFloatAsState(
+        targetValue = if (isPressed) 0.08f else 0f,
+        animationSpec = tween(PicZenMotion.Duration.Quick),
+        label = "backgroundAlpha"
+    )
+
     ListItem(
         headlineContent = {
             Text(
@@ -159,7 +205,9 @@ private fun AlbumPickerItem(
             Surface(
                 shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.size(40.dp)
+                modifier = Modifier
+                    .size(40.dp)
+                    .offset(x = iconOffset)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
@@ -177,7 +225,17 @@ private fun AlbumPickerItem(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         },
-        modifier = Modifier.clickable(onClick = onClick)
+        modifier = Modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = backgroundAlpha))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
     )
 }
 
@@ -327,6 +385,13 @@ fun SystemAlbumPickerDialog(
 
 /**
  * Album grid item with cover image and selection indicator.
+ *
+ * 增强动画:
+ * - 按压缩放 (0.96f)
+ * - 选中时轻微放大 (1.02f)
+ * - 阴影动态变化
+ * - 边框颜色动画
+ * - 选中勾选缩放弹入
  */
 @Composable
 private fun AlbumGridItem(
@@ -334,18 +399,62 @@ private fun AlbumGridItem(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // 按压缩放
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "pressScale"
+    )
+
+    // 选中缩放
+    val selectedScale by animateFloatAsState(
+        targetValue = if (isSelected) 1.02f else 1f,
+        animationSpec = PicZenMotion.Springs.playful(),
+        label = "selectedScale"
+    )
+
+    // 阴影
+    val elevation by animateDpAsState(
+        targetValue = when {
+            isPressed -> PicZenTokens.Elevation.Level1
+            isSelected -> PicZenTokens.Elevation.Level3
+            else -> PicZenTokens.Elevation.Level2
+        },
+        animationSpec = tween(PicZenMotion.Duration.Quick),
+        label = "elevation"
+    )
+
+    // 边框宽度和颜色
+    val borderWidth by animateDpAsState(
+        targetValue = if (isSelected) 2.dp else 0.dp,
+        animationSpec = tween(PicZenMotion.Duration.Fast),
+        label = "borderWidth"
+    )
+
+    val borderColor = MaterialTheme.colorScheme.primary
+
     Column(
         modifier = Modifier
+            .graphicsLayer {
+                scaleX = pressScale * selectedScale
+                scaleY = pressScale * selectedScale
+            }
+            .shadow(elevation, RoundedCornerShape(8.dp))
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
             .then(
-                if (isSelected) Modifier
-                    .border(
-                        width = 2.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                else Modifier
+                if (borderWidth > 0.dp) Modifier.border(
+                    width = borderWidth,
+                    color = borderColor,
+                    shape = RoundedCornerShape(8.dp)
+                ) else Modifier
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
             )
             .padding(4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -376,13 +485,18 @@ private fun AlbumGridItem(
                     modifier = Modifier.size(32.dp)
                 )
             }
-            
-            // Selection indicator
-            if (isSelected) {
+
+            // Selection indicator - 带缩放弹入动画
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isSelected,
+                enter = scaleIn(animationSpec = PicZenMotion.Springs.playful()) + fadeIn(),
+                exit = scaleOut() + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+            ) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
                         .size(20.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary),
@@ -397,9 +511,9 @@ private fun AlbumGridItem(
                 }
             }
         }
-        
+
         Spacer(modifier = Modifier.height(4.dp))
-        
+
         // Album name
         Text(
             text = album.name,
@@ -408,7 +522,7 @@ private fun AlbumGridItem(
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center
         )
-        
+
         // Photo count
         Text(
             text = "${album.photoCount}",

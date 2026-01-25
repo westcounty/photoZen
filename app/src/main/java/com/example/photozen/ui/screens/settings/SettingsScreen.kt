@@ -54,7 +54,6 @@ import com.example.photozen.ui.components.CollapsibleSettingsGroup
 import com.example.photozen.ui.components.EnhancedSettingsItem
 import com.example.photozen.ui.components.SwitchSettingsItem
 import com.example.photozen.ui.components.ValueSettingsItem
-import com.example.photozen.ui.util.FeatureFlags
 import com.example.photozen.domain.model.GuideKey
 import kotlinx.coroutines.delay
 import kotlin.math.cos
@@ -144,15 +143,7 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text("设置") },
                 navigationIcon = {
-                    // Phase 1-C: 底部导航模式不显示返回按钮
-                    if (!FeatureFlags.USE_BOTTOM_NAV) {
-                        IconButton(onClick = onNavigateBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回"
-                            )
-                        }
-                    }
+                    // 底部导航模式不显示返回按钮
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
@@ -245,16 +236,6 @@ fun SettingsScreen(
                     onClick = { showThemeDialog = true }
                 )
                 
-                // 实验性功能开关仅在 explore 分支显示
-                if (BuildConfig.SHOW_EXPERIMENTAL_SETTINGS) {
-                    SwitchSettingsItem(
-                        icon = Icons.Default.Science,
-                        title = "实验性功能",
-                        subtitle = "AI 相关功能（开发中）",
-                        checked = uiState.experimentalEnabled,
-                        onCheckedChange = { viewModel.setExperimentalEnabled(it) }
-                    )
-                }
             }
             
             // 相册设置分组已删除，快速相册分类设置已移至功能设置

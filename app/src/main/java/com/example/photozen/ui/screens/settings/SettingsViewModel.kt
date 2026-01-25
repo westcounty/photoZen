@@ -43,7 +43,6 @@ data class SettingsUiState(
     val widgetEndDate: Long? = null,
     val cardZoomEnabled: Boolean = true,
     val onestopEnabled: Boolean = false,
-    val experimentalEnabled: Boolean = false,
     val themeMode: ThemeMode = ThemeMode.DARK,
     val swipeSensitivity: Float = 1.0f,
     val hapticFeedbackEnabled: Boolean = true,  // Phase 3-7: 震动反馈开关
@@ -110,18 +109,16 @@ class SettingsViewModel @Inject constructor(
     private data class ExtraSettings(
         val cardZoomEnabled: Boolean,
         val onestopEnabled: Boolean,
-        val experimentalEnabled: Boolean,
         val progressNotificationEnabled: Boolean
     )
-    
+
     // Combine extra settings
     private val extraSettingsFlow = combine(
         preferencesRepository.getCardZoomEnabled(),
         preferencesRepository.getOnestopEnabled(),
-        preferencesRepository.getExperimentalEnabled(),
         preferencesRepository.getProgressNotificationEnabled()
-    ) { cardZoom, onestop, experimental, progressNotification -> 
-        ExtraSettings(cardZoom, onestop, experimental, progressNotification)
+    ) { cardZoom, onestop, progressNotification ->
+        ExtraSettings(cardZoom, onestop, progressNotification)
     }
     
     // Combine appearance and swipe settings (Phase 3-7: 添加震动反馈)
@@ -188,7 +185,6 @@ class SettingsViewModel @Inject constructor(
             widgetEndDate = widgetSettings.third.second,
             cardZoomEnabled = extraSettings.cardZoomEnabled,
             onestopEnabled = extraSettings.onestopEnabled,
-            experimentalEnabled = extraSettings.experimentalEnabled,
             themeMode = appearanceSettings.first,
             swipeSensitivity = appearanceSettings.second,
             hapticFeedbackEnabled = appearanceSettings.third,  // Phase 3-7
@@ -243,13 +239,7 @@ class SettingsViewModel @Inject constructor(
             preferencesRepository.setOnestopEnabled(enabled)
         }
     }
-    
-    fun setExperimentalEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            preferencesRepository.setExperimentalEnabled(enabled)
-        }
-    }
-    
+
     /**
      * Set progress notification service enabled/disabled.
      * This controls whether the foreground service runs with status bar notification.

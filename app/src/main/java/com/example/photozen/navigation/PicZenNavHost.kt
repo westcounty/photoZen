@@ -23,14 +23,7 @@ import com.example.photozen.ui.screens.photolist.PhotoListScreen
 import com.example.photozen.ui.screens.settings.SettingsScreen
 import com.example.photozen.ui.screens.share.ShareCompareScreen
 import com.example.photozen.ui.screens.share.ShareCopyScreen
-import com.example.photozen.ui.screens.smartgallery.LabelBrowserScreen
-import com.example.photozen.ui.screens.smartgallery.LabelPhotosScreen
-import com.example.photozen.ui.screens.smartgallery.MapLibreScreen
-import com.example.photozen.ui.screens.smartgallery.PersonDetailScreen
-import com.example.photozen.ui.screens.smartgallery.PersonListScreen
-import com.example.photozen.ui.screens.smartgallery.SimilarPhotosScreen
-import com.example.photozen.ui.screens.smartgallery.SmartGalleryScreen
-import com.example.photozen.ui.screens.smartgallery.SmartSearchScreen
+import com.example.photozen.ui.screens.timeline.TimelineDetailScreen
 import com.example.photozen.ui.screens.timeline.TimelineScreen
 import com.example.photozen.ui.screens.albums.AlbumBubbleScreen
 import com.example.photozen.ui.screens.albums.AlbumPhotoListScreen
@@ -141,11 +134,6 @@ private fun PicZenNavHostInternal(
                 onNavigateToFilterSelection = { mode, target ->
                     navController.navigate(Screen.PhotoFilterSelection(mode = mode, targetCount = target))
                 },
-                onNavigateToSmartGallery = {
-                    if (BuildConfig.ENABLE_SMART_GALLERY) {
-                        navController.navigate(Screen.SmartGallery)
-                    }
-                },
                 onNavigateToStats = {
                     navController.navigate(Screen.Stats)
                 }
@@ -166,6 +154,9 @@ private fun PicZenNavHostInternal(
                 },
                 onNavigateToSorterListMode = {
                     navController.navigate(Screen.FlowSorter(initialListMode = true))
+                },
+                onNavigateToTimelineDetail = { title, startTime, endTime ->
+                    navController.navigate(Screen.TimelineDetail(title, startTime, endTime))
                 }
             )
         }
@@ -222,12 +213,6 @@ private fun PicZenNavHostInternal(
                     // For daily task modes, we pass targetCount
                     navController.navigate(Screen.PhotoFilterSelection(mode = mode, targetCount = target))
                 },
-                onNavigateToSmartGallery = {
-                    // Only navigate if Smart Gallery is enabled
-                    if (BuildConfig.ENABLE_SMART_GALLERY) {
-                        navController.navigate(Screen.SmartGallery)
-                    }
-                },
                 onNavigateToTimeline = {
                     navController.navigate(Screen.Timeline)
                 },
@@ -236,116 +221,8 @@ private fun PicZenNavHostInternal(
                 }
             )
         }
-        
-        // ==================== Smart Gallery Screens (Feature Flag Controlled) ====================
-        // These routes are only registered when ENABLE_SMART_GALLERY is true
-        
-        if (BuildConfig.ENABLE_SMART_GALLERY) {
-            composable<Screen.SmartGallery> {
-                SmartGalleryScreen(
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onNavigateToLabels = {
-                        navController.navigate(Screen.LabelBrowser)
-                    },
-                    onNavigateToPersons = {
-                        navController.navigate(Screen.PersonList)
-                    },
-                    onNavigateToSearch = {
-                        navController.navigate(Screen.SmartSearch)
-                    },
-                    onNavigateToSimilar = {
-                        navController.navigate(Screen.SimilarPhotos)
-                    },
-                    onNavigateToMap = {
-                        navController.navigate(Screen.MapView)
-                    },
-                    onNavigateToTimeline = {
-                        navController.navigate(Screen.Timeline)
-                    }
-                )
-            }
-            
-            composable<Screen.LabelBrowser> {
-                LabelBrowserScreen(
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onNavigateToLabel = { label ->
-                        navController.navigate(Screen.LabelPhotos(label))
-                    }
-                )
-            }
-            
-            composable<Screen.LabelPhotos> {
-                LabelPhotosScreen(
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onNavigateToEditor = { photoId ->
-                        navController.navigate(Screen.PhotoEditor(photoId))
-                    }
-                )
-            }
-            
-            composable<Screen.PersonList> {
-                PersonListScreen(
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onNavigateToPersonDetail = { personId ->
-                        navController.navigate(Screen.PersonDetail(personId))
-                    }
-                )
-            }
-            
-            composable<Screen.PersonDetail> {
-                PersonDetailScreen(
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onNavigateToPhoto = { photoId ->
-                        navController.navigate(Screen.PhotoEditor(photoId))
-                    }
-                )
-            }
-            
-            composable<Screen.SmartSearch> {
-                SmartSearchScreen(
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onPhotoClick = { photoId ->
-                        navController.navigate(Screen.PhotoEditor(photoId))
-                    }
-                )
-            }
-            
-            composable<Screen.SimilarPhotos> {
-                SimilarPhotosScreen(
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onPhotoClick = { photoId ->
-                        navController.navigate(Screen.PhotoEditor(photoId))
-                    }
-                )
-            }
-            
-            composable<Screen.MapView> {
-                MapLibreScreen(
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onPhotoClick = { photoId ->
-                        navController.navigate(Screen.PhotoEditor(photoId))
-                    }
-                )
-            }
-        }
-        
-        // ==================== Timeline Screen (Independent Feature) ====================
+
+        // ==================== Timeline Screen ====================
         // Timeline is a standalone feature that groups photos by time, not dependent on Smart Gallery
         
         composable<Screen.Timeline> {
@@ -361,10 +238,28 @@ private fun PicZenNavHostInternal(
                 },
                 onNavigateToSorterListMode = {
                     navController.navigate(Screen.FlowSorter(initialListMode = true))
+                },
+                onNavigateToTimelineDetail = { title, startTime, endTime ->
+                    navController.navigate(Screen.TimelineDetail(title, startTime, endTime))
                 }
             )
         }
-        
+
+        composable<Screen.TimelineDetail> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.TimelineDetail>()
+            TimelineDetailScreen(
+                title = route.title,
+                startTime = route.startTime,
+                endTime = route.endTime,
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToFlowSorter = {
+                    navController.navigate(Screen.FlowSorter())
+                }
+            )
+        }
+
         // ==================== Core Photo Organization Screens ====================
         
         composable<Screen.FlowSorter> {

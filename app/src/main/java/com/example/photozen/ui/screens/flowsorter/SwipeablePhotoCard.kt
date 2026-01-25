@@ -30,8 +30,6 @@ import com.example.photozen.ui.util.rememberHapticFeedbackManager
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
-import kotlin.math.pow
 
 /**
  * Base threshold for triggering a swipe action (as fraction of screen width/height)
@@ -53,8 +51,10 @@ private const val THRESHOLD_MULTIPLIER_DOWN = 0.7f
 
 /**
  * Rotation multiplier for card tilt during horizontal swipe
+ * DES-034: 增强倾斜透视效果，更有 3D 感
+ * 增大到 38f 以获得更明显的倾斜感
  */
-private const val ROTATION_MULTIPLIER = 15f
+private const val ROTATION_MULTIPLIER = 38f
 
 /**
  * Swipeable photo card with smooth animations.
@@ -156,8 +156,8 @@ fun SwipeablePhotoCard(
     // Calculate rotation based on horizontal offset (DES-019: 倾斜透视效果)
     val rotation = (offsetX.value / screenWidthPx) * ROTATION_MULTIPLIER
 
-    // DES-021: 倾斜透视效果 - 基于垂直偏移的X轴旋转
-    val rotationXValue = -(offsetY.value / screenHeightPx) * 5f
+    // DES-021/DES-034: 倾斜透视效果增强 - 基于垂直偏移的X轴旋转
+    val rotationXValue = -(offsetY.value / screenHeightPx) * 12f
 
     // Scale effect during swipe
     val scale = when {
@@ -170,11 +170,8 @@ fun SwipeablePhotoCard(
         1f - (offsetY.value / screenHeightPx) * 0.5f
     } else 1f
 
-    // DES-020: 动态阴影高度 - 基于滑动进度
-    val swipeDistance = sqrt(offsetX.value.pow(2) + offsetY.value.pow(2))
-    val maxDistance = sqrt(screenWidthPx.pow(2) + screenHeightPx.pow(2))
-    val swipeProgressTotal = (swipeDistance / maxDistance).coerceIn(0f, 1f)
-    val dynamicElevation = 8f + (swipeProgressTotal * 12f) // 8dp base + up to 12dp extra
+    // DES-020: 动态阴影高度 - 基于滑动进度（简化：去掉阴影以获得更干净的视觉效果）
+    val dynamicElevation = 0f // 去掉阴影
     
     
     Box(
@@ -188,7 +185,7 @@ fun SwipeablePhotoCard(
                 scaleY = scale
                 this.alpha = alpha
                 shadowElevation = dynamicElevation  // DES-020: 动态阴影
-                cameraDistance = 12f * density.density  // 增加透视效果
+                cameraDistance = 8f * density.density  // DES-034: 更近的透视距离增强 3D 效果
             }
             .pointerInput(photo.id, swipeSensitivity) {
                 detectDragGestures(

@@ -22,7 +22,6 @@ import com.example.photozen.navigation.Screen
 import com.example.photozen.ui.MainScaffold
 import com.example.photozen.ui.state.SnackbarManager
 import com.example.photozen.ui.theme.PicZenTheme
-import com.example.photozen.ui.util.FeatureFlags
 import com.example.photozen.util.ShareData
 import com.example.photozen.util.ShareHandler
 import com.example.photozen.util.ShareMode
@@ -80,30 +79,19 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxSize()
                         )
                     } else {
-                        // 正常启动：根据 Feature Flag 决定是否使用底部导航
-                        if (FeatureFlags.USE_BOTTOM_NAV) {
-                            // 新实现：使用 MainScaffold（带底部导航）
-                            // Phase 3-8: 传递全局 SnackbarManager
-                            // 使用 Screen.Home 作为起始目的地（类型安全导航）
-                            // MainScaffold 会通过监听路由变化来同步底部导航高亮状态
-                            MainScaffold(
-                                navController = navController,
-                                snackbarManager = snackbarManager
-                            ) { _ ->
-                                // 不使用底部 padding，让内容填满整个区域
-                                // 底部导航栏会覆盖在内容上方
-                                PicZenNavHost(
-                                    navController = navController,
-                                    startDestination = Screen.Home,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
-                        } else {
-                            // 旧实现：直接使用 PicZenNavHost（无底部导航）
+                        // 正常启动：使用 MainScaffold（带底部导航）
+                        // Phase 3-8: 传递全局 SnackbarManager
+                        // 使用 Screen.Home 作为起始目的地（类型安全导航）
+                        // MainScaffold 会通过监听路由变化来同步底部导航高亮状态
+                        MainScaffold(
+                            navController = navController,
+                            snackbarManager = snackbarManager
+                        ) { _ ->
+                            // 不使用底部 padding，让内容填满整个区域
+                            // 底部导航栏会覆盖在内容上方
                             PicZenNavHost(
                                 navController = navController,
                                 startDestination = Screen.Home,
-                                onFinish = { finish() },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }

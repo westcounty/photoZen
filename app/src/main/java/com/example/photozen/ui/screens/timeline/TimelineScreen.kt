@@ -53,10 +53,14 @@ import com.example.photozen.ui.components.GuideTooltip
 import com.example.photozen.ui.components.TimelineEventPhotoRow
 import com.example.photozen.ui.components.SelectionTopBar
 import com.example.photozen.ui.guide.rememberGuideState
-import com.example.photozen.ui.util.FeatureFlags
 import com.example.photozen.domain.model.GuideKey
 import androidx.activity.compose.BackHandler
 import kotlinx.coroutines.launch
+import com.example.photozen.ui.components.fullscreen.UnifiedFullscreenViewer
+import com.example.photozen.ui.components.fullscreen.FullscreenActionType
+import android.net.Uri
+import com.example.photozen.ui.components.shareImage
+import androidx.compose.ui.platform.LocalContext
 
 /**
  * Timeline Screen - Display photos grouped by time/events.
@@ -72,14 +76,17 @@ fun TimelineScreen(
     onNavigateToSorterListMode: () -> Unit = {},
     // Phase 1-C: 底部导航模式不需要返回按钮
     onNavigateBack: () -> Unit = {},
+    // 导航到时间线详情页
+    onNavigateToTimelineDetail: (title: String, startTime: Long, endTime: Long) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
     viewModel: TimelineViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val albumBubbleList by viewModel.albumBubbleList.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    val listState = rememberLazyListState()
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
 
     // 分组模式引导状态
     val groupingGuide = rememberGuideState(
@@ -206,15 +213,7 @@ fun TimelineScreen(
                         }
                     },
                     navigationIcon = {
-                        // Phase 1-C: 底部导航模式不显示返回按钮
-                        if (!FeatureFlags.USE_BOTTOM_NAV) {
-                            IconButton(onClick = onNavigateBack) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "返回"
-                                )
-                            }
-                        }
+                        // 底部导航模式不显示返回按钮
                     },
                     actions = {
                         // Sort order toggle button
@@ -312,16 +311,17 @@ fun TimelineScreen(
                                 },
                                 // Phase 1-B: 长按进入选择模式
                                 onPhotoLongPress = { photoId ->
-                                    if (FeatureFlags.USE_UNIFIED_GESTURE) {
-                                        viewModel.enterSelectionMode(photoId)
-                                    }
+                                    viewModel.enterSelectionMode(photoId)
                                 },
                                 // Phase 1-B: 选择模式下切换选中状态
                                 onSelectionToggle = { photoId ->
                                     viewModel.togglePhotoSelection(photoId)
                                 },
                                 onSortGroup = { viewModel.sortGroup(event.startTime, event.endTime) },
-                                onViewMore = { viewModel.sortGroup(event.startTime, event.endTime, listMode = true) }
+                                onViewMore = {
+                                    // 导航到时间线详情页
+                                    onNavigateToTimelineDetail(event.title, event.startTime, event.endTime)
+                                }
                             )
                         }
                     }
@@ -373,19 +373,35 @@ fun TimelineScreen(
         }
     }
     
-    // Fullscreen preview overlay
+    // Fullscreen preview overlay - 使用统一的 UnifiedFullscreenViewer
     if (showFullscreen && fullscreenPhotos.isNotEmpty()) {
-        TimelineFullscreenViewerWrapper(
+        UnifiedFullscreenViewer(
             photos = fullscreenPhotos,
-            initialIndex = fullscreenStartIndex,
-            albums = albumBubbleList,
-            viewModel = viewModel,
-            snackbarHostState = snackbarHostState,
-            onDismiss = { showFullscreen = false },
-            onPhotosUpdated = { updatedPhotos ->
-                fullscreenPhotos = updatedPhotos
-                if (updatedPhotos.isEmpty()) {
-                    showFullscreen = false
+            initialIndex = fullscreenStartIndex.coerceIn(0, fullscreenPhotos.lastIndex),
+            onExit = { showFullscreen = false },
+            onAction = { actionType, photo ->
+                when (actionType) {
+                    FullscreenActionType.COPY -> {
+                        // 时间线暂不支持复制
+                    }
+                    FullscreenActionType.OPEN_WITH -> {
+                        // 外部app打开
+                    }
+                    FullscreenActionType.EDIT -> {
+                        // 时间线暂不支持编辑
+                    }
+                    FullscreenActionType.SHARE -> {
+                        shareImage(context, Uri.parse(photo.systemUri))
+                    }
+                    FullscreenActionType.DELETE -> {
+                        // 切换状态（时间线中删除=标记为TRASH）
+                        viewModel.togglePhotoStatus(photo.id)
+                        // 从当前列表中移除
+                        fullscreenPhotos = fullscreenPhotos.filter { it.id != photo.id }
+                        if (fullscreenPhotos.isEmpty()) {
+                            showFullscreen = false
+                        }
+                    }
                 }
             }
         )
@@ -642,68 +658,16 @@ private fun TimelineEventCard(
                     )
                     
                     // Photo grid (show max 12 photos in collapsed view)
-                    // Phase 1-B: 使用 Feature Flag 控制新旧实现
-                    if (FeatureFlags.USE_UNIFIED_GESTURE) {
-                        // 新实现：使用 TimelineEventPhotoRow（支持长按选择）
-                        TimelineEventPhotoRow(
-                            photos = event.photos,
-                            selectedIds = selectedIds,
-                            isSelectionMode = isSelectionMode,
-                            onPhotoClick = onPhotoClick,
-                            onPhotoLongPress = onPhotoLongPress,
-                            onSelectionToggle = onSelectionToggle,
-                            maxDisplay = 12,
-                            onViewMore = if (event.photos.size > 12) onViewMore else null
-                        )
-                    } else {
-                        // 旧实现：保留原有代码
-                        val displayPhotos = event.photos.take(12)
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            items(displayPhotos) { photo ->
-                                AsyncImage(
-                                    model = photo.systemUri,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(80.dp)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .clickable { onPhotoClick(photo.id) }
-                                )
-                            }
-                            
-                            // Show more indicator - now navigates to list sorter
-                            if (event.photos.size > 12) {
-                                item {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(80.dp)
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
-                                            .clickable { onViewMore() },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            Text(
-                                                text = "+${event.photos.size - 12}",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                            Text(
-                                                text = "查看全部",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    TimelineEventPhotoRow(
+                        photos = event.photos,
+                        selectedIds = selectedIds,
+                        isSelectionMode = isSelectionMode,
+                        onPhotoClick = onPhotoClick,
+                        onPhotoLongPress = onPhotoLongPress,
+                        onSelectionToggle = onSelectionToggle,
+                        maxDisplay = 12,
+                        onViewMore = if (event.photos.size > 12) onViewMore else null
+                    )
                 }
             }
         }

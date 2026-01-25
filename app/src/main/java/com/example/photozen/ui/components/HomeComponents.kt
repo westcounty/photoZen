@@ -1,12 +1,17 @@
 package com.example.photozen.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,15 +54,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.remember
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.shadow
+import com.example.photozen.ui.theme.PicZenMotion
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
@@ -118,21 +127,25 @@ object HomeDesignTokens {
 
 /**
  * 首页主操作区 - 显示待整理数量和开始按钮
- * 
+ *
  * 首页最核心的组件，突出显示待整理照片数量，
  * 提供一个显眼的"开始整理"按钮。
- * 
+ *
  * ## 设计规范
- * 
+ *
  * - 背景色: primaryContainer
  * - 数字样式: displayLarge, 粗体, primary 色
  * - 按钮: 全宽, 56dp 高, 16dp 圆角
- * 
+ *
  * ## 状态说明
- * 
+ *
  * - unsortedCount > 0: 显示待整理数量，按钮文字"开始整理"
  * - unsortedCount == 0: 显示"0"，文字"所有照片已整理完成"，按钮禁用显示"已完成"
- * 
+ *
+ * ## Enhanced Features
+ * - 按压缩放动画 (0.97f) - 大卡片标准
+ * - 阴影动态变化 (Level4 → Level3)
+ *
  * @param unsortedCount 待整理照片数量
  * @param onStartClick 开始按钮点击回调
  * @param modifier Modifier
@@ -145,15 +158,40 @@ fun HomeMainAction(
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // 按压缩放动画 - 0.97f for large cards
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "homeMainActionScale"
+    )
+
+    // 阴影动态变化
+    val shadowElevation by animateDpAsState(
+        targetValue = if (isPressed) PicZenTokens.Elevation.Level3 else HomeDesignTokens.MainCardElevation,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "homeMainActionShadow"
+    )
+
     // DES-024: 主卡片阴影增强
     Card(
         modifier = modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .shadow(
-                elevation = HomeDesignTokens.MainCardElevation,
-                shape = RoundedCornerShape(HomeDesignTokens.CardCornerRadius),
-                ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                elevation = shadowElevation,
+                shape = RoundedCornerShape(HomeDesignTokens.CardCornerRadius)
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled && unsortedCount > 0,
+                onClick = onStartClick
             ),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
@@ -180,9 +218,9 @@ fun HomeMainAction(
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             // 主按钮
             Button(
                 onClick = onStartClick,
@@ -249,7 +287,7 @@ fun HomeQuickActions(
             badge = if (keepCount > 0) keepCount.toString() else null,
             onClick = onKeepClick,
             tint = KeepGreen,
-            enabled = keepCount > 0
+            enabled = true  // 始终可点击，空状态在列表页面展示
         )
         QuickActionItem(
             icon = Icons.AutoMirrored.Filled.CompareArrows,
@@ -257,7 +295,7 @@ fun HomeQuickActions(
             badge = if (maybeCount > 0) maybeCount.toString() else null,
             onClick = onCompareClick,
             tint = MaybeAmber,
-            enabled = maybeCount > 0
+            enabled = true  // 始终可点击，空状态在列表页面展示
         )
         QuickActionItem(
             icon = Icons.Default.Delete,
@@ -272,7 +310,9 @@ fun HomeQuickActions(
 
 /**
  * 快捷入口单项
- * 
+ *
+ * DES-035: 添加按压缩放和动态阴影效果
+ *
  * @param icon 图标
  * @param label 标签文字
  * @param onClick 点击回调
@@ -290,17 +330,42 @@ private fun QuickActionItem(
     enabled: Boolean = true
 ) {
     val alpha = if (enabled) 1f else 0.5f
-    
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // DES-035: 按压缩放动画
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.92f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "quickActionScale"
+    )
+
+    // DES-035: 动态阴影
+    val elevation by animateDpAsState(
+        targetValue = if (isPressed) 2.dp else 6.dp,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "quickActionElevation"
+    )
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(RoundedCornerShape(12.dp))
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(
+                enabled = enabled,
+                onClick = onClick,
+                interactionSource = interactionSource,
+                indication = null  // 禁用默认涟漪，使用缩放效果
+            )
             .padding(12.dp)
             .alpha(alpha)
     ) {
         Box {
-            // 图标容器
+            // 图标容器 - 简洁背景无阴影
             Box(
                 modifier = Modifier
                     .size(HomeDesignTokens.QuickActionIconSize)
@@ -309,12 +374,12 @@ private fun QuickActionItem(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = icon, 
-                    contentDescription = label, 
+                    imageVector = icon,
+                    contentDescription = label,
                     tint = tint
                 )
             }
-            
+
             // Badge 角标
             if (badge != null) {
                 Surface(
@@ -333,9 +398,9 @@ private fun QuickActionItem(
                 }
             }
         }
-        
+
         Spacer(modifier = Modifier.height(4.dp))
-        
+
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
@@ -373,22 +438,26 @@ data class DailyTaskDisplayStatus(
 
 /**
  * 首页每日任务卡片 - 可折叠
- * 
+ *
  * 显示每日任务进度，支持折叠/展开。
- * 
+ *
  * ## 折叠规则
- * 
+ *
  * - 任务未完成: 默认展开
  * - 任务已完成: 默认折叠
  * - 用户可点击头部切换折叠状态
  * - 当任务完成状态变化时，自动重置展开状态
- * 
+ *
  * ## 设计规范
- * 
+ *
  * - 已完成背景: KeepGreen 10% 透明度
  * - 进度条: 6dp 高, 3dp 圆角
  * - 展开/折叠动画: expandVertically + fadeIn/fadeOut
- * 
+ *
+ * ## Enhanced Features
+ * - 头部按压缩放动画 (0.98f)
+ * - 背景色动画
+ *
  * @param status 每日任务状态
  * @param onStartClick 继续任务按钮点击回调
  * @param modifier Modifier
@@ -403,28 +472,47 @@ fun HomeDailyTask(
 ) {
     // 折叠状态，未完成时默认展开
     var expanded by rememberSaveable { mutableStateOf(defaultExpanded) }
-    
+
+    // 头部按压状态
+    val headerInteractionSource = remember { MutableInteractionSource() }
+    val isHeaderPressed by headerInteractionSource.collectIsPressedAsState()
+
+    // 头部按压缩放动画 - 0.98f for header
+    val headerScale by animateFloatAsState(
+        targetValue = if (isHeaderPressed) 0.98f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "dailyTaskHeaderScale"
+    )
+
     // 当状态变化时，重置展开状态
     LaunchedEffect(status.isCompleted) {
         expanded = !status.isCompleted
     }
-    
+
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (status.isCompleted) 
-                KeepGreen.copy(alpha = 0.1f) 
-            else 
+            containerColor = if (status.isCompleted)
+                KeepGreen.copy(alpha = 0.1f)
+            else
                 MaterialTheme.colorScheme.surfaceVariant
         ),
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // 头部 - 始终显示，可点击切换折叠
+            // 头部 - 始终显示，可点击切换折叠，带按压反馈
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { expanded = !expanded }
+                    .graphicsLayer {
+                        scaleX = headerScale
+                        scaleY = headerScale
+                    }
+                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                    .clickable(
+                        interactionSource = headerInteractionSource,
+                        indication = null
+                    ) { expanded = !expanded }
                     .padding(16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -432,9 +520,9 @@ fun HomeDailyTask(
                 // 左侧：图标 + 标题
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = if (status.isCompleted) 
-                            Icons.Default.Check 
-                        else 
+                        imageVector = if (status.isCompleted)
+                            Icons.Default.Check
+                        else
                             Icons.Default.Assignment,
                         contentDescription = null,
                         tint = if (status.isCompleted) KeepGreen else MaterialTheme.colorScheme.primary,
@@ -447,7 +535,7 @@ fun HomeDailyTask(
                         fontWeight = FontWeight.Medium
                     )
                 }
-                
+
                 // 右侧：进度 + 展开/折叠图标
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -458,9 +546,9 @@ fun HomeDailyTask(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(
-                        imageVector = if (expanded) 
-                            Icons.Default.ExpandLess 
-                        else 
+                        imageVector = if (expanded)
+                            Icons.Default.ExpandLess
+                        else
                             Icons.Default.ExpandMore,
                         contentDescription = if (expanded) "折叠" else "展开",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -529,6 +617,10 @@ fun HomeDailyTask(
  * - 两个操作按钮：继续任务（主）+ 整理全部（次）
  * - 如果每日任务未启用，只显示整理全部按钮
  *
+ * ## Enhanced Features
+ * - 按压缩放动画 (0.97f) - 大卡片标准
+ * - 阴影动态变化 (Level3 → Level2)
+ *
  * @param dailyTaskStatus 每日任务状态（可为null表示未启用或加载中）
  * @param unsortedCount 待整理照片数量
  * @param onStartDailyTask 开始/继续每日任务回调
@@ -546,8 +638,48 @@ fun HomeDailyTaskWithSortAll(
     val isDailyTaskEnabled = dailyTaskStatus?.isEnabled == true
     val isCompleted = dailyTaskStatus?.isCompleted == true
 
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // 按压缩放动画 - 0.97f for large cards
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "dailyTaskSortAllScale"
+    )
+
+    // 阴影动态变化
+    val shadowElevation by animateDpAsState(
+        targetValue = if (isPressed) PicZenTokens.Elevation.Level2 else PicZenTokens.Elevation.Level3,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "dailyTaskSortAllShadow"
+    )
+
+    // DES-035: 主操作卡片增强阴影
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .shadow(
+                elevation = shadowElevation,
+                shape = RoundedCornerShape(20.dp),
+                ambientColor = if (isCompleted)
+                    KeepGreen.copy(alpha = 0.15f)
+                else
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                spotColor = if (isCompleted)
+                    KeepGreen.copy(alpha = 0.2f)
+                else
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {}
+            ),
         colors = CardDefaults.cardColors(
             containerColor = if (isCompleted)
                 KeepGreen.copy(alpha = 0.1f)
@@ -638,14 +770,16 @@ fun HomeDailyTaskWithSortAll(
             // 操作按钮区
             if (isDailyTaskEnabled && !isCompleted) {
                 // 每日任务启用且未完成：显示两个按钮
-                // 主按钮：整理全部，次按钮：继续任务
+                // 主按钮：开始/继续任务，次按钮：整理全部
+                val taskButtonText = if (dailyTaskStatus?.current == 0) "开始任务" else "继续任务"
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // 主按钮：整理全部
+                    // 主按钮：开始/继续任务
                     Button(
-                        onClick = onStartSortAll,
+                        onClick = onStartDailyTask,
                         modifier = Modifier.weight(1f),
                         enabled = unsortedCount > 0
                     ) {
@@ -655,16 +789,16 @@ fun HomeDailyTaskWithSortAll(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("整理全部")
+                        Text(taskButtonText)
                     }
 
-                    // 次按钮：继续任务
+                    // 次按钮：整理全部
                     FilledTonalButton(
-                        onClick = onStartDailyTask,
+                        onClick = onStartSortAll,
                         modifier = Modifier.weight(1f),
                         enabled = unsortedCount > 0
                     ) {
-                        Text("继续任务")
+                        Text("整理全部")
                     }
                 }
             } else if (isCompleted) {
@@ -708,6 +842,10 @@ fun HomeDailyTaskWithSortAll(
  * 提示用户可以从系统相册分享照片到 PhotoZen 进行复制或对比。
  * 用户关闭后不再显示。
  *
+ * ## Enhanced Features
+ * - 轻微按压反馈 (0.99f) - 信息卡片
+ * - 关闭按钮旋转 90° + 缩放 0.85f
+ *
  * @param onDismiss 关闭回调
  * @param modifier Modifier
  */
@@ -716,8 +854,47 @@ fun ShareFeatureTipCard(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // 卡片按压状态
+    val cardInteractionSource = remember { MutableInteractionSource() }
+    val isCardPressed by cardInteractionSource.collectIsPressedAsState()
+
+    // 轻微按压反馈 - 0.99f for info cards
+    val cardScale by animateFloatAsState(
+        targetValue = if (isCardPressed) 0.99f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "shareTipCardScale"
+    )
+
+    // 关闭按钮按压状态
+    val closeInteractionSource = remember { MutableInteractionSource() }
+    val isClosePressed by closeInteractionSource.collectIsPressedAsState()
+
+    // 关闭按钮旋转动画
+    val closeRotation by animateFloatAsState(
+        targetValue = if (isClosePressed) 90f else 0f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "closeRotation"
+    )
+
+    // 关闭按钮缩放动画
+    val closeScale by animateFloatAsState(
+        targetValue = if (isClosePressed) 0.85f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "closeScale"
+    )
+
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = cardScale
+                scaleY = cardScale
+            }
+            .clickable(
+                interactionSource = cardInteractionSource,
+                indication = null,
+                onClick = {}
+            ),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer
         ),
@@ -754,10 +931,17 @@ fun ShareFeatureTipCard(
                 )
             }
 
-            // 关闭按钮
+            // 关闭按钮 - 带旋转和缩放动画
             IconButton(
                 onClick = onDismiss,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier
+                    .size(24.dp)
+                    .graphicsLayer {
+                        rotationZ = closeRotation
+                        scaleX = closeScale
+                        scaleY = closeScale
+                    },
+                interactionSource = closeInteractionSource
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,

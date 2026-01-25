@@ -100,6 +100,14 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.ui.components.DragSelectPhotoGrid
+import com.example.photozen.ui.components.PhotoGridMode
+import com.example.photozen.ui.components.SortDropdownButton
+import com.example.photozen.ui.components.SortOption
+import com.example.photozen.ui.components.ViewModeDropdownButton
+import com.example.photozen.ui.components.fullscreen.UnifiedFullscreenViewer
+import com.example.photozen.ui.components.fullscreen.FullscreenActionType
+import com.example.photozen.ui.components.shareImage
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
@@ -122,6 +130,8 @@ fun LightTableScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     // Shared transform state for synchronized zoom
     val transformState = rememberTransformState()
@@ -167,6 +177,22 @@ fun LightTableScreen(
         // Different layouts for SELECTION vs COMPARISON mode
         when (uiState.mode) {
             LightTableMode.SELECTION -> {
+                // Sort options for dropdown
+                val sortOptions = remember {
+                    LightTableSortOrder.entries.map { order ->
+                        SortOption(
+                            id = order.name,
+                            displayName = order.displayName
+                        )
+                    }
+                }
+                val currentSortOption = remember(uiState.sortOrder) {
+                    SortOption(
+                        id = uiState.sortOrder.name,
+                        displayName = uiState.sortOrder.displayName
+                    )
+                }
+
                 // Selection mode: Use Scaffold with topBar and bottomBar
                 Scaffold(
                     snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -175,11 +201,11 @@ fun LightTableScreen(
                             title = {
                                 Column {
                                     Text(
-                                        text = "Light Table",
+                                        text = "待定照片",
                                         style = MaterialTheme.typography.titleLarge
                                     )
                                     Text(
-                                        text = "${uiState.allMaybePhotos.size} 张待定照片",
+                                        text = "${uiState.allMaybePhotos.size}张待对比",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -194,15 +220,26 @@ fun LightTableScreen(
                                 }
                             },
                             actions = {
-                                IconButton(
-                                    onClick = { viewModel.selectAll() },
-                                    enabled = uiState.allMaybePhotos.isNotEmpty()
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.SelectAll,
-                                        contentDescription = "全选"
-                                    )
-                                }
+                                // 排序按钮
+                                SortDropdownButton(
+                                    options = sortOptions,
+                                    currentSort = currentSortOption,
+                                    onSortSelected = { option ->
+                                        val order = LightTableSortOrder.valueOf(option.id)
+                                        viewModel.setSortOrder(order)
+                                    }
+                                )
+                                // 视图模式按钮
+                                ViewModeDropdownButton(
+                                    currentMode = uiState.gridMode,
+                                    currentColumns = uiState.gridColumns,
+                                    onModeChanged = { mode ->
+                                        viewModel.setGridMode(mode)
+                                    },
+                                    onColumnsChanged = { cols ->
+                                        viewModel.setGridColumns(cols)
+                                    }
+                                )
                             },
                             colors = TopAppBarDefaults.topAppBarColors(
                                 containerColor = MaterialTheme.colorScheme.surface
@@ -231,10 +268,48 @@ fun LightTableScreen(
                             uiState.isLoading -> LoadingContent()
                             uiState.allMaybePhotos.isEmpty() -> EmptyContent(onNavigateBack = onNavigateBack)
                             else -> {
-                                PhotoThumbnailGrid(
+                                DragSelectPhotoGrid(
                                     photos = uiState.allMaybePhotos,
                                     selectedIds = uiState.selectedForComparison,
-                                    onToggleSelection = { viewModel.toggleSelection(it) }
+                                    onSelectionChanged = { newSelection ->
+                                        // 限制最多选择 6 张
+                                        if (newSelection.size <= LightTableUiState.MAX_COMPARISON_PHOTOS) {
+                                            newSelection.forEach { photoId ->
+                                                if (photoId !in uiState.selectedForComparison) {
+                                                    viewModel.toggleSelection(photoId)
+                                                }
+                                            }
+                                            uiState.selectedForComparison.forEach { photoId ->
+                                                if (photoId !in newSelection) {
+                                                    viewModel.toggleSelection(photoId)
+                                                }
+                                            }
+                                        } else {
+                                            // 超过限制，显示提示
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar("最多可对比${LightTableUiState.MAX_COMPARISON_PHOTOS}张照片")
+                                            }
+                                        }
+                                    },
+                                    onPhotoClick = { photoId, index ->
+                                        if (uiState.selectedForComparison.isEmpty()) {
+                                            // 非选择模式 - 进入全屏预览
+                                            fullscreenStartIndex = index
+                                            showFullscreen = true
+                                        } else {
+                                            // 选择模式 - 切换选中状态
+                                            viewModel.toggleSelection(photoId)
+                                        }
+                                    },
+                                    onPhotoLongPress = { photoId, _ ->
+                                        // 长按进入选择模式
+                                        if (photoId !in uiState.selectedForComparison) {
+                                            viewModel.toggleSelection(photoId)
+                                        }
+                                    },
+                                    columns = uiState.gridColumns,
+                                    gridMode = uiState.gridMode,
+                                    selectionColor = MaybeAmber
                                 )
                             }
                         }
@@ -415,12 +490,33 @@ fun LightTableScreen(
         }
         
         // Fullscreen preview overlay (works in both modes)
-        if (showFullscreen && uiState.comparisonPhotos.isNotEmpty()) {
-            FullscreenComparisonViewer(
-                photos = uiState.comparisonPhotos,
-                initialIndex = fullscreenStartIndex,
-                onDismiss = { showFullscreen = false }
-            )
+        if (showFullscreen) {
+            val photosToShow = if (uiState.mode == LightTableMode.COMPARISON) {
+                uiState.comparisonPhotos
+            } else {
+                uiState.allMaybePhotos
+            }
+            if (photosToShow.isNotEmpty()) {
+                UnifiedFullscreenViewer(
+                    photos = photosToShow,
+                    initialIndex = fullscreenStartIndex.coerceIn(0, photosToShow.lastIndex),
+                    onExit = { showFullscreen = false },
+                    onAction = { action, photo ->
+                        // 处理全屏预览中的操作
+                        when (action) {
+                            FullscreenActionType.COPY -> { /* 复制功能 */ }
+                            FullscreenActionType.OPEN_WITH -> { /* 用其他app打开 */ }
+                            FullscreenActionType.EDIT -> { /* 编辑功能 */ }
+                            FullscreenActionType.SHARE -> {
+                                shareImage(context, android.net.Uri.parse(photo.systemUri))
+                            }
+                            FullscreenActionType.DELETE -> {
+                                // 待定列表不支持直接删除
+                            }
+                        }
+                    }
+                )
+            }
         }
     }
 }
@@ -883,53 +979,9 @@ private fun LoadingContent() {
 private fun EmptyContent(
     onNavigateBack: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        // Icon
-        Box(
-            modifier = Modifier
-                .size(96.dp)
-                .clip(CircleShape)
-                .background(MaybeAmber.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.GridView,
-                contentDescription = null,
-                tint = MaybeAmber,
-                modifier = Modifier.size(48.dp)
-            )
-        }
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        Text(
-            text = "没有待定照片",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Text(
-            text = "在 Flow Sorter 中向上滑动可将照片\n标记为「待定」以便稍后比较",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-        
-        Spacer(modifier = Modifier.height(32.dp))
-        
-        Button(onClick = onNavigateBack) {
-            Text("返回")
-        }
-    }
+    com.example.photozen.ui.components.EmptyStates.EmptyCompare(
+        modifier = Modifier.fillMaxSize()
+    )
 }
 
 /**

@@ -1,6 +1,6 @@
-# PhotoZen 交互设计规范 v2.0
+# PhotoZen 交互设计规范 v2.1
 
-> 📌 更新日期: 2026-01-25 | 设计系统集成版
+> 📌 更新日期: 2026-01-25 | 极致视觉体验优化版 (Phase 1-4)
 
 ---
 
@@ -184,6 +184,100 @@
 - **图标切换**: `crossfade` + `PicZenMotion.Duration.Normal`
 - **颜色过渡**: `animateColorAsState` + `PicZenMotion.Duration.Moderate`
 
+### 4.6 底部导航增强动画 (Phase 1)
+
+底部导航栏添加了滑动指示器和图标弹跳效果：
+
+| 效果 | 参数 | 说明 |
+|:-----|:-----|:-----|
+| 滑动指示器 | playful spring | 跟随选中项平滑移动 |
+| 选中图标缩放 | 1.1f | 放大突出显示 |
+| 未选中图标缩放 | 0.85f | 缩小退后 |
+| 切换时长 | 200ms | crossfade |
+
+### 4.7 首页组件动画 (Phase 2)
+
+#### 数字滚动动画
+- **组件**: `AnimatedCounter`
+- **用途**: 待整理数量、统计数字
+- **动画**: `animateIntAsState` + `EmphasizedDecelerate`
+
+#### 火焰摇曳动画
+- **组件**: `AnimatedFlameIcon`
+- **用途**: 连续整理天数火焰图标
+- **动画**: ±5° 旋转, 600ms 循环
+
+#### 快捷入口按压
+- **缩放**: 0.92f
+- **图标下沉**: 2dp
+- **背景**: alpha 增强
+
+### 4.8 相册界面交互 (Phase 3)
+
+#### 相册卡片网格
+- **布局**: 双列正方形网格
+- **按压缩放**: 0.96f
+- **阴影变化**: Level2 → Level1
+- **入场动画**: 错开 30ms/项, 缩放 0.9→1 + 淡入
+
+#### 进度环动画
+- **颜色渐变**: 灰色 → 琥珀 → 绿色 (根据进度)
+- **完成脉冲**: 1.2f (完成时触发一次)
+
+#### 状态徽章
+- **三态**: NOT_STARTED/IN_PROGRESS/COMPLETED
+- **颜色过渡**: `animateColorAsState`
+
+### 4.9 按压微交互规范 (Phase 4)
+
+所有可点击组件都应有按压反馈，使用统一的缩放值：
+
+| 组件类型 | 按压缩放 | Spring | 附加效果 |
+|:---------|:---------|:-------|:---------|
+| 快捷入口按钮 | 0.92f | snappy | 图标下沉2dp |
+| 底部栏图标 | 0.92f | snappy | 背景色alpha动画 |
+| 照片网格项 | 0.95f | snappy | 阴影Level2→Level1 |
+| Chip/标签 | 0.95f | snappy | - |
+| 相册卡片 | 0.96f | snappy | 阴影动画 |
+| 普通按钮 | 0.97f | snappy | - |
+| 列表项/卡片 | 0.98f | snappy | 背景色变化 |
+| 设置项 | 0.98f | snappy | 图标右移2dp |
+
+**代码模式:**
+```kotlin
+val interactionSource = remember { MutableInteractionSource() }
+val isPressed by interactionSource.collectIsPressedAsState()
+
+val scale by animateFloatAsState(
+    targetValue = if (isPressed) 0.97f else 1f,
+    animationSpec = PicZenMotion.Springs.snappy()
+)
+
+Box(
+    modifier = Modifier
+        .graphicsLayer { scaleX = scale; scaleY = scale }
+        .clickable(interactionSource = interactionSource, indication = null) { ... }
+)
+```
+
+### 4.10 底部弹窗动画规范 (Phase 4)
+
+#### 操作列表项入场
+- **错开延迟**: 50ms/项
+- **效果**: 淡入 + 从右滑入30dp
+- **按压**: 缩放0.98f + 图标右移2dp + 背景色变化
+
+#### 相册选择器网格
+- **网格项按压**: 0.96f
+- **选中态缩放**: 1.02f
+- **勾选图标**: `scaleIn` + `fadeIn` 弹入动画
+- **边框**: 颜色过渡动画
+
+#### 确认删除弹窗
+- **警告图标**: 轻微摇晃 (±3°, 1.5秒循环)
+- **危险按钮**: 脉冲动画 (1.02f, 2秒循环) + 红色光晕
+- **取消按钮**: 按压缩放0.97f
+
 ---
 
 ## 5. 列表动画规范
@@ -272,11 +366,64 @@ LazyColumn {
 
 ---
 
-## 9. 相关文档
+## 9. 视觉优化总结 (Phase 1-4)
+
+### 9.1 优化覆盖范围
+
+| Phase | 主题 | 涉及组件数 |
+|:------|:-----|:-----------|
+| Phase 1 | 基础组件增强 | 4 |
+| Phase 2 | 统计和首页组件 | 6+ |
+| Phase 3 | 相册界面重构 | 5 |
+| Phase 4 | 细节打磨 | 10 |
+
+### 9.2 核心成果
+
+1. **100% 交互覆盖** - 所有可点击组件都有按压反馈
+2. **统一动画语言** - 使用 PicZenMotion.Springs 系列
+3. **极致触感** - 关键操作添加触觉反馈
+4. **60fps 流畅** - 使用 graphicsLayer 实现 GPU 加速
+
+### 9.3 增强组件清单
+
+#### Phase 1: 基础组件
+- BottomActionBar (0.92f + 图标下沉)
+- EnhancedSettingsItem (0.98f + 图标右移)
+- FilterChipRow (0.95f + 边框动画)
+- MainBottomNavigation (滑动指示器 + 图标弹跳)
+
+#### Phase 2: 首页组件
+- StatsCards (AnimatedCounter + 火焰摇曳)
+- HomeMainAction (按压 + 阴影)
+- HomeDailyTask (折叠动画 + 完成渐变)
+- QuickActionItem (0.92f + 图标下沉)
+
+#### Phase 3: 相册组件
+- AlbumCard (0.96f + 暗角渐变 + 毛玻璃)
+- AlbumGridView (错开入场 30ms)
+- AlbumProgressRing (颜色渐变 + 完成脉冲)
+- AlbumStatusBadge (三态 + 颜色过渡)
+
+#### Phase 4: 细节组件
+- SelectionTopBar (旋转 + 数量脉冲)
+- PhotoActionSheet (错开入场 50ms)
+- AlbumPickerBottomSheet (选中缩放 + 勾选弹入)
+- ConfirmDeleteSheet (脉冲 + 红色光晕 + 图标摇晃)
+- DateRangePicker (选中弹跳 + 触觉反馈)
+- CalendarHeatmap (按压 + 颜色过渡)
+- TimelineEventPhotoRow (按压 + 阴影 + 入场)
+- PhotoStatusBadge (脉冲 + 图标动画)
+- GuideTooltip (呼吸脉冲 + 箭头移动)
+
+---
+
+## 10. 相关文档
 
 - [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) - 完整设计系统规范
 - [GESTURE_SPEC.md](GESTURE_SPEC.md) - 手势交互规范
+- [COMPONENT_USAGE.md](COMPONENT_USAGE.md) - 组件使用示例
 
 ---
 
 *本规范基于 PicZenTokens 和 PicZenMotion 设计系统，确保全应用一致性。*
+*v2.1 更新: 完成极致视觉体验优化 (Phase 1-4)*

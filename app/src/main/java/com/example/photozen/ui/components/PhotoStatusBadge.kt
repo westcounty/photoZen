@@ -1,5 +1,14 @@
 package com.example.photozen.ui.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -17,6 +26,12 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,12 +41,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.PicZenActionColors
+import com.example.photozen.ui.theme.PicZenMotion
 import com.example.photozen.ui.theme.PicZenTokens
 import com.example.photozen.ui.theme.TrashRed
 
@@ -337,6 +354,11 @@ enum class PillSize {
  * - 平滑圆角设计
  * - 语义化图标 (勾号/时钟/关闭)
  *
+ * 增强动画:
+ * - 状态切换时缩放脉冲 (1.2f)
+ * - 图标切换动画 (scaleIn/scaleOut)
+ * - 颜色过渡动画
+ *
  * @param status 照片状态
  * @param modifier Modifier
  * @param size 徽章尺寸
@@ -357,6 +379,35 @@ fun PhotoStatusPill(
         PhotoStatus.UNSORTED -> return
     }
 
+    // 状态变化脉冲动画
+    var previousStatus by remember { mutableStateOf(status) }
+    var triggerBounce by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(status) {
+        if (status != previousStatus) {
+            triggerBounce++
+            previousStatus = status
+        }
+    }
+
+    val bounceScale by animateFloatAsState(
+        targetValue = if (triggerBounce % 2 == 1) 1.2f else 1f,
+        animationSpec = PicZenMotion.Springs.playful(),
+        label = "bounceScale",
+        finishedListener = {
+            if (triggerBounce % 2 == 1) {
+                triggerBounce++
+            }
+        }
+    )
+
+    // 颜色过渡动画
+    val animatedColor by animateColorAsState(
+        targetValue = color,
+        animationSpec = tween(PicZenMotion.Duration.Normal),
+        label = "pillColor"
+    )
+
     // 根据尺寸计算容器和图标大小
     val (containerSize, iconSize) = when (size) {
         PillSize.Small -> 18.dp to 10.dp
@@ -366,18 +417,22 @@ fun PhotoStatusPill(
 
     Box(
         modifier = modifier
+            .graphicsLayer {
+                scaleX = bounceScale
+                scaleY = bounceScale
+            }
             .size(containerSize)
             .shadow(
                 elevation = 2.dp,
                 shape = RoundedCornerShape(PicZenTokens.Radius.S),
-                ambientColor = color.copy(alpha = 0.3f),
-                spotColor = color.copy(alpha = 0.2f)
+                ambientColor = animatedColor.copy(alpha = 0.3f),
+                spotColor = animatedColor.copy(alpha = 0.2f)
             )
             .background(
                 brush = Brush.linearGradient(
                     colors = listOf(
-                        color,
-                        color.copy(alpha = 0.85f)
+                        animatedColor,
+                        animatedColor.copy(alpha = 0.85f)
                     ),
                     start = Offset(0f, 0f),
                     end = Offset(containerSize.value, containerSize.value)
@@ -403,13 +458,22 @@ fun PhotoStatusPill(
                 )
         )
 
-        // 图标
-        Icon(
-            imageVector = icon,
-            contentDescription = status.name,
-            modifier = Modifier.size(iconSize),
-            tint = Color.White
-        )
+        // 图标 - 带切换动画
+        AnimatedContent(
+            targetState = icon,
+            transitionSpec = {
+                (scaleIn(animationSpec = PicZenMotion.Springs.playful()) + fadeIn()) togetherWith
+                        (scaleOut() + fadeOut())
+            },
+            label = "iconTransition"
+        ) { targetIcon ->
+            Icon(
+                imageVector = targetIcon,
+                contentDescription = status.name,
+                modifier = Modifier.size(iconSize),
+                tint = Color.White
+            )
+        }
     }
 }
 

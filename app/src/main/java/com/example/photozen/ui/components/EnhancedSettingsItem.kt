@@ -1,23 +1,40 @@
 package com.example.photozen.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.example.photozen.ui.theme.PicZenMotion
 
 /**
  * 增强的设置项组件
- * 
+ *
  * 提供统一的设置项视觉样式，支持图标、标题、副标题和自定义尾部内容。
- * 
+ *
+ * ## Enhanced Features
+ * - Press scale animation (0.98f) for tactile feedback
+ * - Background color animation on press
+ * - Icon offset (2dp right) when pressed
+ *
  * @param icon 左侧图标
  * @param title 标题
  * @param onClick 点击回调
@@ -38,18 +55,55 @@ fun EnhancedSettingsItem(
     enabled: Boolean = true,
     iconTint: Color? = null
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // Press scale animation - 0.98f for list items
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && enabled) 0.98f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "settingsItemScale"
+    )
+
+    // Background color animation
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isPressed && enabled)
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        else Color.Transparent,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "settingsItemBg"
+    )
+
+    // Icon offset when pressed - 2dp right
+    val iconOffsetX by animateDpAsState(
+        targetValue = if (isPressed && enabled) 2.dp else 0.dp,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "iconOffsetX"
+    )
+
     val contentAlpha = if (enabled) 1f else 0.5f
     val resolvedIconTint = iconTint ?: MaterialTheme.colorScheme.onSurfaceVariant
-    
+
     ListItem(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick),
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .background(backgroundColor)
+            .clickable(
+                enabled = enabled,
+                onClick = onClick,
+                interactionSource = interactionSource,
+                indication = LocalIndication.current
+            ),
         leadingContent = {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = resolvedIconTint.copy(alpha = contentAlpha)
+                tint = resolvedIconTint.copy(alpha = contentAlpha),
+                modifier = Modifier.offset { IntOffset(iconOffsetX.roundToPx(), 0) }
             )
         },
         headlineContent = {
@@ -126,8 +180,13 @@ fun SwitchSettingsItem(
 
 /**
  * 带值显示的设置项
- * 
+ *
  * 用于显示当前设置值，如 "语言: 中文"。
+ *
+ * ## Enhanced Features
+ * - Press scale animation (0.98f) for tactile feedback
+ * - Background color animation on press
+ * - Icon offset (2dp right) when pressed
  */
 @Composable
 fun ValueSettingsItem(
@@ -140,18 +199,55 @@ fun ValueSettingsItem(
     enabled: Boolean = true,
     iconTint: Color? = null
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // Press scale animation - 0.98f for list items
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && enabled) 0.98f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "valueSettingsScale"
+    )
+
+    // Background color animation
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isPressed && enabled)
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        else Color.Transparent,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "valueSettingsBg"
+    )
+
+    // Icon offset when pressed - 2dp right
+    val iconOffsetX by animateDpAsState(
+        targetValue = if (isPressed && enabled) 2.dp else 0.dp,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "valueIconOffsetX"
+    )
+
     val contentAlpha = if (enabled) 1f else 0.5f
     val resolvedIconTint = iconTint ?: MaterialTheme.colorScheme.onSurfaceVariant
-    
+
     ListItem(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick),
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .background(backgroundColor)
+            .clickable(
+                enabled = enabled,
+                onClick = onClick,
+                interactionSource = interactionSource,
+                indication = LocalIndication.current
+            ),
         leadingContent = {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = resolvedIconTint.copy(alpha = contentAlpha)
+                tint = resolvedIconTint.copy(alpha = contentAlpha),
+                modifier = Modifier.offset { IntOffset(iconOffsetX.roundToPx(), 0) }
             )
         },
         headlineContent = {
@@ -358,8 +454,13 @@ fun InfoSettingsItem(
 
 /**
  * 危险操作设置项
- * 
+ *
  * 用于删除数据、重置等危险操作，使用红色强调。
+ *
+ * ## Enhanced Features
+ * - Press scale animation (0.98f) for tactile feedback
+ * - Background color animation on press (error color tint)
+ * - Icon offset (2dp right) when pressed
  */
 @Composable
 fun DangerSettingsItem(
@@ -370,18 +471,55 @@ fun DangerSettingsItem(
     subtitle: String? = null,
     enabled: Boolean = true
 ) {
-    val contentAlpha = if (enabled) 1f else 0.5f
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // Press scale animation - 0.98f for list items
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && enabled) 0.98f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "dangerSettingsScale"
+    )
+
+    // Background color animation - uses error color tint for danger feedback
     val dangerColor = MaterialTheme.colorScheme.error
-    
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isPressed && enabled)
+            dangerColor.copy(alpha = 0.1f)
+        else Color.Transparent,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "dangerSettingsBg"
+    )
+
+    // Icon offset when pressed - 2dp right
+    val iconOffsetX by animateDpAsState(
+        targetValue = if (isPressed && enabled) 2.dp else 0.dp,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "dangerIconOffsetX"
+    )
+
+    val contentAlpha = if (enabled) 1f else 0.5f
+
     ListItem(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick),
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .background(backgroundColor)
+            .clickable(
+                enabled = enabled,
+                onClick = onClick,
+                interactionSource = interactionSource,
+                indication = LocalIndication.current
+            ),
         leadingContent = {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = dangerColor.copy(alpha = contentAlpha)
+                tint = dangerColor.copy(alpha = contentAlpha),
+                modifier = Modifier.offset { IntOffset(iconOffsetX.roundToPx(), 0) }
             )
         },
         headlineContent = {

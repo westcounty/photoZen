@@ -754,22 +754,12 @@ private fun PinchGestureAnimation(
  */
 @Composable
 fun OnboardingOverlay(
-    showPinchZoomGuide: Boolean = false,
     showSwipeSortGuide: Boolean = false,
-    onPinchZoomGuideDismiss: () -> Unit = {},
     onSwipeSortGuideDismiss: () -> Unit = {},
     content: @Composable () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         content()
-
-        AnimatedVisibility(
-            visible = showPinchZoomGuide,
-            enter = fadeIn(animationSpec = tween(300)),
-            exit = fadeOut(animationSpec = tween(300))
-        ) {
-            PinchZoomOnboarding(onDismiss = onPinchZoomGuideDismiss)
-        }
 
         AnimatedVisibility(
             visible = showSwipeSortGuide,

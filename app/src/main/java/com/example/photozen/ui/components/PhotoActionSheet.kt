@@ -7,8 +7,13 @@ import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +23,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,6 +55,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -64,6 +72,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.example.photozen.ui.theme.PicZenMotion
+import kotlinx.coroutines.delay
 
 /**
  * App info for external app chooser.
@@ -244,24 +254,26 @@ fun TaggedPhotoActionSheet(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
                 )
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
-                // Action items
+
+                // Action items with staggered entry animations (50ms delay each)
                 ActionSheetItem(
                     icon = Icons.Default.Edit,
                     title = "编辑照片",
                     subtitle = "裁切、创建虚拟副本",
+                    animationDelay = 0,
                     onClick = {
                         onEdit()
                         onDismiss()
                     }
                 )
-                
+
                 ActionSheetItem(
                     icon = Icons.AutoMirrored.Filled.OpenInNew,
                     title = "使用其他应用打开",
                     subtitle = if (defaultAppPackage != null) "默认: ${getAppName(context, defaultAppPackage)}" else "选择应用查看或编辑",
+                    animationDelay = 50,
                     onClick = {
                         if (defaultAppPackage != null && availableApps.any { it.packageName == defaultAppPackage }) {
                             onOpenWithApp(defaultAppPackage)
@@ -272,38 +284,41 @@ fun TaggedPhotoActionSheet(
                     },
                     onLongClick = { showAppChooser = true }
                 )
-                
+
                 ActionSheetItem(
                     icon = Icons.Default.Share,
                     title = "分享",
                     subtitle = "发送到其他应用",
                     iconTint = Color(0xFF1E88E5),
+                    animationDelay = 100,
                     onClick = {
                         shareImage(context, uri)
                         onDismiss()
                     }
                 )
-                
+
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                     color = MaterialTheme.colorScheme.outlineVariant
                 )
-                
+
                 ActionSheetItem(
                     icon = Icons.Outlined.SwapHoriz,
                     title = "修改标签",
                     subtitle = "将照片移至其他标签",
+                    animationDelay = 150,
                     onClick = {
                         onChangeTag()
                         onDismiss()
                     }
                 )
-                
+
                 ActionSheetItem(
                     icon = Icons.Outlined.Delete,
                     title = "移除标签",
                     subtitle = "从当前标签中移除照片",
                     iconTint = MaterialTheme.colorScheme.error,
+                    animationDelay = 200,
                     onClick = {
                         onRemoveTag()
                         onDismiss()
@@ -497,6 +512,12 @@ private fun AppItem(
 
 /**
  * Single action item in the sheet.
+ *
+ * 增强动画:
+ * - 按压缩放 (0.98f)
+ * - 背景色按压变化
+ * - 图标按压右移 (2dp)
+ * - 入场动画支持 (淡入 + 从右滑入)
  */
 @Composable
 private fun ActionSheetItem(
@@ -505,18 +526,73 @@ private fun ActionSheetItem(
     subtitle: String? = null,
     iconTint: Color = MaterialTheme.colorScheme.primary,
     onClick: () -> Unit,
-    onLongClick: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null,
+    animationDelay: Int = 0
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // 入场动画
+    var isVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(animationDelay.toLong())
+        isVisible = true
+    }
+
+    val entryAlpha by animateFloatAsState(
+        targetValue = if (isVisible) 1f else 0f,
+        animationSpec = tween(PicZenMotion.Duration.Fast),
+        label = "entryAlpha"
+    )
+    val entryOffsetX by animateDpAsState(
+        targetValue = if (isVisible) 0.dp else 30.dp,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "entryOffsetX"
+    )
+
+    // 按压缩放动画
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "pressScale"
+    )
+
+    // 图标按压右移
+    val iconOffset by animateDpAsState(
+        targetValue = if (isPressed) 2.dp else 0.dp,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "iconOffset"
+    )
+
+    // 背景色按压变化
+    val backgroundAlpha by animateFloatAsState(
+        targetValue = if (isPressed) 0.08f else 0f,
+        animationSpec = tween(PicZenMotion.Duration.Quick),
+        label = "backgroundAlpha"
+    )
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            .graphicsLayer {
+                alpha = entryAlpha
+                scaleX = scale
+                scaleY = scale
+                translationX = entryOffsetX.toPx()
+            }
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = backgroundAlpha))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
             .padding(horizontal = 24.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
                 .size(44.dp)
+                .offset(x = iconOffset)
                 .clip(CircleShape)
                 .background(iconTint.copy(alpha = 0.1f)),
             contentAlignment = Alignment.Center
@@ -528,9 +604,9 @@ private fun ActionSheetItem(
                 modifier = Modifier.size(22.dp)
             )
         }
-        
+
         Spacer(modifier = Modifier.width(16.dp))
-        
+
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
@@ -612,29 +688,34 @@ fun PhotoListActionSheet(
                     onBack = { showAppChooser = false }
                 )
             } else {
+                // 动态计算动画延迟索引
+                var delayIndex = 0
+
                 Text(
                     text = "照片操作",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
                 )
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 ActionSheetItem(
                     icon = Icons.Default.Edit,
                     title = "编辑照片",
                     subtitle = "裁切、创建虚拟副本",
+                    animationDelay = delayIndex++ * 50,
                     onClick = {
                         onEdit()
                         onDismiss()
                     }
                 )
-                
+
                 ActionSheetItem(
                     icon = Icons.AutoMirrored.Filled.OpenInNew,
                     title = "使用其他应用打开",
                     subtitle = if (defaultAppPackage != null) "默认: ${getAppName(context, defaultAppPackage)}" else "选择应用查看或编辑",
+                    animationDelay = delayIndex++ * 50,
                     onClick = {
                         if (defaultAppPackage != null && availableApps.any { it.packageName == defaultAppPackage }) {
                             onOpenWithApp(defaultAppPackage)
@@ -644,18 +725,19 @@ fun PhotoListActionSheet(
                         }
                     }
                 )
-                
+
                 ActionSheetItem(
                     icon = Icons.Default.Share,
                     title = "分享",
                     subtitle = "发送到其他应用",
                     iconTint = Color(0xFF1E88E5),
+                    animationDelay = delayIndex++ * 50,
                     onClick = {
                         shareImage(context, uri)
                         onDismiss()
                     }
                 )
-                
+
                 // Duplicate photo option (only for KEEP status)
                 onDuplicatePhoto?.let {
                     ActionSheetItem(
@@ -663,13 +745,14 @@ fun PhotoListActionSheet(
                         title = "复制照片",
                         subtitle = "创建副本并保留所有信息",
                         iconTint = Color(0xFF9C27B0),
+                        animationDelay = delayIndex++ * 50,
                         onClick = {
                             it()
                             onDismiss()
                         }
                     )
                 }
-                
+
                 // Add to album option (only for KEEP status with albums available)
                 onAddToAlbum?.let {
                     ActionSheetItem(
@@ -677,59 +760,64 @@ fun PhotoListActionSheet(
                         title = "添加到相册",
                         subtitle = "将照片加入到指定相册",
                         iconTint = Color(0xFF2196F3),
+                        animationDelay = delayIndex++ * 50,
                         onClick = {
                             it()
                             onDismiss()
                         }
                     )
                 }
-                
+
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                     color = MaterialTheme.colorScheme.outlineVariant
                 )
-                
+
                 onMoveToKeep?.let {
                     ActionSheetItem(
                         icon = Icons.Default.Check,
                         title = "移至保留",
                         iconTint = Color(0xFF4CAF50),
+                        animationDelay = delayIndex++ * 50,
                         onClick = {
                             it()
                             onDismiss()
                         }
                     )
                 }
-                
+
                 onMoveToMaybe?.let {
                     ActionSheetItem(
                         icon = Icons.Default.LocalOffer,
                         title = "标记待定",
                         iconTint = Color(0xFFFFC107),
+                        animationDelay = delayIndex++ * 50,
                         onClick = {
                             it()
                             onDismiss()
                         }
                     )
                 }
-                
+
                 onMoveToTrash?.let {
                     ActionSheetItem(
                         icon = Icons.Outlined.Delete,
                         title = "移至回收站",
                         iconTint = MaterialTheme.colorScheme.error,
+                        animationDelay = delayIndex++ * 50,
                         onClick = {
                             it()
                             onDismiss()
                         }
                     )
                 }
-                
+
                 ActionSheetItem(
                     icon = Icons.Default.Restore,
                     title = "恢复未整理",
                     subtitle = "将照片状态重置为未整理",
                     iconTint = MaterialTheme.colorScheme.tertiary,
+                    animationDelay = delayIndex * 50,
                     onClick = {
                         onResetToUnsorted()
                         onDismiss()

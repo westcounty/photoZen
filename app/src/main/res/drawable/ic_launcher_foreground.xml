@@ -6,31 +6,10 @@
 
     <!--
     PhotoZen Logo - 禅意取景框
-    设计理念：将相框与禅意流水曲线结合
-    - 外框：圆润取景框代表照片
+    设计理念：简洁的禅意流水曲线
     - 内部：优雅S曲线代表禅意的流动与平衡
     - 光效：微妙高光增添精致感
     -->
-
-    <!-- 主取景框 - 带渐变效果的圆角矩形 -->
-    <group>
-        <!-- 外框描边 - 青绿渐变 -->
-        <path
-            android:fillColor="#00000000"
-            android:strokeColor="#5EEAD4"
-            android:strokeWidth="3.5"
-            android:strokeLineCap="round"
-            android:strokeLineJoin="round"
-            android:pathData="M32,30
-                C32,26.686 34.686,24 38,24
-                L70,24
-                C73.314,24 76,26.686 76,30
-                L76,78
-                C76,81.314 73.314,84 70,84
-                L38,84
-                C34.686,84 32,81.314 32,78
-                Z" />
-    </group>
 
     <!-- 禅意曲线 - 优雅的流动S形 (代表和谐与平衡) -->
     <group>
@@ -70,28 +49,5 @@
             android:pathData="M51,51 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0" />
     </group>
 
-    <!-- 装饰元素 - 角落的微妙点缀 -->
-    <group>
-        <!-- 左上角小圆点 - 取景器对焦点风格 -->
-        <path
-            android:fillColor="#5EEAD4"
-            android:fillAlpha="0.4"
-            android:pathData="M38,30 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0" />
-
-        <!-- 右下角小圆点 -->
-        <path
-            android:fillColor="#5EEAD4"
-            android:fillAlpha="0.4"
-            android:pathData="M70,78 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0" />
-    </group>
-
-    <!-- 顶部光泽线 - 高级感 -->
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="1"
-        android:strokeAlpha="0.15"
-        android:strokeLineCap="round"
-        android:pathData="M36,26 L72,26" />
 
 </vector>

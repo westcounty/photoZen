@@ -230,6 +230,23 @@ class TrashViewModel @Inject constructor(
     }
 
     /**
+     * Set grid columns directly (for pinch-zoom gesture).
+     * REQ-003, REQ-008: 双指缩放切换列数
+     */
+    fun setGridColumns(columns: Int) {
+        viewModelScope.launch {
+            // Apply limits based on current grid mode
+            val minColumns = if (_internalState.value.gridMode == PhotoGridMode.SQUARE) 2 else 1
+            val validColumns = columns.coerceIn(minColumns, 5)
+            preferencesRepository.setGridColumns(
+                com.example.photozen.data.repository.PreferencesRepository.GridScreen.TRASH,
+                validColumns
+            )
+            _internalState.update { it.copy(gridColumns = validColumns) }
+        }
+    }
+
+    /**
      * Toggle between SQUARE (grid) and WATERFALL (staggered) modes.
      * SQUARE mode supports drag-to-select, WATERFALL mode does not.
      */
@@ -240,6 +257,22 @@ class TrashViewModel @Inject constructor(
                 PhotoGridMode.WATERFALL -> PhotoGridMode.SQUARE
             }
             state.copy(gridMode = newMode)
+        }
+    }
+
+    /**
+     * Set grid mode directly.
+     * @param mode The new grid mode
+     */
+    fun setGridMode(mode: PhotoGridMode) {
+        _internalState.update { state ->
+            // Adjust columns if switching to SQUARE mode and current columns < 2
+            val newColumns = if (mode == PhotoGridMode.SQUARE && state.gridColumns < 2) {
+                2
+            } else {
+                state.gridColumns
+            }
+            state.copy(gridMode = mode, gridColumns = newColumns)
         }
     }
 

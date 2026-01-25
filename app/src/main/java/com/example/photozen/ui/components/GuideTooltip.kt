@@ -1,13 +1,22 @@
 package com.example.photozen.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,12 +32,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowDropUp
+import androidx.compose.material.icons.filled.ArrowLeft
+import androidx.compose.material.icons.filled.ArrowRight
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,6 +56,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -50,6 +70,7 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
+import com.example.photozen.ui.theme.PicZenMotion
 
 /**
  * 引导气泡箭头方向
@@ -206,6 +227,11 @@ private fun GuideOverlay(
 
 /**
  * 气泡内容组件
+ *
+ * 增强动画:
+ * - 呼吸脉冲动画 (1.0 → 1.02 → 1.0, 2秒循环)
+ * - 箭头移动动画 (±4dp)
+ * - 入场缩放动画
  */
 @Composable
 private fun GuideTooltipBubble(
@@ -220,89 +246,216 @@ private fun GuideTooltipBubble(
     val configuration = LocalConfiguration.current
     val screenWidth = with(density) { configuration.screenWidthDp.dp.toPx() }
     val screenHeight = with(density) { configuration.screenHeightDp.dp.toPx() }
-    
+
     // 计算气泡位置
     val tooltipOffset = remember(targetBounds, arrowDirection, screenWidth, screenHeight) {
         calculateTooltipOffset(targetBounds, arrowDirection, density, screenWidth, screenHeight)
     }
-    
+
+    // 入场动画
+    var isVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        isVisible = true
+    }
+
+    val entryScale by animateFloatAsState(
+        targetValue = if (isVisible) 1f else 0.8f,
+        animationSpec = PicZenMotion.Springs.playful(),
+        label = "entryScale"
+    )
+    val entryAlpha by animateFloatAsState(
+        targetValue = if (isVisible) 1f else 0f,
+        animationSpec = tween(PicZenMotion.Duration.Fast),
+        label = "entryAlpha"
+    )
+
+    // 呼吸脉冲动画
+    val infiniteTransition = rememberInfiniteTransition(label = "tooltipPulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.02f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseScale"
+    )
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.95f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
+
+    // 箭头移动动画 (±4dp)
+    val arrowOffset by infiniteTransition.animateFloat(
+        initialValue = -4f,
+        targetValue = 4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "arrowOffset"
+    )
+
+    // 关闭按钮交互
+    val dismissInteractionSource = remember { MutableInteractionSource() }
+    val isDismissPressed by dismissInteractionSource.collectIsPressedAsState()
+    val dismissScale by animateFloatAsState(
+        targetValue = if (isDismissPressed) 0.95f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "dismissScale"
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Surface(
+        Column(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(
                     start = with(density) { tooltipOffset.x.toDp() }.coerceAtLeast(8.dp),
                     top = with(density) { tooltipOffset.y.toDp() }.coerceAtLeast(8.dp)
                 )
-                .widthIn(max = 280.dp)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { /* 阻止点击穿透 */ },
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
-            tonalElevation = 8.dp,
-            shadowElevation = 8.dp
+                .graphicsLayer {
+                    scaleX = entryScale * pulseScale
+                    scaleY = entryScale * pulseScale
+                    alpha = entryAlpha * pulseAlpha
+                },
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // 引导文字
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+            // 上方箭头 (如果气泡在目标下方)
+            if (arrowDirection == ArrowDirection.UP) {
+                Icon(
+                    imageVector = Icons.Default.ArrowDropUp,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .offset(y = arrowOffset.dp)
                 )
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                // 底部：步骤指示 + 关闭按钮
+            }
+
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { /* 阻止点击穿透 */ },
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                tonalElevation = 8.dp,
+                shadowElevation = 8.dp
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 步骤指示
-                    if (stepInfo != null) {
+                    // 左侧箭头 (如果气泡在目标右方)
+                    if (arrowDirection == ArrowDirection.LEFT) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowLeft,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .size(24.dp)
+                                .offset(x = arrowOffset.dp)
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // 引导文字
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // 底部：步骤指示 + 关闭按钮
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            repeat(stepInfo.total) { index ->
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(RoundedCornerShape(3.dp))
-                                        .background(
-                                            if (index < stepInfo.current) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-                                            }
+                            // 步骤指示
+                            if (stepInfo != null) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    repeat(stepInfo.total) { index ->
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .clip(RoundedCornerShape(3.dp))
+                                                .background(
+                                                    if (index < stepInfo.current) {
+                                                        MaterialTheme.colorScheme.primary
+                                                    } else {
+                                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                                                    }
+                                                )
                                         )
+                                    }
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.width(1.dp))
+                            }
+
+                            // 关闭按钮
+                            TextButton(
+                                onClick = onDismiss,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                interactionSource = dismissInteractionSource,
+                                modifier = Modifier.graphicsLayer {
+                                    scaleX = dismissScale
+                                    scaleY = dismissScale
+                                }
+                            ) {
+                                Text(
+                                    text = dismissText,
+                                    fontWeight = FontWeight.Medium
                                 )
                             }
                         }
-                    } else {
-                        Spacer(modifier = Modifier.width(1.dp))
                     }
-                    
-                    // 关闭按钮
-                    TextButton(
-                        onClick = onDismiss,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = dismissText,
-                            fontWeight = FontWeight.Medium
+
+                    // 右侧箭头 (如果气泡在目标左方)
+                    if (arrowDirection == ArrowDirection.RIGHT) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .size(24.dp)
+                                .offset(x = (-arrowOffset).dp)
                         )
                     }
                 }
+            }
+
+            // 下方箭头 (如果气泡在目标上方)
+            if (arrowDirection == ArrowDirection.DOWN) {
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .offset(y = (-arrowOffset).dp)
+                )
             }
         }
     }

@@ -1,5 +1,10 @@
 package com.example.photozen.ui.components
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,18 +19,23 @@ import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.example.photozen.domain.model.FilterConfig
 import com.example.photozen.domain.model.FilterType
+import com.example.photozen.ui.theme.PicZenMotion
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -118,6 +128,11 @@ fun FilterChipRow(
 
 /**
  * 单个筛选条件 Chip
+ *
+ * ## Enhanced Features
+ * - Press scale animation (0.95f) for tactile feedback
+ * - Border width animation (1dp → 2dp) on press
+ * - Enhanced close button with scale animation
  */
 @Composable
 private fun FilterConditionChip(
@@ -126,10 +141,31 @@ private fun FilterConditionChip(
     onClick: () -> Unit,
     onClear: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // Press scale animation - 0.95f for chips
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "chipScale"
+    )
+
+    // Border width animation
+    val borderWidth by animateDpAsState(
+        targetValue = if (isPressed) 2.dp else 1.dp,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "chipBorderWidth"
+    )
+
     FilterChip(
         selected = true,
         onClick = onClick,
-        label = { 
+        modifier = Modifier.graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        },
+        label = {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
@@ -144,18 +180,55 @@ private fun FilterConditionChip(
             )
         },
         trailingIcon = {
-            IconButton(
-                onClick = onClear,
-                modifier = Modifier.size(18.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "清除",
-                    modifier = Modifier.size(14.dp)
-                )
-            }
-        }
+            EnhancedCloseButton(
+                onClick = onClear
+            )
+        },
+        interactionSource = interactionSource,
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = true,
+            borderWidth = borderWidth,
+            selectedBorderWidth = borderWidth,
+            borderColor = MaterialTheme.colorScheme.outline,
+            selectedBorderColor = MaterialTheme.colorScheme.primary
+        )
     )
+}
+
+/**
+ * Enhanced close button with press scale animation
+ */
+@Composable
+private fun EnhancedCloseButton(
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // Press scale animation - 0.85f for small buttons
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.85f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "closeButtonScale"
+    )
+
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(18.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
+        interactionSource = interactionSource
+    ) {
+        Icon(
+            imageVector = Icons.Default.Close,
+            contentDescription = "清除",
+            modifier = Modifier.size(14.dp)
+        )
+    }
 }
 
 /**

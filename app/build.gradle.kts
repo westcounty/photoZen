@@ -49,24 +49,6 @@ android {
         }
     }
 
-    flavorDimensions += "version"
-    productFlavors {
-        create("standard") {
-            dimension = "version"
-            // 主干版本：无智能画廊，无实验性功能
-            buildConfigField("boolean", "ENABLE_SMART_GALLERY", "false")
-            buildConfigField("boolean", "SHOW_EXPERIMENTAL_SETTINGS", "false")
-        }
-        create("explore") {
-            dimension = "version"
-            applicationIdSuffix = ".explore"
-            versionNameSuffix = "-explore"
-            // 探索版本：完整智能画廊
-            buildConfigField("boolean", "ENABLE_SMART_GALLERY", "true")
-            buildConfigField("boolean", "SHOW_EXPERIMENTAL_SETTINGS", "true")
-        }
-    }
-
     signingConfigs {
         create("release") {
             if (keystorePropertiesFile.exists()) {
@@ -97,7 +79,7 @@ android {
     }
     buildFeatures {
         compose = true
-        buildConfig = true  // 启用 BuildConfig 生成，用于 feature flag
+        buildConfig = true
     }
 }
 
@@ -155,23 +137,9 @@ dependencies {
 
     // Serialization (for type-safe navigation)
     implementation(libs.kotlinx.serialization.json)
-    
-    // MapLibre (地图功能)
-    "exploreImplementation"(libs.maplibre.android)
-    
-    // ML Kit (AI 分析)
-    "exploreImplementation"(libs.mlkit.image.labeling)
-    "exploreImplementation"(libs.mlkit.face.detection)
-    
-    // Play Services Tasks (for ML Kit async operations)
-    implementation(libs.play.services.tasks)
-    
+
     // Reorderable for drag-to-reorder in LazyColumn
     implementation("sh.calvin.reorderable:reorderable:2.4.3")
-    
-    // TensorFlow Lite (图像/人脸嵌入)
-    "exploreImplementation"(libs.tensorflow.lite)
-    "exploreImplementation"(libs.tensorflow.lite.support)
 
     // Testing
     testImplementation(libs.junit)

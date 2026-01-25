@@ -164,16 +164,7 @@ sealed class MainDestination(
             // 成就
             "Screen.Achievements",
             // 统计
-            "Screen.Stats",
-            // Smart Gallery 相关
-            "Screen.SmartGallery",
-            "Screen.LabelBrowser",
-            "Screen.LabelPhotos",
-            "Screen.PersonList",
-            "Screen.PersonDetail",
-            "Screen.SmartSearch",
-            "Screen.SimilarPhotos",
-            "Screen.MapView"
+            "Screen.Stats"
         )
         
         /**

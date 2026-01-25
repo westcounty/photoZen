@@ -57,7 +57,6 @@ import com.example.photozen.ui.components.DragSelectPhotoGridDefaults
 import com.example.photozen.ui.components.EmptyStates
 import com.example.photozen.ui.components.PhotoStatusBadge
 import com.example.photozen.ui.components.shareImage
-import com.example.photozen.ui.util.FeatureFlags
 import com.example.photozen.ui.components.SelectionTopBar
 import com.example.photozen.ui.components.SelectionBottomBar
 import com.example.photozen.ui.components.BottomBarConfigs
@@ -69,6 +68,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.ui.text.style.TextAlign
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
+import com.example.photozen.ui.screens.photolist.PhotoListSortOrder
+import com.example.photozen.ui.components.PhotoGridMode
+import com.example.photozen.ui.components.ViewModeDropdownButton
 
 /**
  * Album Photo List Screen - displays photos in a specific album.
@@ -142,6 +144,66 @@ fun AlbumPhotoListScreen(
     Scaffold(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        bottomBar = {
+            // Selection action bar - Phase 4: 使用 BottomBarConfigs
+            AnimatedVisibility(
+                visible = uiState.isSelectionMode && uiState.selectedCount > 0,
+                enter = slideInVertically(initialOffsetY = { it }),
+                exit = slideOutVertically(targetOffsetY = { it })
+            ) {
+                // Get the single selected photo for single-select actions
+                val singleSelectedPhoto = if (uiState.selectedCount == 1) {
+                    uiState.photos.find { it.id in uiState.selectedIds }
+                } else null
+
+                // Phase 4 + REQ-047, REQ-048: 使用 BottomBarConfigs.adaptive 根据选择数量自动配置
+                val bottomBarActions = BottomBarConfigs.adaptive(
+                    selectedCount = uiState.selectedCount,
+                    singleSelectActions = {
+                        BottomBarConfigs.albumPhotosSingleSelect(
+                            onEdit = { singleSelectedPhoto?.let { onNavigateToEditor(it.id) } },
+                            onShare = { singleSelectedPhoto?.let { shareImage(context, Uri.parse(it.systemUri)) } },
+                            onAddToOtherAlbum = {
+                                pickerMode = "move"
+                                showAlbumPicker = true
+                            },
+                            onBatchChangeStatus = { showBatchChangeStatusDialog = true },
+                            onCopy = { viewModel.copySelectedPhotos() },
+                            onStartFromHere = {
+                                // 从选中照片开始，将该照片及之后的所有照片加入待筛选列表
+                                val firstSelectedIndex = uiState.photos.indexOfFirst { it.id in uiState.selectedIds }
+                                if (firstSelectedIndex >= 0) {
+                                    val photoIdsFromHere = uiState.photos
+                                        .drop(firstSelectedIndex)
+                                        .map { it.id }
+
+                                    if (photoIdsFromHere.isNotEmpty()) {
+                                        scope.launch {
+                                            viewModel.setFilterSessionAndNavigate(photoIdsFromHere)
+                                            onNavigateToFlowSorter()
+                                        }
+                                    }
+                                }
+                            },
+                            onDelete = { showDeleteConfirmSheet = true }
+                        )
+                    },
+                    multiSelectActions = {
+                        BottomBarConfigs.albumPhotosMultiSelect(
+                            onAddToOtherAlbum = {
+                                pickerMode = "move"
+                                showAlbumPicker = true
+                            },
+                            onBatchChangeStatus = { showBatchChangeStatusDialog = true },
+                            onCopy = { viewModel.copySelectedPhotos() },
+                            onDelete = { showDeleteConfirmSheet = true }
+                        )
+                    }
+                )
+
+                SelectionBottomBar(actions = bottomBarActions)
+            }
+        },
         topBar = {
             if (uiState.isSelectionMode) {
                 // 使用统一的选择模式顶栏
@@ -179,22 +241,55 @@ fun AlbumPhotoListScreen(
                         }
                     },
                     actions = {
-                        // Refresh
-                        IconButton(onClick = { viewModel.refresh() }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                        // REQ-038: 排序按钮
+                        var showSortMenu by remember { mutableStateOf(false) }
+                        Box {
+                            IconButton(onClick = { showSortMenu = true }) {
+                                Icon(Icons.Default.Sort, contentDescription = "排序")
+                            }
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("时间正序") },
+                                    onClick = {
+                                        viewModel.setSortOrder(PhotoListSortOrder.DATE_ASC)
+                                        showSortMenu = false
+                                    },
+                                    leadingIcon = if (uiState.sortOrder == PhotoListSortOrder.DATE_ASC) {
+                                        { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
+                                    } else null
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("时间倒序") },
+                                    onClick = {
+                                        viewModel.setSortOrder(PhotoListSortOrder.DATE_DESC)
+                                        showSortMenu = false
+                                    },
+                                    leadingIcon = if (uiState.sortOrder == PhotoListSortOrder.DATE_DESC) {
+                                        { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
+                                    } else null
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("随机") },
+                                    onClick = {
+                                        viewModel.setSortOrder(PhotoListSortOrder.RANDOM)
+                                        showSortMenu = false
+                                    },
+                                    leadingIcon = if (uiState.sortOrder == PhotoListSortOrder.RANDOM) {
+                                        { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
+                                    } else null
+                                )
+                            }
                         }
-                        // View mode toggle
-                        IconButton(onClick = { viewModel.cycleViewMode() }) {
-                            Icon(
-                                imageVector = when (uiState.viewMode) {
-                                    AlbumPhotoListViewMode.GRID_1 -> Icons.Default.ViewColumn
-                                    AlbumPhotoListViewMode.GRID_2 -> Icons.Default.GridView
-                                    AlbumPhotoListViewMode.GRID_3 -> Icons.Default.ViewModule
-                                    AlbumPhotoListViewMode.GRID_4 -> Icons.Default.ViewComfy
-                                },
-                                contentDescription = "切换视图"
-                            )
-                        }
+                        // REQ-027: 视图模式切换（统一下拉菜单）
+                        ViewModeDropdownButton(
+                            currentMode = uiState.gridMode,
+                            currentColumns = uiState.columnCount,
+                            onModeChanged = { mode -> viewModel.setGridMode(mode) },
+                            onColumnsChanged = { cols -> viewModel.setColumns(cols) }
+                        )
                     }
                 )
             }
@@ -242,127 +337,37 @@ fun AlbumPhotoListScreen(
                         )
                     }
                     else -> {
-                        // Phase 1-B: 使用 Feature Flag 控制手势实现
-                        if (FeatureFlags.USE_UNIFIED_GESTURE) {
-                            // 新实现：使用 DragSelectPhotoGrid（支持拖动批量选择）
-                            DragSelectPhotoGrid(
-                                photos = uiState.photos,
-                                selectedIds = uiState.selectedIds,
-                                onSelectionChanged = { newSelection ->
-                                    viewModel.updateSelection(newSelection)
-                                },
-                                onPhotoClick = { photoId, index ->
-                                    if (uiState.isSelectionMode) {
-                                        viewModel.togglePhotoSelection(photoId)
-                                    } else {
-                                        fullscreenStartIndex = index
-                                        showFullscreen = true
-                                    }
-                                },
-                                onPhotoLongPress = { photoId, photoUri ->
-                                    // 长按不动时已经选中，此回调用于额外操作（如显示提示）
-                                },
-                                columns = when (uiState.viewMode) {
-                                    AlbumPhotoListViewMode.GRID_1 -> 1
-                                    AlbumPhotoListViewMode.GRID_2 -> 2
-                                    AlbumPhotoListViewMode.GRID_3 -> 3
-                                    AlbumPhotoListViewMode.GRID_4 -> 4
-                                },
-                                selectionColor = MaterialTheme.colorScheme.primary,
-                                enableDragSelect = true,
-                                config = DragSelectPhotoGridDefaults.AlbumConfig,
-                                showStatusBadge = true
-                            )
-                        } else {
-                            // 旧实现：保留现有代码
-                            PhotoGrid(
-                                photos = uiState.photos,
-                                columnCount = when (uiState.viewMode) {
-                                    AlbumPhotoListViewMode.GRID_1 -> 1
-                                    AlbumPhotoListViewMode.GRID_2 -> 2
-                                    AlbumPhotoListViewMode.GRID_3 -> 3
-                                    AlbumPhotoListViewMode.GRID_4 -> 4
-                                },
-                                isSelectionMode = uiState.isSelectionMode,
-                                selectedIds = uiState.selectedIds,
-                                onPhotoClick = { index ->
-                                    if (uiState.isSelectionMode) {
-                                        viewModel.togglePhotoSelection(uiState.photos[index].id)
-                                    } else {
-                                        fullscreenStartIndex = index
-                                        showFullscreen = true
-                                    }
-                                },
-                                onPhotoLongClick = { index ->
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    if (!uiState.isSelectionMode) {
-                                        // Enter selection mode and select this photo
-                                        viewModel.enterSelectionMode(uiState.photos[index].id)
-                                    }
+                        DragSelectPhotoGrid(
+                            photos = uiState.photos,
+                            selectedIds = uiState.selectedIds,
+                            onSelectionChanged = { newSelection ->
+                                viewModel.updateSelection(newSelection)
+                            },
+                            onPhotoClick = { photoId, index ->
+                                if (uiState.isSelectionMode) {
+                                    viewModel.togglePhotoSelection(photoId)
+                                } else {
+                                    fullscreenStartIndex = index
+                                    showFullscreen = true
                                 }
-                            )
-                        }
+                            },
+                            onPhotoLongPress = { photoId, photoUri ->
+                                // 长按不动时进入选择模式
+                                // 注意：onDragStart 已经选中该照片，此处仅在未选中时才添加
+                                // 避免 toggle 导致选中又取消的问题
+                                if (photoId !in uiState.selectedIds) {
+                                    viewModel.togglePhotoSelection(photoId)
+                                }
+                            },
+                            columns = uiState.columnCount,
+                            gridMode = uiState.gridMode,
+                            selectionColor = MaterialTheme.colorScheme.primary,
+                            enableDragSelect = true,
+                            config = DragSelectPhotoGridDefaults.AlbumConfig,
+                            showStatusBadge = true
+                        )
                     }
                 }
-            }
-            
-            // Selection action bar - Phase 4: 使用 BottomBarConfigs
-            AnimatedVisibility(
-                visible = uiState.isSelectionMode && uiState.selectedCount > 0,
-                enter = slideInVertically(initialOffsetY = { it }),
-                exit = slideOutVertically(targetOffsetY = { it })
-            ) {
-                // Get the single selected photo for single-select actions
-                val singleSelectedPhoto = if (uiState.selectedCount == 1) {
-                    uiState.photos.find { it.id in uiState.selectedIds }
-                } else null
-                
-                // Phase 4 + REQ-047, REQ-048: 使用 BottomBarConfigs.adaptive 根据选择数量自动配置
-                val bottomBarActions = BottomBarConfigs.adaptive(
-                    selectedCount = uiState.selectedCount,
-                    singleSelectActions = {
-                        BottomBarConfigs.albumPhotosSingleSelect(
-                            onEdit = { singleSelectedPhoto?.let { onNavigateToEditor(it.id) } },
-                            onShare = { singleSelectedPhoto?.let { shareImage(context, Uri.parse(it.systemUri)) } },
-                            onAddToOtherAlbum = {
-                                pickerMode = "move"
-                                showAlbumPicker = true
-                            },
-                            onBatchChangeStatus = { showBatchChangeStatusDialog = true },
-                            onCopy = { viewModel.copySelectedPhotos() },
-                            onStartFromHere = {
-                                // 从选中照片开始，将该照片及之后的所有照片加入待筛选列表
-                                val firstSelectedIndex = uiState.photos.indexOfFirst { it.id in uiState.selectedIds }
-                                if (firstSelectedIndex >= 0) {
-                                    val photoIdsFromHere = uiState.photos
-                                        .drop(firstSelectedIndex)
-                                        .map { it.id }
-
-                                    if (photoIdsFromHere.isNotEmpty()) {
-                                        scope.launch {
-                                            viewModel.setFilterSessionAndNavigate(photoIdsFromHere)
-                                            onNavigateToFlowSorter()
-                                        }
-                                    }
-                                }
-                            },
-                            onDelete = { showDeleteConfirmSheet = true }
-                        )
-                    },
-                    multiSelectActions = {
-                        BottomBarConfigs.albumPhotosMultiSelect(
-                            onAddToOtherAlbum = {
-                                pickerMode = "move"
-                                showAlbumPicker = true
-                            },
-                            onBatchChangeStatus = { showBatchChangeStatusDialog = true },
-                            onCopy = { viewModel.copySelectedPhotos() },
-                            onDelete = { showDeleteConfirmSheet = true }
-                        )
-                    }
-                )
-                
-                SelectionBottomBar(actions = bottomBarActions)
             }
         }
     }

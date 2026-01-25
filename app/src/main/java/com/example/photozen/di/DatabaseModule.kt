@@ -6,10 +6,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.photozen.data.local.AppDatabase
 import com.example.photozen.data.local.dao.AlbumBubbleDao
-import com.example.photozen.data.local.dao.FaceDao
-import com.example.photozen.data.local.dao.PhotoAnalysisDao
 import com.example.photozen.data.local.dao.PhotoDao
-import com.example.photozen.data.local.dao.PhotoLabelDao
 import com.example.photozen.data.local.dao.SortingRecordDao
 import dagger.Module
 import dagger.Provides
@@ -229,6 +226,23 @@ private val MIGRATION_10_11 = object : Migration(10, 11) {
 }
 
 /**
+ * Migration from version 11 to 12: Remove Smart Gallery tables (feature removed).
+ * - Drop photo_analysis table
+ * - Drop faces table
+ * - Drop persons table
+ * - Drop photo_labels table
+ */
+private val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Drop tables in correct order (respect foreign keys)
+        db.execSQL("DROP TABLE IF EXISTS photo_labels")
+        db.execSQL("DROP TABLE IF EXISTS faces")
+        db.execSQL("DROP TABLE IF EXISTS persons")
+        db.execSQL("DROP TABLE IF EXISTS photo_analysis")
+    }
+}
+
+/**
  * Hilt module for providing Room database and DAOs.
  */
 @Module
@@ -248,7 +262,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME
         )
-            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
             .fallbackToDestructiveMigration(dropAllTables = true) // For development - use migrations in production
             .build()
     }
@@ -270,34 +284,7 @@ object DatabaseModule {
     fun provideDailyStatsDao(database: AppDatabase): com.example.photozen.data.local.dao.DailyStatsDao {
         return database.dailyStatsDao()
     }
-    
-    /**
-     * Provides PhotoAnalysisDao from the database.
-     */
-    @Provides
-    @Singleton
-    fun providePhotoAnalysisDao(database: AppDatabase): PhotoAnalysisDao {
-        return database.photoAnalysisDao()
-    }
-    
-    /**
-     * Provides FaceDao from the database.
-     */
-    @Provides
-    @Singleton
-    fun provideFaceDao(database: AppDatabase): FaceDao {
-        return database.faceDao()
-    }
-    
-    /**
-     * Provides PhotoLabelDao from the database.
-     */
-    @Provides
-    @Singleton
-    fun providePhotoLabelDao(database: AppDatabase): PhotoLabelDao {
-        return database.photoLabelDao()
-    }
-    
+
     /**
      * Provides AlbumBubbleDao from the database.
      */

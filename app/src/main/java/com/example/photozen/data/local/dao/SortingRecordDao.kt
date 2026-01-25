@@ -106,15 +106,57 @@ interface SortingRecordDao {
      * @param monthPrefix 月份前缀，格式 YYYY-MM
      */
     @Query("""
-        SELECT SUM(sorted_count) as total, 
-               SUM(kept_count) as kept, 
-               SUM(trashed_count) as trashed, 
+        SELECT SUM(sorted_count) as total,
+               SUM(kept_count) as kept,
+               SUM(trashed_count) as trashed,
                SUM(maybe_count) as maybe
-        FROM sorting_records 
+        FROM sorting_records
         WHERE date LIKE :monthPrefix || '%'
     """)
     suspend fun getMonthStats(monthPrefix: String): PeriodStats?
-    
+
+    // ==================== 响应式统计查询 ====================
+
+    /**
+     * 观察所有记录的汇总统计（Flow）
+     */
+    @Query("""
+        SELECT SUM(sorted_count) as total,
+               SUM(kept_count) as kept,
+               SUM(trashed_count) as trashed,
+               SUM(maybe_count) as maybe
+        FROM sorting_records
+    """)
+    fun observeTotalStats(): Flow<PeriodStats?>
+
+    /**
+     * 观察指定日期之后的统计（Flow，用于本周统计）
+     * @param startDate 开始日期（含）
+     */
+    @Query("""
+        SELECT SUM(sorted_count) as total,
+               SUM(kept_count) as kept,
+               SUM(trashed_count) as trashed,
+               SUM(maybe_count) as maybe
+        FROM sorting_records
+        WHERE date >= :startDate
+    """)
+    fun observeStatsFromDate(startDate: String): Flow<PeriodStats?>
+
+    /**
+     * 观察指定月份的统计（Flow）
+     * @param monthPrefix 月份前缀，格式 YYYY-MM
+     */
+    @Query("""
+        SELECT SUM(sorted_count) as total,
+               SUM(kept_count) as kept,
+               SUM(trashed_count) as trashed,
+               SUM(maybe_count) as maybe
+        FROM sorting_records
+        WHERE date LIKE :monthPrefix || '%'
+    """)
+    fun observeMonthStats(monthPrefix: String): Flow<PeriodStats?>
+
     /**
      * 获取有整理记录的天数（用于连续天数计算）
      * @param startDate 开始日期

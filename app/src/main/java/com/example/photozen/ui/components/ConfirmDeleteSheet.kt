@@ -1,7 +1,16 @@
 package com.example.photozen.ui.components
 
 import android.net.Uri
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -13,10 +22,14 @@ import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -26,6 +39,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.ui.theme.PicZenMotion
 import com.example.photozen.ui.theme.TrashRed
 
 /**
@@ -73,6 +87,18 @@ fun ConfirmDeleteSheet(
     val previewPhotos = photos.take(9)
     val hasMore = photos.size > 9
     
+    // 警告图标摇晃动画 (±3°, 1.5秒循环)
+    val infiniteTransition = rememberInfiniteTransition(label = "warningShake")
+    val iconRotation by infiniteTransition.animateFloat(
+        initialValue = -3f,
+        targetValue = 3f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "shakeRotation"
+    )
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         modifier = modifier,
@@ -87,7 +113,7 @@ fun ConfirmDeleteSheet(
                 .padding(bottom = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 警告图标
+            // 警告图标 - 带摇晃动画
             Icon(
                 imageVector = if (deleteType == DeleteType.PERMANENT_DELETE) {
                     Icons.Default.DeleteForever
@@ -96,7 +122,11 @@ fun ConfirmDeleteSheet(
                 },
                 contentDescription = null,
                 tint = TrashRed,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier
+                    .size(48.dp)
+                    .graphicsLayer {
+                        rotationZ = iconRotation
+                    }
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -176,57 +206,139 @@ fun ConfirmDeleteSheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // 取消按钮
+                // 取消按钮 - 带按压缩放动画
+                val cancelInteractionSource = remember { MutableInteractionSource() }
+                val isCancelPressed by cancelInteractionSource.collectIsPressedAsState()
+                val cancelScale by animateFloatAsState(
+                    targetValue = if (isCancelPressed) 0.97f else 1f,
+                    animationSpec = PicZenMotion.Springs.snappy(),
+                    label = "cancelScale"
+                )
+
                 OutlinedButton(
                     onClick = onDismiss,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .graphicsLayer {
+                            scaleX = cancelScale
+                            scaleY = cancelScale
+                        },
                     enabled = !isLoading,
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    interactionSource = cancelInteractionSource
                 ) {
                     Text("取消")
                 }
-                
-                // 确认按钮
-                Button(
-                    onClick = onConfirm,
-                    modifier = Modifier.weight(1f),
-                    enabled = !isLoading,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (deleteType == DeleteType.PERMANENT_DELETE) {
-                            TrashRed
-                        } else {
-                            TrashRed.copy(alpha = 0.85f)
-                        },
-                        contentColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = Color.White
-                        )
+
+                // 确认按钮 - 带脉冲动画和按压反馈
+                DangerPulseButton(
+                    text = when (deleteType) {
+                        DeleteType.MOVE_TO_TRASH -> "移入回收站"
+                        DeleteType.PERMANENT_DELETE -> "永久删除"
+                    },
+                    icon = if (deleteType == DeleteType.PERMANENT_DELETE) {
+                        Icons.Default.DeleteForever
                     } else {
-                        Icon(
-                            imageVector = if (deleteType == DeleteType.PERMANENT_DELETE) {
-                                Icons.Default.DeleteForever
-                            } else {
-                                Icons.Default.Delete
-                            },
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = when (deleteType) {
-                                DeleteType.MOVE_TO_TRASH -> "移入回收站"
-                                DeleteType.PERMANENT_DELETE -> "永久删除"
-                            }
-                        )
-                    }
-                }
+                        Icons.Default.Delete
+                    },
+                    isPermanentDelete = deleteType == DeleteType.PERMANENT_DELETE,
+                    isLoading = isLoading,
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f)
+                )
             }
+        }
+    }
+}
+
+/**
+ * 危险操作脉冲按钮
+ *
+ * 特效:
+ * - 脉冲缩放动画 (1.0 → 1.02 → 1.0, 2秒循环)
+ * - 红色光晕呼吸效果
+ * - 按压时脉冲暂停，缩放到0.95f
+ */
+@Composable
+private fun DangerPulseButton(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isPermanentDelete: Boolean,
+    isLoading: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // 脉冲动画 (按压时暂停)
+    val infiniteTransition = rememberInfiniteTransition(label = "dangerPulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.02f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseScale"
+    )
+
+    // 光晕透明度
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.1f,
+        targetValue = 0.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowAlpha"
+    )
+
+    // 按压缩放
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "pressScale"
+    )
+
+    // 最终缩放 = 脉冲 * 按压 (按压时用按压缩放替代脉冲)
+    val finalScale = if (isPressed) pressScale else pulseScale
+
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = finalScale
+                scaleY = finalScale
+            }
+            .shadow(
+                elevation = 4.dp,
+                shape = RoundedCornerShape(12.dp),
+                ambientColor = TrashRed.copy(alpha = glowAlpha),
+                spotColor = TrashRed.copy(alpha = glowAlpha * 1.5f)
+            ),
+        enabled = !isLoading,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (isPermanentDelete) TrashRed else TrashRed.copy(alpha = 0.85f),
+            contentColor = Color.White
+        ),
+        shape = RoundedCornerShape(12.dp),
+        interactionSource = interactionSource
+    ) {
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+                color = Color.White
+            )
+        } else {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = text)
         }
     }
 }

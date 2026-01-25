@@ -2,12 +2,15 @@ package com.example.photozen.ui.components.fullscreen
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -26,7 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -74,14 +78,41 @@ fun UnifiedFullscreenViewer(
     onAction: (FullscreenActionType, PhotoEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // 当前照片索引
-    var currentIndex by remember { mutableIntStateOf(initialIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0))) }
+    // 当前照片索引 - 使用 initialIndex 作为 key，确保每次打开时都能正确定位
+    var currentIndex by remember(initialIndex) {
+        mutableIntStateOf(initialIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0)))
+    }
 
     // 覆盖层显示状态 (REQ-016: 点击切换显示/隐藏)
     var showOverlay by remember { mutableStateOf(true) }
 
     // 当前照片
     val currentPhoto = photos.getOrNull(currentIndex)
+
+    // DES-037: 进入动画状态
+    var isEntering by remember { mutableStateOf(true) }
+
+    // DES-037: 进入动画 - 从略小缩放到正常大小
+    val enterScale by animateFloatAsState(
+        targetValue = if (isEntering) 0.92f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioLowBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "enterScale"
+    )
+
+    // DES-037: 进入透明度动画
+    val enterAlpha by animateFloatAsState(
+        targetValue = if (isEntering) 0f else 1f,
+        animationSpec = tween(200),
+        label = "enterAlpha"
+    )
+
+    // 启动进入动画
+    LaunchedEffect(Unit) {
+        isEntering = false
+    }
 
     // 系统UI控制 - 隐藏状态栏和导航栏 (REQ-012)
     val view = LocalView.current
@@ -113,31 +144,34 @@ fun UnifiedFullscreenViewer(
             .background(Color.Black)
     ) {
         // 主图区域 - 可缩放翻页 (REQ-017, REQ-018, REQ-019, REQ-020)
+        // DES-037: 应用进入动画效果
         ZoomableImagePager(
             photos = photos,
             currentIndex = currentIndex,
             onIndexChange = { currentIndex = it },
             onDismiss = onExit,
+            onTap = {
+                // REQ-016: 点击切换显示/隐藏覆盖层
+                showOverlay = !showOverlay
+            },
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = {
-                            // REQ-016: 点击切换显示/隐藏覆盖层
-                            showOverlay = !showOverlay
-                        }
-                    )
+                .graphicsLayer {
+                    scaleX = enterScale
+                    scaleY = enterScale
+                    alpha = enterAlpha
                 }
         )
 
         // 序号指示器 - 始终显示 (REQ-016)
+        // 增加顶部间距避免与状态栏区域重叠
         PhotoIndexIndicator(
             current = currentIndex + 1,
             total = photos.size,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()
-                .padding(top = 16.dp)
+                .padding(top = 24.dp)
         )
 
         // 可隐藏的覆盖层 (REQ-016)

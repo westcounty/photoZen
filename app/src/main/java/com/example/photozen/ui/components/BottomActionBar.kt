@@ -1,7 +1,11 @@
 package com.example.photozen.ui.components
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -26,6 +32,8 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.unit.IntOffset
+import com.example.photozen.ui.theme.PicZenMotion
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.ContentCopy
@@ -61,6 +69,11 @@ import com.example.photozen.ui.theme.TrashRed
 /**
  * Standard action item for bottom bar with vertical icon + text layout.
  * Designed for consistent UI across all photo list screens.
+ *
+ * ## Enhanced Features
+ * - Press scale animation (0.92f) for tactile feedback
+ * - Icon offset (2dp down) when pressed
+ * - Background alpha animation (0.15f → 0.25f)
  */
 @Composable
 fun BottomBarActionItem(
@@ -71,10 +84,43 @@ fun BottomBarActionItem(
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // Press scale animation - 0.92f for quick action items
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && enabled) 0.92f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "bottomBarItemScale"
+    )
+
+    // Icon offset when pressed - 2dp down
+    val iconOffsetY by animateDpAsState(
+        targetValue = if (isPressed && enabled) 2.dp else 0.dp,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "iconOffset"
+    )
+
+    // Background alpha animation
+    val backgroundAlpha by animateFloatAsState(
+        targetValue = if (isPressed && enabled) 0.25f else 0.15f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "backgroundAlpha"
+    )
+
     Column(
         modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(RoundedCornerShape(12.dp))
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(
+                enabled = enabled,
+                onClick = onClick,
+                interactionSource = interactionSource,
+                indication = null // Disable ripple, use custom animation
+            )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -83,7 +129,7 @@ fun BottomBarActionItem(
                 .size(40.dp)
                 .clip(CircleShape)
                 .background(
-                    if (enabled) color.copy(alpha = 0.15f)
+                    if (enabled) color.copy(alpha = backgroundAlpha)
                     else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
                 ),
             contentAlignment = Alignment.Center
@@ -92,7 +138,9 @@ fun BottomBarActionItem(
                 imageVector = icon,
                 contentDescription = label,
                 tint = if (enabled) color else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier
+                    .size(20.dp)
+                    .offset { IntOffset(0, iconOffsetY.roundToPx()) }
             )
         }
         Spacer(modifier = Modifier.height(4.dp))

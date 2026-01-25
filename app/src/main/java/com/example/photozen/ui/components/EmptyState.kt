@@ -324,21 +324,23 @@ object EmptyStates {
         onGoSort: (() -> Unit)? = null,
         modifier: Modifier = Modifier
     ) {
-        EmptyState(
+        AnimatedEmptyState(
             icon = Icons.Default.QuestionMark,
-            title = "没有待定照片",
-            description = "整理照片时向上滑动可标记为待定",
+            title = "还没有纠结的照片",
+            description = "整理时遇到选择困难？\n下滑放入待定，稍后再决定",
             iconTint = MaybeAmber,
             modifier = modifier
         ) {
             onGoSort?.let {
                 FilledTonalButton(onClick = it) {
-                    Text("去整理照片")
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("开始整理")
                 }
             }
         }
     }
-    
+
     /**
      * 回收站为空
      */
@@ -346,15 +348,15 @@ object EmptyStates {
     fun EmptyTrash(
         modifier: Modifier = Modifier
     ) {
-        EmptyState(
+        AnimatedEmptyState(
             icon = Icons.Default.Delete,
-            title = "回收站是空的",
-            description = "整理照片时向左滑动可移入回收站",
+            title = "回收站空空如也",
+            description = "这里会存放你上滑删除的照片\n在永久删除前，你可以随时反悔",
             iconTint = TrashRed,
             modifier = modifier
         )
     }
-    
+
     /**
      * 没有保留照片
      */
@@ -363,15 +365,44 @@ object EmptyStates {
         onGoSort: (() -> Unit)? = null,
         modifier: Modifier = Modifier
     ) {
-        EmptyState(
+        AnimatedEmptyState(
             icon = Icons.Default.Favorite,
-            title = "还没有保留的照片",
-            description = "整理照片时向右滑动可标记为保留",
+            title = "珍藏夹还是空的",
+            description = "整理时左右滑动保留喜欢的照片\n它们会出现在这里等你欣赏",
             iconTint = KeepGreen,
             modifier = modifier
         ) {
             onGoSort?.let {
                 FilledTonalButton(onClick = it) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("开始整理")
+                }
+            }
+        }
+    }
+
+    /**
+     * 对比模式空状态
+     *
+     * 当没有待定照片可对比时显示
+     */
+    @Composable
+    fun EmptyCompare(
+        onGoSort: (() -> Unit)? = null,
+        modifier: Modifier = Modifier
+    ) {
+        AnimatedEmptyState(
+            icon = Icons.Default.Compare,
+            title = "没有照片需要对比",
+            description = "遇到相似的照片不知道留哪张？\n整理时下滑放入待定，然后来这里仔细对比",
+            iconTint = MaybeAmber,
+            modifier = modifier
+        ) {
+            onGoSort?.let {
+                FilledTonalButton(onClick = it) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text("开始整理")
                 }
             }

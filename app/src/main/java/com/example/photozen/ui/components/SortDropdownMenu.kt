@@ -21,6 +21,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.unit.dp
 
 /**
  * PhotoZen 统一排序下拉菜单组件 (REQ-022)
@@ -93,10 +96,34 @@ object SortOptions {
         icon = Icons.Default.Shuffle
     )
 
+    // 回收站专用排序选项（显示"移至回收站时间"）
+    val trashAddedTimeDesc = SortOption(
+        id = "added_time_desc",
+        displayName = "移至回收站时间倒序",
+        icon = Icons.Default.Schedule
+    )
+    val trashAddedTimeAsc = SortOption(
+        id = "added_time_asc",
+        displayName = "移至回收站时间正序",
+        icon = Icons.Default.Schedule
+    )
+
+    // 已保留列表专用排序选项（显示"标记为保留时间"）
+    val keepAddedTimeDesc = SortOption(
+        id = "added_time_desc",
+        displayName = "标记为保留时间倒序",
+        icon = Icons.Default.Schedule
+    )
+    val keepAddedTimeAsc = SortOption(
+        id = "added_time_asc",
+        displayName = "标记为保留时间正序",
+        icon = Icons.Default.Schedule
+    )
+
     // 各列表的排序选项预设
     val maybeListOptions = listOf(photoTimeDesc, photoTimeAsc, addedTimeDesc, addedTimeAsc)
-    val trashListOptions = listOf(photoTimeDesc, photoTimeAsc, addedTimeDesc, addedTimeAsc)
-    val keepListOptions = listOf(photoTimeDesc, photoTimeAsc, addedTimeDesc, addedTimeAsc, random)
+    val trashListOptions = listOf(photoTimeDesc, photoTimeAsc, trashAddedTimeDesc, trashAddedTimeAsc)
+    val keepListOptions = listOf(photoTimeDesc, photoTimeAsc, keepAddedTimeDesc, keepAddedTimeAsc, random)
     val albumListOptions = listOf(photoTimeDesc, photoTimeAsc, random)
     val timelineListOptions = listOf(photoTimeDesc, photoTimeAsc, random)
     val filterListOptions = listOf(photoTimeDesc, photoTimeAsc, random)
@@ -158,28 +185,17 @@ fun SortDropdownButton(
                         onSortSelected(option)
                         expanded = false
                     },
-                    leadingIcon = option.icon?.let { icon ->
-                        {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = if (isSelected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            )
-                        }
-                    },
-                    trailingIcon = if (isSelected) {
-                        {
+                    leadingIcon = {
+                        if (isSelected) {
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = "当前选中",
                                 tint = MaterialTheme.colorScheme.primary
                             )
+                        } else {
+                            Spacer(modifier = Modifier.size(24.dp))
                         }
-                    } else null
+                    }
                 )
             }
         }
@@ -246,28 +262,17 @@ fun SortDropdownButtonWithLabel(
                         onSortSelected(option)
                         expanded = false
                     },
-                    leadingIcon = option.icon?.let { icon ->
-                        {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = if (isSelected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            )
-                        }
-                    },
-                    trailingIcon = if (isSelected) {
-                        {
+                    leadingIcon = {
+                        if (isSelected) {
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = "当前选中",
                                 tint = MaterialTheme.colorScheme.primary
                             )
+                        } else {
+                            Spacer(modifier = Modifier.size(24.dp))
                         }
-                    } else null
+                    }
                 )
             }
         }

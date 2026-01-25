@@ -58,6 +58,7 @@ fun ZoomableImagePager(
     currentIndex: Int,
     onIndexChange: (Int) -> Unit,
     onDismiss: (() -> Unit)? = null,
+    onTap: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val pagerState = rememberPagerState(
@@ -66,17 +67,18 @@ fun ZoomableImagePager(
     )
     val coroutineScope = rememberCoroutineScope()
 
-    // 同步外部索引变化到Pager
+    // 只在 currentIndex 真正变化时同步（外部控制）
+    // 使用 isScrollInProgress 检查避免滚动过程中的冲突
     LaunchedEffect(currentIndex) {
-        if (pagerState.currentPage != currentIndex) {
-            pagerState.animateScrollToPage(currentIndex)
+        if (pagerState.currentPage != currentIndex && !pagerState.isScrollInProgress) {
+            pagerState.scrollToPage(currentIndex)
         }
     }
 
-    // 同步Pager页面变化到外部
-    LaunchedEffect(pagerState.currentPage) {
-        if (pagerState.currentPage != currentIndex) {
-            onIndexChange(pagerState.currentPage)
+    // 用户滑动后同步到外部（使用 settledPage 避免滚动过程中触发）
+    LaunchedEffect(pagerState.settledPage) {
+        if (pagerState.settledPage != currentIndex) {
+            onIndexChange(pagerState.settledPage)
         }
     }
 
@@ -105,7 +107,8 @@ fun ZoomableImagePager(
                     }
                 }
             },
-            onDismiss = onDismiss
+            onDismiss = onDismiss,
+            onTap = onTap
         )
     }
 }
@@ -118,6 +121,7 @@ fun ZoomableImagePager(
  * @param onSwipeToNext 滑到右边缘时触发下一张
  * @param onSwipeToPrevious 滑到左边缘时触发上一张
  * @param onDismiss 下滑退出回调
+ * @param onTap 单击回调（用于切换覆盖层显示）
  */
 @Composable
 private fun ZoomableImage(
@@ -125,7 +129,8 @@ private fun ZoomableImage(
     isCurrentPage: Boolean,
     onSwipeToNext: () -> Unit,
     onSwipeToPrevious: () -> Unit,
-    onDismiss: (() -> Unit)?
+    onDismiss: (() -> Unit)?,
+    onTap: (() -> Unit)?
 ) {
     val context = LocalContext.current
 
@@ -218,8 +223,14 @@ private fun ZoomableImage(
                     }
                 }
             }
-            .pointerInput(isCurrentPage) {
+            .pointerInput(isCurrentPage, onTap) {
                 detectTapGestures(
+                    onTap = {
+                        // REQ-016: 单击切换覆盖层显示
+                        if (isCurrentPage) {
+                            onTap?.invoke()
+                        }
+                    },
                     onDoubleTap = { tapOffset ->
                         if (!isCurrentPage) return@detectTapGestures
 
@@ -271,4 +282,4 @@ private const val MIN_SCALE = 1f
 private const val MAX_SCALE = 10f
 private const val DOUBLE_TAP_SCALE = 2.5f
 private const val EDGE_THRESHOLD = 100f  // 边缘穿透阈值
-private const val DISMISS_THRESHOLD = 300f  // 下滑退出阈值
+private const val DISMISS_THRESHOLD = 450f  // 下滑退出阈值（增大以避免误触）

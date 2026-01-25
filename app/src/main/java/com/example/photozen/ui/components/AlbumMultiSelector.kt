@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -17,7 +16,6 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,26 +46,8 @@ fun AlbumMultiSelector(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
-        // 快捷操作
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            TextButton(
-                onClick = { onSelectionChange(albums.map { it.bucketId }.toSet()) },
-                enabled = selectedIds.size < albums.size
-            ) {
-                Text("全选")
-            }
-            TextButton(
-                onClick = { onSelectionChange(emptySet()) },
-                enabled = selectedIds.isNotEmpty()
-            ) {
-                Text("清除")
-            }
-        }
-
         // 相册列表（使用 FlowRow 避免与 BottomSheet 手势冲突）
+        // 注：全选/清除按钮已移至 FilterSection 标题行右侧
         if (albums.isEmpty()) {
             Text(
                 text = "暂无可选相册",

@@ -2,8 +2,10 @@ package com.example.photozen.ui.screens.albums
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -14,6 +16,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
@@ -22,8 +25,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import kotlinx.coroutines.delay
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -58,11 +62,14 @@ import coil3.request.crossfade
 import com.example.photozen.data.source.Album
 import com.example.photozen.ui.components.CompactSortingButton
 import com.example.photozen.ui.components.SystemAlbumPickerDialog
+import com.example.photozen.ui.components.albums.AlbumGridView
+import com.example.photozen.ui.components.albums.AlbumProgressRing
 import com.example.photozen.ui.components.bubble.BubbleGraphView
+import com.example.photozen.ui.theme.PicZenMotion
+import com.example.photozen.ui.theme.PicZenTokens
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
-import com.example.photozen.ui.util.FeatureFlags
 
 /**
  * Album Bubble Screen - Visualizes user's album bubble list.
@@ -144,22 +151,14 @@ fun AlbumBubbleScreen(
                     }
                 },
                 navigationIcon = {
-                    // Phase 1-C: 底部导航模式不显示返回按钮
-                    if (!FeatureFlags.USE_BOTTOM_NAV) {
-                        IconButton(onClick = onNavigateBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回"
-                            )
-                        }
-                    }
+                    // 底部导航模式不显示返回按钮
                 },
                 actions = {
                     // View mode toggle
                     IconButton(onClick = { viewModel.toggleViewMode() }) {
                         Icon(
-                            imageVector = if (uiState.viewMode == AlbumViewMode.BUBBLE)
-                                Icons.AutoMirrored.Filled.List else Icons.Default.BubbleChart,
+                            imageVector = if (uiState.viewMode == AlbumViewMode.GRID)
+                                Icons.AutoMirrored.Filled.List else Icons.Default.GridView,
                             contentDescription = "切换视图"
                         )
                     }
@@ -192,19 +191,14 @@ fun AlbumBubbleScreen(
                 }
                 else -> {
                     when (uiState.viewMode) {
-                        AlbumViewMode.BUBBLE -> {
-                            AlbumBubbleView(
-                                bubbleNodes = uiState.bubbleNodes,
+                        AlbumViewMode.GRID -> {
+                            AlbumGridView(
                                 albums = uiState.albums,
-                                onAlbumClick = { albumId ->
-                                    val album = uiState.albums.find { it.bucketId == albumId }
-                                    album?.let {
-                                        onNavigateToAlbumPhotos(it.bucketId, it.displayName)
-                                    }
+                                onAlbumClick = { album ->
+                                    onNavigateToAlbumPhotos(album.bucketId, album.displayName)
                                 },
-                                onAlbumLongClick = { albumId ->
+                                onAlbumLongClick = { album ->
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    val album = uiState.albums.find { it.bucketId == albumId }
                                     selectedAlbumForMenu = album
                                 }
                             )
@@ -439,7 +433,7 @@ private fun AlbumListView(
         ),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(localAlbums.toList(), key = { it.bucketId }) { album ->
+        itemsIndexed(localAlbums.toList(), key = { _, album -> album.bucketId }) { index, album ->
             ReorderableItem(reorderableState, key = album.bucketId) { isDragging ->
                 // Track dragging state and persist order when drag ends
                 LaunchedEffect(isDragging) {
@@ -451,10 +445,11 @@ private fun AlbumListView(
                         onApplyNewOrder(localAlbums.map { it.bucketId })
                     }
                 }
-                
+
                 AlbumListItemWithDrag(
                     album = album,
                     isDragging = isDragging,
+                    animationDelay = index * PicZenMotion.Delay.StaggerItem.toInt(),
                     onClick = { onAlbumClick(album) },
                     onLongClick = { onAlbumLongClick(album) },
                     onSortClick = { onSortAlbum(album) },
@@ -550,47 +545,103 @@ private fun AlbumListItem(
 /**
  * Album list item with drag handle for reordering.
  * Note: This must be called inside a ReorderableCollectionItemScope.
+ *
+ * ## Enhanced Features (DES-035)
+ * - Press scale animation (0.98f)
+ * - Entry animation with staggered delay
+ * - Shadow animation on press/drag
+ * - Mini progress ring indicator
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun sh.calvin.reorderable.ReorderableCollectionItemScope.AlbumListItemWithDrag(
     album: AlbumBubbleData,
     isDragging: Boolean,
+    animationDelay: Int = 0,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onSortClick: () -> Unit,
     onDragStarted: () -> Unit
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    
-    // Animate scale when dragging for visual feedback
-    val scale by animateFloatAsState(
-        targetValue = if (isDragging) 1.02f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "drag_scale"
+    val dragHandleInteractionSource = remember { MutableInteractionSource() }
+    val cardInteractionSource = remember { MutableInteractionSource() }
+    val isPressed by cardInteractionSource.collectIsPressedAsState()
+
+    // Entry animation state
+    var isVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(animationDelay.toLong())
+        isVisible = true
+    }
+
+    // Entry animation values
+    val entryAlpha by animateFloatAsState(
+        targetValue = if (isVisible) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = PicZenMotion.Duration.Moderate,
+            easing = PicZenMotion.Easing.EmphasizedDecelerate
+        ),
+        label = "listItemEntryAlpha"
     )
-    
+    val entryOffsetX by animateDpAsState(
+        targetValue = if (isVisible) 0.dp else 50.dp,
+        animationSpec = PicZenMotion.Springs.playful(),
+        label = "listItemEntryOffsetX"
+    )
+
+    // Press/drag scale animation
+    val scale by animateFloatAsState(
+        targetValue = when {
+            isDragging -> 1.02f
+            isPressed -> 0.98f
+            else -> 1f
+        },
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "listItemScale"
+    )
+
+    // Shadow animation
+    val shadowElevation by animateDpAsState(
+        targetValue = when {
+            isDragging -> PicZenTokens.Elevation.Level4
+            isPressed -> PicZenTokens.Elevation.Level1
+            else -> PicZenTokens.Elevation.Level2
+        },
+        animationSpec = tween(PicZenMotion.Duration.Quick),
+        label = "listItemShadow"
+    )
+
+    // Progress percentage
+    val progress = if (album.totalCount > 0) {
+        album.sortedCount.toFloat() / album.totalCount
+    } else 0f
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer {
+                alpha = entryAlpha
                 scaleX = scale
                 scaleY = scale
+                translationX = entryOffsetX.toPx()
             }
-            .then(
-                if (isDragging) Modifier.shadow(8.dp, RoundedCornerShape(12.dp))
-                else Modifier
+            .shadow(
+                elevation = shadowElevation,
+                shape = RoundedCornerShape(PicZenTokens.Radius.M)
             )
             .combinedClickable(
+                interactionSource = cardInteractionSource,
+                indication = null,
                 onClick = onClick,
                 onLongClick = onLongClick
             ),
         colors = CardDefaults.cardColors(
-            containerColor = if (isDragging) 
+            containerColor = if (isDragging)
                 MaterialTheme.colorScheme.surfaceVariant
-            else 
+            else
                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+        ),
+        shape = RoundedCornerShape(PicZenTokens.Radius.M)
     ) {
         Row(
             modifier = Modifier
@@ -603,7 +654,7 @@ private fun sh.calvin.reorderable.ReorderableCollectionItemScope.AlbumListItemWi
                 onClick = {},
                 modifier = Modifier.draggableHandle(
                     onDragStarted = { onDragStarted() },
-                    interactionSource = interactionSource
+                    interactionSource = dragHandleInteractionSource
                 )
             ) {
                 Icon(
@@ -612,12 +663,12 @@ private fun sh.calvin.reorderable.ReorderableCollectionItemScope.AlbumListItemWi
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
             }
-            
-            // Cover image or placeholder
+
+            // Cover image with progress ring overlay
             Box(
                 modifier = Modifier
                     .size(56.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(PicZenTokens.Radius.S))
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
@@ -639,10 +690,24 @@ private fun sh.calvin.reorderable.ReorderableCollectionItemScope.AlbumListItemWi
                         modifier = Modifier.size(24.dp)
                     )
                 }
+
+                // Mini progress ring in bottom-right corner
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(2.dp)
+                ) {
+                    AlbumProgressRing(
+                        progress = progress,
+                        size = 20.dp,
+                        strokeWidth = 2.dp,
+                        animateOnComplete = true
+                    )
+                }
             }
-            
+
             Spacer(modifier = Modifier.width(12.dp))
-            
+
             // Album info
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -657,7 +722,7 @@ private fun sh.calvin.reorderable.ReorderableCollectionItemScope.AlbumListItemWi
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            
+
             // Start sorting button (REQ-062: 统一样式)
             CompactSortingButton(
                 totalCount = album.totalCount,

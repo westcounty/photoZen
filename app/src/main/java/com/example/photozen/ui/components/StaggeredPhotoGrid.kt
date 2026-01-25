@@ -57,14 +57,14 @@ import kotlinx.coroutines.launch
 
 /**
  * Staggered (waterfall) photo grid that preserves original aspect ratios.
- * 
+ *
  * Features:
- * - Supports 1-4 column layouts
+ * - Supports 1-5 column layouts
  * - Photos displayed in their original aspect ratio
  * - Optional selection mode with checkmarks
  * - Long press and click callbacks
- * 
- * @param columns Number of columns (1-4), defaults to 2
+ *
+ * @param columns Number of columns (1-5), defaults to 2
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -78,7 +78,7 @@ fun StaggeredPhotoGrid(
     selectionMode: Boolean = false
 ) {
     LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 4)),
+        columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 5)),
         contentPadding = PaddingValues(8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalItemSpacing = 8.dp,
@@ -190,7 +190,7 @@ private fun StaggeredPhotoItem(
 
 /**
  * Staggered photo grid with selection support for batch operations.
- * Supports 1-4 column layouts with drag-to-select functionality.
+ * Supports 1-5 column layouts with drag-to-select functionality.
  * 
  * Features:
  * - Long press to enter selection mode
@@ -340,7 +340,7 @@ fun SelectableStaggeredPhotoGrid(
             }
     ) {
         LazyVerticalStaggeredGrid(
-            columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 4)),
+            columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 5)),
             state = gridState,
             contentPadding = PaddingValues(8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),

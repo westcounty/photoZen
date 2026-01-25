@@ -17,6 +17,8 @@ import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.data.source.MediaStoreDataSource
 import com.example.photozen.domain.usecase.AlbumOperationsUseCase
 import com.example.photozen.domain.usecase.MovePhotoResult
+import com.example.photozen.ui.components.PhotoGridMode
+import com.example.photozen.ui.screens.photolist.PhotoListSortOrder
 import com.example.photozen.ui.state.PhotoSelectionStateHolder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -72,12 +74,19 @@ data class AlbumPhotoListUiState(
     val error: String? = null,
     val message: String? = null,
     // Phase 7.2: Global status filter
-    val statusFilter: Set<PhotoStatus> = PhotoStatus.entries.toSet()
+    val statusFilter: Set<PhotoStatus> = PhotoStatus.entries.toSet(),
+    // REQ-002, REQ-007: 网格模式和列数
+    val isSquareMode: Boolean = true,  // true=网格, false=瀑布流
+    val columnCount: Int = 3,  // 列数
+    // REQ-038: 排序
+    val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC
 ) {
     val selectedCount: Int get() = selectedIds.size
     val unsortedCount: Int get() = totalCount - sortedCount
     val sortedPercentage: Float get() = if (totalCount > 0) sortedCount.toFloat() / totalCount else 0f
     val isFilterActive: Boolean get() = statusFilter.size < PhotoStatus.entries.size
+    // 计算当前 gridMode
+    val gridMode: PhotoGridMode get() = if (isSquareMode) PhotoGridMode.SQUARE else PhotoGridMode.WATERFALL
 }
 
 /**
@@ -152,16 +161,19 @@ class AlbumPhotoListViewModel @Inject constructor(
                 photoDao.getPhotosByBucketId(bucketId).collect { allPhotos ->
                     val sortedCount = allPhotos.count { it.status != PhotoStatus.UNSORTED }
                     val statusFilter = _uiState.value.statusFilter
+                    val sortOrder = _uiState.value.sortOrder
                     // Apply status filter
                     val filteredPhotos = if (statusFilter.size == PhotoStatus.entries.size) {
                         allPhotos
                     } else {
                         allPhotos.filter { it.status in statusFilter }
                     }
+                    // REQ-038: Apply sorting
+                    val sortedPhotos = applySortOrder(filteredPhotos, sortOrder)
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            photos = filteredPhotos,
+                            photos = sortedPhotos,
                             allPhotos = allPhotos,
                             totalCount = allPhotos.size,
                             sortedCount = sortedCount,
@@ -232,6 +244,7 @@ class AlbumPhotoListViewModel @Inject constructor(
     
     /**
      * Toggle view mode (1 -> 2 -> 3 -> 4 -> 1).
+     * @deprecated Use toggleGridMode() and setGridColumns() instead
      */
     fun cycleViewMode() {
         _uiState.update {
@@ -245,7 +258,87 @@ class AlbumPhotoListViewModel @Inject constructor(
             )
         }
     }
-    
+
+    // ==================== REQ-002, REQ-003, REQ-007, REQ-008: 网格模式和双指缩放 ====================
+
+    /**
+     * Toggle between SQUARE (grid) and WATERFALL (staggered) modes.
+     * REQ-027: 视图模式切换按钮
+     */
+    fun toggleGridMode() {
+        _uiState.update { state ->
+            val newIsSquare = !state.isSquareMode
+            // 切换到网格模式时，列数最少为2
+            val newColumns = if (newIsSquare && state.columnCount < 2) 2 else state.columnCount
+            state.copy(isSquareMode = newIsSquare, columnCount = newColumns)
+        }
+    }
+
+    /**
+     * Set grid columns directly (for pinch-zoom gesture).
+     * REQ-003, REQ-008: 双指缩放切换列数
+     */
+    fun setGridColumns(columns: Int) {
+        _uiState.update { state ->
+            val minColumns = if (state.isSquareMode) 2 else 1
+            val validColumns = columns.coerceIn(minColumns, 5)
+            state.copy(columnCount = validColumns)
+        }
+    }
+
+    /**
+     * Set grid mode directly.
+     * @param mode The new grid mode
+     */
+    fun setGridMode(mode: PhotoGridMode) {
+        _uiState.update { state ->
+            val newIsSquare = mode == PhotoGridMode.SQUARE
+            // 切换到网格模式时，列数最少为2
+            val newColumns = if (newIsSquare && state.columnCount < 2) 2 else state.columnCount
+            state.copy(isSquareMode = newIsSquare, columnCount = newColumns)
+        }
+    }
+
+    /**
+     * Set columns directly (alias for setGridColumns for consistency).
+     */
+    fun setColumns(columns: Int) = setGridColumns(columns)
+
+    // ==================== REQ-038: 相册列表排序 ====================
+
+    // Random seed for consistent random sorting
+    private var randomSeed = System.currentTimeMillis()
+
+    /**
+     * Set sort order (REQ-038)
+     */
+    fun setSortOrder(order: PhotoListSortOrder) {
+        if (order == PhotoListSortOrder.RANDOM) {
+            randomSeed = System.currentTimeMillis()
+        }
+        _uiState.update { state ->
+            // Re-apply sorting to current photos
+            val sortedPhotos = applySortOrder(state.photos, order)
+            state.copy(sortOrder = order, photos = sortedPhotos)
+        }
+    }
+
+    /**
+     * Apply sort order to photos list (REQ-038)
+     */
+    private fun applySortOrder(
+        photos: List<PhotoEntity>,
+        sortOrder: PhotoListSortOrder
+    ): List<PhotoEntity> {
+        return when (sortOrder) {
+            PhotoListSortOrder.DATE_DESC -> photos.sortedByDescending { it.dateTaken }
+            PhotoListSortOrder.DATE_ASC -> photos.sortedBy { it.dateTaken }
+            PhotoListSortOrder.ADDED_DESC -> photos.sortedByDescending { it.updatedAt }
+            PhotoListSortOrder.ADDED_ASC -> photos.sortedBy { it.updatedAt }
+            PhotoListSortOrder.RANDOM -> photos.shuffled(kotlin.random.Random(randomSeed))
+        }
+    }
+
     /**
      * Enter selection mode.
      * Phase 4: 委托给 PhotoSelectionStateHolder

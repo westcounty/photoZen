@@ -139,11 +139,6 @@ class MainScaffoldTest {
     }
     
     @Test
-    fun `shouldShowBottomNav returns false for SmartGallery route`() {
-        assertFalse(MainDestination.shouldShowBottomNav("SmartGallery"))
-    }
-    
-    @Test
     fun `shouldShowBottomNav returns true for unknown route`() {
         // 未知路由默认显示底部导航（兼容性）
         assertTrue(MainDestination.shouldShowBottomNav("UnknownRoute"))

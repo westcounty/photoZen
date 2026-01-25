@@ -1,8 +1,8 @@
 # PhotoZen Design System
 
-> Version: 2.0
+> Version: 2.1
 > Last Updated: 2026-01-25
-> Status: Production Ready
+> Status: Production Ready (Phase 4 视觉优化完成)
 
 ---
 
@@ -206,6 +206,82 @@ val scale by animateFloatAsState(
 | `QuickSequence` | 50ms | 快速序列 |
 | `StandardSequence` | 80ms | 标准序列 |
 | `EmphasisSequence` | 120ms | 强调序列 |
+
+### 2.6 按压缩放标准
+
+**核心原则**: 按压时轻微缩小，提供即时触觉反馈
+
+| 组件类型 | 缩放值 | Spring配置 | 说明 |
+|----------|--------|------------|------|
+| 快捷入口/底部栏项 | 0.92f | snappy | 小按钮明显反馈 |
+| 照片项/时间线项 | 0.95f | snappy | 网格项适中反馈 |
+| Chip/日期快选 | 0.95f | snappy | 标签类组件 |
+| 相册卡片 | 0.96f | snappy | 大卡片轻微反馈 |
+| 普通按钮 | 0.97f | snappy | 按钮默认值 |
+| 卡片/列表项 | 0.98f | snappy | 大面积组件 |
+| 热力图单元格 | 0.9f | snappy | 小单元格明显反馈 |
+
+**选中/强调缩放**:
+
+| 场景 | 缩放值 | Spring配置 |
+|------|--------|------------|
+| 导航项选中 | 1.1f | playful |
+| 相册选中态 | 1.02f | playful |
+| 状态切换脉冲 | 1.2f | playful |
+| 数量变化脉冲 | 1.15f | playful |
+
+### 2.7 特殊动画效果
+
+#### 呼吸脉冲动画
+用于引导提示、危险按钮等需要吸引注意的场景
+
+```kotlin
+// 呼吸脉冲 (2秒循环)
+val pulseScale by infiniteTransition.animateFloat(
+    initialValue = 1f,
+    targetValue = 1.02f,
+    animationSpec = infiniteRepeatable(
+        animation = tween(2000, easing = LinearEasing),
+        repeatMode = RepeatMode.Reverse
+    )
+)
+```
+
+| 场景 | 缩放范围 | 周期 |
+|------|----------|------|
+| 引导气泡 | 1.0 → 1.02 | 2秒 |
+| 危险按钮 | 1.0 → 1.02 | 2秒 |
+| 红色光晕 | 0.1 → 0.25 alpha | 1秒 |
+
+#### 摇晃动画
+用于警告图标等需要强调警示的场景
+
+```kotlin
+// 轻微摇晃 (±3°, 1.5秒循环)
+val rotation by infiniteTransition.animateFloat(
+    initialValue = -3f,
+    targetValue = 3f,
+    animationSpec = infiniteRepeatable(
+        animation = tween(1500, easing = LinearEasing),
+        repeatMode = RepeatMode.Reverse
+    )
+)
+```
+
+#### 箭头移动动画
+用于引导提示箭头
+
+```kotlin
+// 箭头移动 (±4dp, 0.8秒循环)
+val arrowOffset by infiniteTransition.animateFloat(
+    initialValue = -4f,
+    targetValue = 4f,
+    animationSpec = infiniteRepeatable(
+        animation = tween(800, easing = LinearEasing),
+        repeatMode = RepeatMode.Reverse
+    )
+)
+```
 
 ---
 
@@ -454,6 +530,93 @@ LazyColumn {
 - 动画时长: 200ms
 - 效果: 淡入 + 向上位移 20dp
 
+### 6.2 组件入场动画 (Phase 4)
+
+不同场景的错开入场延迟标准：
+
+| 场景 | 延迟间隔 | 动画效果 |
+|------|----------|----------|
+| 相册网格 | 30ms | 淡入 + 缩放0.9→1 + 向上位移 |
+| 时间线照片 | 30ms | 淡入 + 从右滑入30dp |
+| 操作列表项 | 50ms | 淡入 + 从右滑入30dp + 按压反馈 |
+| 筛选区块 | 80ms | 淡入 + 从下滑入20dp |
+
+**入场动画代码模式:**
+```kotlin
+// 入场动画
+var isVisible by remember { mutableStateOf(false) }
+LaunchedEffect(Unit) {
+    delay(animationDelay.toLong())
+    isVisible = true
+}
+
+val entryAlpha by animateFloatAsState(
+    targetValue = if (isVisible) 1f else 0f,
+    animationSpec = tween(PicZenMotion.Duration.Fast),
+    label = "entryAlpha"
+)
+val entryOffsetX by animateFloatAsState(
+    targetValue = if (isVisible) 0f else 30f,
+    animationSpec = PicZenMotion.Springs.snappy(),
+    label = "entryOffsetX"
+)
+
+Box(
+    modifier = Modifier.graphicsLayer {
+        alpha = entryAlpha
+        translationX = entryOffsetX
+    }
+)
+```
+
+### 6.3 状态切换动画 (Phase 4)
+
+#### 图标切换
+使用 `AnimatedContent` 实现平滑图标切换：
+
+```kotlin
+AnimatedContent(
+    targetState = currentIcon,
+    transitionSpec = {
+        scaleIn(animationSpec = PicZenMotion.Springs.playful()) + fadeIn() togetherWith
+        scaleOut() + fadeOut()
+    },
+    label = "iconTransition"
+) { targetIcon ->
+    Icon(imageVector = targetIcon, ...)
+}
+```
+
+#### 颜色过渡
+```kotlin
+val backgroundColor by animateColorAsState(
+    targetValue = when (status) {
+        KEEP -> KeepGreen
+        TRASH -> TrashRed
+        MAYBE -> MaybeAmber
+        else -> Color.Gray
+    },
+    animationSpec = tween(PicZenMotion.Duration.Normal),
+    label = "backgroundColor"
+)
+```
+
+#### 状态变化脉冲
+当状态变化时触发一次脉冲动画：
+
+```kotlin
+var triggerBounce by remember { mutableIntStateOf(0) }
+LaunchedEffect(status) {
+    triggerBounce++
+}
+
+val bounceScale by animateFloatAsState(
+    targetValue = if (triggerBounce % 2 == 1) 1.2f else 1f,
+    animationSpec = PicZenMotion.Springs.playful(),
+    finishedListener = { if (triggerBounce % 2 == 1) triggerBounce++ }
+)
+```
+
 ### 6.2 滑动卡片动画
 
 SwipeablePhotoCard 增强效果:
@@ -568,6 +731,49 @@ enter = PicZenMotion.Specs.fadeInSpec + PicZenMotion.Specs.scaleInSpec
 ---
 
 ## 9. Changelog
+
+### v2.1 (2026-01-25) - 极致视觉体验优化 (Phase 1-4)
+
+本次更新通过 4 个阶段的系统性优化，实现了应用全组件的微交互增强。
+
+#### Phase 1: 基础组件增强
+- **BottomActionBar**: 按压缩放0.92f + 图标下沉2dp + 背景alpha动画
+- **EnhancedSettingsItem**: 按压缩放0.98f + 背景色变化 + 图标右移2dp
+- **FilterChipRow**: 按压缩放0.95f + 边框动画1dp→2dp
+- **MainBottomNavigation**: 滑动指示器 + 选中图标1.1f/未选中0.85f (playful spring)
+
+#### Phase 2: 统计和首页组件
+- **StatsCards**: AnimatedCounter数字滚动 + AnimatedFlameIcon火焰摇曳 + MiniStatsCard按压0.98f
+- **HomeComponents**:
+  - HomeMainAction: 按压缩放 + 阴影动态变化
+  - HomeDailyTask: 折叠/展开动画 + 完成态渐变
+  - ShareFeatureTipCard: 入场动画 + 关闭按钮旋转
+
+#### Phase 3: 相册界面重构
+- **AlbumCard**: 1:1正方形卡片 + 按压缩放0.96f + 暗角渐变 + 毛玻璃信息层
+- **AlbumGridView**: 双列网格布局 + 错开入场30ms/项
+- **AlbumProgressRing**: 圆环进度指示器 + 颜色渐变 + 完成脉冲1.2f
+- **AlbumStatusBadge**: 三态徽章 (NOT_STARTED/IN_PROGRESS/COMPLETED)
+- **AlbumBubbleScreen**: GRID模式重构 + AlbumListItemWithDrag增强(按压0.98f+进度环)
+
+#### Phase 4: 细节打磨
+- **SelectionTopBar**: 关闭按钮旋转90°+缩放0.85f + 数量脉冲1.15f
+- **PhotoActionSheet**: 列表项按压0.98f + 错开入场50ms + 图标右移2dp
+- **AlbumPickerBottomSheet**: 网格项按压0.96f + 选中缩放1.02f + 勾选弹入
+- **FilterBottomSheet**: 按钮按压缩放0.97f
+- **ConfirmDeleteSheet**: 危险按钮脉冲1.02f + 红色光晕 + 图标摇晃±3°
+- **DateRangePicker**: Chip按压缩放0.95f + 触觉反馈
+- **CalendarHeatmap**: 单元格按压0.9f + 颜色过渡动画
+- **TimelineEventPhotoRow**: 照片按压0.95f + 阴影动画 + 错开入场30ms
+- **PhotoStatusBadge**: 状态切换脉冲1.2f + 图标AnimatedContent + 颜色过渡
+- **GuideTooltip**: 呼吸脉冲1.02f + 箭头移动±4dp + 入场缩放
+
+#### 系统级增强
+- 新增按压缩放标准表 (2.6节)
+- 新增特殊动画效果规范 (2.7节): 呼吸脉冲、摇晃、箭头移动
+- 新增组件入场动画规范 (6.2节): 错开入场延迟标准
+- 新增状态切换动画规范 (6.3节): 图标切换、颜色过渡、状态脉冲
+- 全面覆盖触觉反馈到关键交互点
 
 ### v2.0 (2026-01-25)
 - 建立完整 Token 系统

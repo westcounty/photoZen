@@ -9,23 +9,15 @@ import com.example.photozen.ui.state.AsyncState
 
 /**
  * HomeUiState 子状态定义
- * 
- * 将原来 25+ 字段的 HomeUiState 拆分为 4 个职责清晰的子状态：
+ *
+ * 将 HomeUiState 拆分为 3 个职责清晰的子状态：
  * - PhotoStatsState: 照片统计相关
  * - UiControlState: UI 控制相关
  * - FeatureConfigState: 功能配置相关
- * - SmartGalleryState: 智能画廊相关（实验性功能）
- * 
- * ## 迁移策略
- * 
- * 这些子状态类与现有 HomeUiState 并存，不修改现有代码。
- * 后续阶段二会逐步迁移 HomeViewModel 使用这些新结构。
- * 
+ *
  * ## 便捷访问器
- * 
+ *
  * 每个子状态提供计算属性，便于 UI 层直接使用，无需额外计算。
- * 
- * @since Phase 4 - 状态管理重构
  */
 
 // ============== 照片统计子状态 ==============
@@ -211,72 +203,24 @@ data class FeatureConfigState(
     }
 }
 
-// ============== 智能画廊子状态 ==============
-
-/**
- * 智能画廊子状态（实验性功能）
- * 
- * 包含所有与智能画廊相关的字段。
- * 仅在 ENABLE_SMART_GALLERY 构建标志启用时有意义。
- * 
- * @property enabled 是否启用智能画廊
- * @property personCount 识别的人物数量
- * @property labelCount 识别的标签数量
- * @property gpsPhotoCount 带 GPS 信息的照片数量
- * @property analysisProgress 分析进度（0.0 - 1.0）
- * @property isAnalyzing 是否正在分析
- */
-data class SmartGalleryState(
-    val enabled: Boolean = false,
-    val personCount: Int = 0,
-    val labelCount: Int = 0,
-    val gpsPhotoCount: Int = 0,
-    val analysisProgress: Float = 0f,
-    val isAnalyzing: Boolean = false
-) {
-    /**
-     * 是否有分析数据
-     */
-    val hasAnalysisData: Boolean
-        get() = personCount > 0 || labelCount > 0 || gpsPhotoCount > 0
-    
-    /**
-     * 分析进度百分比文本
-     */
-    val analysisProgressText: String
-        get() = "${(analysisProgress * 100).toInt()}%"
-    
-    /**
-     * 是否分析完成
-     */
-    val isAnalysisComplete: Boolean
-        get() = analysisProgress >= 1.0f && !isAnalyzing
-    
-    companion object {
-        val EMPTY = SmartGalleryState()
-    }
-}
-
 // ============== 组合状态（供 Phase 4 阶段二使用） ==============
 
 /**
  * 重构后的 HomeUiState 结构预览
- * 
+ *
  * 此类用于 Phase 4 阶段二迁移，目前与现有 HomeUiState 并存。
- * 
+ *
  * @property photoStats 照片统计
  * @property uiControl UI 控制
  * @property featureConfig 功能配置
- * @property smartGallery 智能画廊
  */
 data class HomeUiStateV2(
     val photoStats: PhotoStatsState = PhotoStatsState.EMPTY,
     val uiControl: UiControlState = UiControlState.EMPTY,
-    val featureConfig: FeatureConfigState = FeatureConfigState.EMPTY,
-    val smartGallery: SmartGalleryState = SmartGalleryState.EMPTY
+    val featureConfig: FeatureConfigState = FeatureConfigState.EMPTY
 ) {
     // ============== 便捷访问器（保持与旧 API 兼容） ==============
-    
+
     val totalPhotos: Int get() = photoStats.totalPhotos
     val unsortedCount: Int get() = photoStats.unsortedCount
     val keepCount: Int get() = photoStats.keepCount
@@ -289,7 +233,7 @@ data class HomeUiStateV2(
     val filteredSorted: Int get() = photoStats.filteredSorted
     val filteredProgress: Float get() = photoStats.filteredProgress
     val filteredUnsorted: Int get() = photoStats.filteredUnsorted
-    
+
     val hasPermission: Boolean get() = uiControl.hasPermission
     val isLoading: Boolean get() = uiControl.isLoading
     val isSyncing: Boolean get() = uiControl.isSyncing
@@ -298,21 +242,14 @@ data class HomeUiStateV2(
     val shouldShowChangelog: Boolean get() = uiControl.shouldShowChangelog
     val shouldShowQuickStart: Boolean get() = uiControl.shouldShowQuickStart
     val showSortModeSheet: Boolean get() = uiControl.showSortModeSheet
-    
+
     val photoFilterMode: PhotoFilterMode get() = featureConfig.photoFilterMode
     val photoClassificationMode: PhotoClassificationMode get() = featureConfig.photoClassificationMode
     val dailyTaskStatus: DailyTaskStatus? get() = featureConfig.dailyTaskStatus
     val achievementData: AchievementData get() = featureConfig.achievementData
     val statsSummary: StatsSummary get() = featureConfig.statsSummary
     val needsFilterSelection: Boolean get() = featureConfig.needsFilterSelection
-    
-    val experimentalEnabled: Boolean get() = smartGallery.enabled
-    val smartGalleryPersonCount: Int get() = smartGallery.personCount
-    val smartGalleryLabelCount: Int get() = smartGallery.labelCount
-    val smartGalleryGpsPhotoCount: Int get() = smartGallery.gpsPhotoCount
-    val smartGalleryAnalysisProgress: Float get() = smartGallery.analysisProgress
-    val smartGalleryIsAnalyzing: Boolean get() = smartGallery.isAnalyzing
-    
+
     companion object {
         val EMPTY = HomeUiStateV2()
     }
@@ -357,21 +294,11 @@ fun HomeUiState.toFeatureConfigState(): FeatureConfigState = FeatureConfigState(
     statsSummary = statsSummary
 )
 
-fun HomeUiState.toSmartGalleryState(): SmartGalleryState = SmartGalleryState(
-    enabled = experimentalEnabled,
-    personCount = smartGalleryPersonCount,
-    labelCount = smartGalleryLabelCount,
-    gpsPhotoCount = smartGalleryGpsPhotoCount,
-    analysisProgress = smartGalleryAnalysisProgress,
-    isAnalyzing = smartGalleryIsAnalyzing
-)
-
 /**
  * 转换为新版 UiState
  */
 fun HomeUiState.toV2(): HomeUiStateV2 = HomeUiStateV2(
     photoStats = toPhotoStatsState(),
     uiControl = toUiControlState(),
-    featureConfig = toFeatureConfigState(),
-    smartGallery = toSmartGalleryState()
+    featureConfig = toFeatureConfigState()
 )

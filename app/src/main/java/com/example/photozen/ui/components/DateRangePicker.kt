@@ -1,6 +1,9 @@
 package com.example.photozen.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,7 +31,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import com.example.photozen.ui.theme.PicZenMotion
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -124,46 +131,55 @@ fun DateRangePicker(
 
 /**
  * 快捷日期选项
+ *
+ * 增强动画:
+ * - Chip按压缩放 (0.95f)
+ * - 触觉反馈
  */
 @Composable
 private fun QuickDateOptions(
     onSelectRange: (Long?, Long?) -> Unit
 ) {
     val calendar = remember { Calendar.getInstance() }
-    
+    val haptic = LocalHapticFeedback.current
+
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // 最近 7 天
         item {
-            SuggestionChip(
+            EnhancedDateChip(
+                label = "最近7天",
                 onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     val end = System.currentTimeMillis()
                     calendar.timeInMillis = end
                     calendar.add(Calendar.DAY_OF_MONTH, -7)
                     onSelectRange(calendar.timeInMillis, end)
-                },
-                label = { Text("最近7天") }
+                }
             )
         }
-        
+
         // 最近 30 天
         item {
-            SuggestionChip(
+            EnhancedDateChip(
+                label = "最近30天",
                 onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     val end = System.currentTimeMillis()
                     calendar.timeInMillis = end
                     calendar.add(Calendar.DAY_OF_MONTH, -30)
                     onSelectRange(calendar.timeInMillis, end)
-                },
-                label = { Text("最近30天") }
+                }
             )
         }
-        
+
         // 本月
         item {
-            SuggestionChip(
+            EnhancedDateChip(
+                label = "本月",
                 onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     calendar.timeInMillis = System.currentTimeMillis()
                     calendar.set(Calendar.DAY_OF_MONTH, 1)
                     calendar.set(Calendar.HOUR_OF_DAY, 0)
@@ -171,21 +187,22 @@ private fun QuickDateOptions(
                     calendar.set(Calendar.SECOND, 0)
                     calendar.set(Calendar.MILLISECOND, 0)
                     val start = calendar.timeInMillis
-                    
+
                     calendar.add(Calendar.MONTH, 1)
                     calendar.add(Calendar.MILLISECOND, -1)
                     val end = calendar.timeInMillis
-                    
+
                     onSelectRange(start, end)
-                },
-                label = { Text("本月") }
+                }
             )
         }
-        
+
         // 上月
         item {
-            SuggestionChip(
+            EnhancedDateChip(
+                label = "上月",
                 onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     calendar.timeInMillis = System.currentTimeMillis()
                     calendar.add(Calendar.MONTH, -1)
                     calendar.set(Calendar.DAY_OF_MONTH, 1)
@@ -194,21 +211,22 @@ private fun QuickDateOptions(
                     calendar.set(Calendar.SECOND, 0)
                     calendar.set(Calendar.MILLISECOND, 0)
                     val start = calendar.timeInMillis
-                    
+
                     calendar.add(Calendar.MONTH, 1)
                     calendar.add(Calendar.MILLISECOND, -1)
                     val end = calendar.timeInMillis
-                    
+
                     onSelectRange(start, end)
-                },
-                label = { Text("上月") }
+                }
             )
         }
-        
+
         // 今年
         item {
-            SuggestionChip(
+            EnhancedDateChip(
+                label = "今年",
                 onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     calendar.timeInMillis = System.currentTimeMillis()
                     calendar.set(Calendar.MONTH, Calendar.JANUARY)
                     calendar.set(Calendar.DAY_OF_MONTH, 1)
@@ -217,21 +235,51 @@ private fun QuickDateOptions(
                     calendar.set(Calendar.SECOND, 0)
                     calendar.set(Calendar.MILLISECOND, 0)
                     val start = calendar.timeInMillis
-                    
+
                     onSelectRange(start, System.currentTimeMillis())
-                },
-                label = { Text("今年") }
+                }
             )
         }
-        
+
         // 清除
         item {
-            SuggestionChip(
-                onClick = { onSelectRange(null, null) },
-                label = { Text("不限") }
+            EnhancedDateChip(
+                label = "不限",
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onSelectRange(null, null)
+                }
             )
         }
     }
+}
+
+/**
+ * 带按压动画的日期快捷Chip
+ */
+@Composable
+private fun EnhancedDateChip(
+    label: String,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "chipScale"
+    )
+
+    SuggestionChip(
+        onClick = onClick,
+        label = { Text(label) },
+        interactionSource = interactionSource,
+        modifier = Modifier.graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+    )
 }
 
 /**

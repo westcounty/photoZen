@@ -114,6 +114,15 @@ class PreferencesRepository @Inject constructor(
         val KEY_GRID_COLUMNS_ALBUM = intPreferencesKey("grid_columns_album")
         val KEY_GRID_COLUMNS_TIMELINE = intPreferencesKey("grid_columns_timeline")
 
+        // Grid mode keys (SQUARE vs WATERFALL)
+        val KEY_GRID_MODE_KEEP = stringPreferencesKey("grid_mode_keep")
+        val KEY_GRID_MODE_MAYBE = stringPreferencesKey("grid_mode_maybe")
+        val KEY_GRID_MODE_TRASH = stringPreferencesKey("grid_mode_trash")
+        val KEY_GRID_MODE_TAGGED = stringPreferencesKey("grid_mode_tagged")
+        val KEY_GRID_MODE_FLOW = stringPreferencesKey("grid_mode_flow")
+        val KEY_GRID_MODE_ALBUM = stringPreferencesKey("grid_mode_album")
+        val KEY_GRID_MODE_TIMELINE = stringPreferencesKey("grid_mode_timeline")
+
         // Sort preferences for different screens (REQ-023)
         val KEY_SORT_ORDER_KEEP = stringPreferencesKey("sort_order_keep")
         val KEY_SORT_ORDER_MAYBE = stringPreferencesKey("sort_order_maybe")
@@ -1100,6 +1109,46 @@ class PreferencesRepository @Inject constructor(
         val next = if (current >= 5) minColumns else current + 1
         setGridColumns(screen, next)
         return next
+    }
+
+    /**
+     * Get grid mode (SQUARE vs WATERFALL) for a specific screen.
+     * Default is SQUARE (网格模式).
+     */
+    fun getGridMode(screen: GridScreen): Flow<com.example.photozen.ui.components.PhotoGridMode> = dataStore.data.map { preferences ->
+        val key = when (screen) {
+            GridScreen.KEEP -> KEY_GRID_MODE_KEEP
+            GridScreen.MAYBE -> KEY_GRID_MODE_MAYBE
+            GridScreen.TRASH -> KEY_GRID_MODE_TRASH
+            GridScreen.TAGGED -> KEY_GRID_MODE_TAGGED
+            GridScreen.FLOW -> KEY_GRID_MODE_FLOW
+            GridScreen.ALBUM -> KEY_GRID_MODE_ALBUM
+            GridScreen.TIMELINE -> KEY_GRID_MODE_TIMELINE
+        }
+        val modeName = preferences[key] ?: "SQUARE"
+        try {
+            com.example.photozen.ui.components.PhotoGridMode.valueOf(modeName)
+        } catch (e: Exception) {
+            com.example.photozen.ui.components.PhotoGridMode.SQUARE
+        }
+    }
+
+    /**
+     * Set grid mode for a specific screen.
+     */
+    suspend fun setGridMode(screen: GridScreen, mode: com.example.photozen.ui.components.PhotoGridMode) {
+        val key = when (screen) {
+            GridScreen.KEEP -> KEY_GRID_MODE_KEEP
+            GridScreen.MAYBE -> KEY_GRID_MODE_MAYBE
+            GridScreen.TRASH -> KEY_GRID_MODE_TRASH
+            GridScreen.TAGGED -> KEY_GRID_MODE_TAGGED
+            GridScreen.FLOW -> KEY_GRID_MODE_FLOW
+            GridScreen.ALBUM -> KEY_GRID_MODE_ALBUM
+            GridScreen.TIMELINE -> KEY_GRID_MODE_TIMELINE
+        }
+        dataStore.edit { preferences ->
+            preferences[key] = mode.name
+        }
     }
 
     // ==================== SORT ORDER PREFERENCES (REQ-023) ====================

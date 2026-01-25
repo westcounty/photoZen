@@ -42,7 +42,7 @@ data class AlbumBubbleUiState(
     val isLoading: Boolean = true,
     val albums: List<AlbumBubbleData> = emptyList(),
     val bubbleNodes: List<BubbleNode> = emptyList(),
-    val viewMode: AlbumViewMode = AlbumViewMode.BUBBLE,
+    val viewMode: AlbumViewMode = AlbumViewMode.GRID,
     val showAlbumPicker: Boolean = false,
     val availableAlbums: List<Album> = emptyList(),
     val isLoadingAlbums: Boolean = false,
@@ -58,7 +58,7 @@ data class AlbumBubbleUiState(
  * View mode for album display.
  */
 enum class AlbumViewMode {
-    BUBBLE,  // Bubble/tag cloud view
+    GRID,    // Modern card grid view (replaces BUBBLE)
     LIST     // List view
 }
 
@@ -89,9 +89,11 @@ class AlbumBubbleViewModel @Inject constructor(
         viewModelScope.launch {
             preferencesRepository.getAlbumViewMode().collect { modeStr ->
                 val mode = try {
-                    AlbumViewMode.valueOf(modeStr)
+                    // Handle migration from old BUBBLE mode
+                    if (modeStr == "BUBBLE") AlbumViewMode.GRID
+                    else AlbumViewMode.valueOf(modeStr)
                 } catch (e: IllegalArgumentException) {
-                    AlbumViewMode.BUBBLE
+                    AlbumViewMode.GRID
                 }
                 _uiState.update { it.copy(viewMode = mode) }
             }
@@ -217,13 +219,13 @@ class AlbumBubbleViewModel @Inject constructor(
     }
     
     /**
-     * Toggle view mode between bubble and list.
+     * Toggle view mode between grid and list.
      * Saves the new mode to preferences.
      */
     fun toggleViewMode() {
-        val newMode = if (_uiState.value.viewMode == AlbumViewMode.BUBBLE) AlbumViewMode.LIST else AlbumViewMode.BUBBLE
+        val newMode = if (_uiState.value.viewMode == AlbumViewMode.GRID) AlbumViewMode.LIST else AlbumViewMode.GRID
         _uiState.update { it.copy(viewMode = newMode) }
-        
+
         // Save to preferences
         viewModelScope.launch {
             preferencesRepository.setAlbumViewMode(newMode.name)

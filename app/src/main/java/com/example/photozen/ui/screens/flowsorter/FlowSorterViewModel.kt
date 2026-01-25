@@ -1706,12 +1706,25 @@ class FlowSorterViewModel @Inject constructor(
     }
     
     /**
-     * Cycle grid columns: 2 -> 3 -> 1 -> 2
+     * Cycle grid columns: 1 -> 2 -> 3 -> 4 -> 5 -> 1
+     * REQ-007: 瀑布流视图支持 1-5 列切换
      */
     fun cycleGridColumns() {
         viewModelScope.launch {
-            val newColumns = preferencesRepository.cycleGridColumns(PreferencesRepository.GridScreen.FLOW)
+            val newColumns = preferencesRepository.cycleGridColumns(PreferencesRepository.GridScreen.FLOW, minColumns = 1)
             _gridColumns.value = newColumns
+        }
+    }
+
+    /**
+     * Set grid columns directly.
+     * REQ-007: 支持直接设置列数（用于视图模式下拉菜单）
+     */
+    fun setGridColumns(columns: Int) {
+        viewModelScope.launch {
+            val validColumns = columns.coerceIn(1, 4)
+            preferencesRepository.setGridColumns(PreferencesRepository.GridScreen.FLOW, validColumns)
+            _gridColumns.value = validColumns
         }
     }
     

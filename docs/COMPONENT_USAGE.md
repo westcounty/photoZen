@@ -1,6 +1,6 @@
 # 组件使用示例
 
-本文档提供 Phase 4 新增组件的使用示例和最佳实践。
+本文档提供视觉优化方案 (Phase 1-4) 中增强组件的使用示例和最佳实践。
 
 ## 1. BottomBarConfigs
 
@@ -407,7 +407,488 @@ fun PhotoListScreen(
 }
 ```
 
-## 8. 最佳实践
+## 8. Phase 1 增强组件 - 基础组件
+
+Phase 1 为核心基础组件添加了按压反馈和状态动画。
+
+### 8.1 BottomActionBar (底部操作栏)
+
+底部操作栏的每个按钮都增强了按压反馈。
+
+**增强效果:**
+- 按压缩放: `0.92f`
+- 图标下沉: `2.dp`
+- 背景透明度动画: 按压时增加
+
+```kotlin
+// 底部操作栏按钮已内置按压动画
+@Composable
+fun BottomBarActionItem(
+    action: BottomBarAction,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.92f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy()
+    )
+    val iconOffset by animateDpAsState(
+        targetValue = if (isPressed) 2.dp else 0.dp,
+        animationSpec = PicZenMotion.Springs.snappy()
+    )
+    // ...
+}
+```
+
+### 8.2 EnhancedSettingsItem (设置项)
+
+所有设置项都添加了统一的按压反馈。
+
+**增强效果:**
+- 按压缩放: `0.98f`
+- 背景色变化: 按压时加深
+- 图标右移: `2.dp`
+
+```kotlin
+// 在 EnhancedSettingsItem 中自动应用
+@Composable
+fun EnhancedSettingsItemNavigate(...) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy()
+    )
+    // 背景色和图标位移动画
+}
+```
+
+### 8.3 FilterChipRow (筛选标签行)
+
+筛选 Chip 添加了选中状态动画。
+
+**增强效果:**
+- 按压缩放: `0.95f`
+- 边框动画: `1.dp → 2.dp` (选中时)
+- 颜色过渡动画
+
+```kotlin
+@Composable
+fun FilterChip(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: String
+) {
+    val borderWidth by animateDpAsState(
+        targetValue = if (selected) 2.dp else 1.dp,
+        animationSpec = PicZenMotion.Springs.snappy()
+    )
+    // ...
+}
+```
+
+### 8.4 MainBottomNavigation (主底部导航)
+
+底部导航添加了滑动指示器和图标弹跳效果。
+
+**增强效果:**
+- 滑动指示器: 跟随选中项平滑移动 (playful spring)
+- 选中图标缩放: `1.1f`
+- 未选中图标缩放: `0.85f`
+
+```kotlin
+@Composable
+fun MainBottomNavigation(
+    currentRoute: String,
+    onNavigate: (String) -> Unit
+) {
+    // 指示器位置动画
+    val indicatorOffset by animateDpAsState(
+        targetValue = calculateIndicatorOffset(currentRoute),
+        animationSpec = PicZenMotion.Springs.playful()
+    )
+
+    // 图标缩放
+    items.forEach { item ->
+        val isSelected = item.route == currentRoute
+        val iconScale by animateFloatAsState(
+            targetValue = if (isSelected) 1.1f else 0.85f,
+            animationSpec = PicZenMotion.Springs.playful()
+        )
+        // ...
+    }
+}
+```
+
+---
+
+## 9. Phase 2 增强组件 - 统计和首页
+
+Phase 2 为首页和统计组件添加了数字动画和卡片交互。
+
+### 9.1 StatsCards (统计卡片)
+
+统计卡片添加了数字滚动和火焰摇曳动画。
+
+**AnimatedCounter (数字滚动)**:
+```kotlin
+@Composable
+fun AnimatedCounter(
+    targetValue: Int,
+    modifier: Modifier = Modifier
+) {
+    val animatedValue by animateIntAsState(
+        targetValue = targetValue,
+        animationSpec = PicZenMotion.Specs.countUp
+    )
+
+    Text(
+        text = animatedValue.toString(),
+        style = MaterialTheme.typography.displayLarge
+    )
+}
+```
+
+**AnimatedFlameIcon (火焰摇曳)**:
+```kotlin
+@Composable
+fun AnimatedFlameIcon(
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition()
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = -5f,
+        targetValue = 5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        )
+    )
+
+    Icon(
+        imageVector = Icons.Default.LocalFireDepartment,
+        modifier = modifier.graphicsLayer { rotationZ = rotation }
+    )
+}
+```
+
+**MiniStatsCard (迷你统计卡片)**:
+- 按压缩放: `0.98f`
+- 阴影动画: Level2 → Level1
+
+### 9.2 HomeComponents (首页组件)
+
+首页各组件都添加了按压和状态动画。
+
+**HomeMainAction (主操作卡片)**:
+```kotlin
+@Composable
+fun HomeMainAction(
+    unsortedCount: Int,
+    onStartSorting: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy()
+    )
+    val elevation by animateDpAsState(
+        targetValue = if (isPressed) Level1 else Level2,
+        animationSpec = tween(PicZenMotion.Duration.Quick)
+    )
+
+    EnhancedCard(
+        modifier = Modifier.graphicsLayer {
+            scaleX = scale; scaleY = scale
+        }
+    ) {
+        // 待整理数量使用 AnimatedCounter
+        AnimatedCounter(targetValue = unsortedCount)
+        // ...
+    }
+}
+```
+
+**HomeDailyTask (每日任务)**:
+- 折叠/展开动画: `expandVertically` + `fadeIn`
+- 完成态背景: 渐变为 `KeepGreen.Container`
+- 进度条动画
+
+**QuickActionItem (快捷入口)**:
+- 按压缩放: `0.92f`
+- 图标下沉: `2.dp`
+
+---
+
+## 10. Phase 3 增强组件 - 相册界面
+
+Phase 3 完全重构了相册界面，采用现代卡片网格布局。
+
+### 10.1 AlbumCard (相册卡片)
+
+全新设计的相册卡片组件。
+
+**设计规格:**
+| 属性 | 值 | 说明 |
+|------|-----|------|
+| 宽高比 | 1:1 | 正方形卡片 |
+| 圆角 | 16dp | 现代感 |
+| 阴影 | Level2 | 适度立体 |
+| 按压缩放 | 0.96f | 明显但不夸张 |
+
+**代码示例:**
+```kotlin
+@Composable
+fun AlbumCard(
+    album: AlbumWithPhotos,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy()
+    )
+    val elevation by animateDpAsState(
+        targetValue = if (isPressed) Level1 else Level2,
+        animationSpec = tween(PicZenMotion.Duration.Quick)
+    )
+
+    Card(
+        modifier = modifier
+            .aspectRatio(1f)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .shadow(elevation, RoundedCornerShape(16.dp))
+    ) {
+        Box {
+            // 封面图
+            AsyncImage(...)
+
+            // 暗角渐变
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.6f)
+                            ),
+                            startY = 0.5f
+                        )
+                    )
+            )
+
+            // 毛玻璃信息层
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(surface.copy(alpha = 0.85f))
+            ) {
+                Column {
+                    Text(album.name)
+                    Text("${album.photoCount}张")
+                }
+            }
+
+            // 进度环 + 状态徽章
+            AlbumProgressRing(...)
+            AlbumStatusBadge(...)
+        }
+    }
+}
+```
+
+### 10.2 AlbumGridView (相册网格视图)
+
+双列网格布局，带错开入场动画。
+
+```kotlin
+@Composable
+fun AlbumGridView(
+    albums: List<AlbumWithPhotos>,
+    onAlbumClick: (String) -> Unit
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        contentPadding = PaddingValues(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        itemsIndexed(albums) { index, album ->
+            // 错开入场动画
+            var isVisible by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                delay(index * 30L)  // 30ms/项
+                isVisible = true
+            }
+
+            val alpha by animateFloatAsState(
+                targetValue = if (isVisible) 1f else 0f,
+                animationSpec = tween(PicZenMotion.Duration.Fast)
+            )
+            val scale by animateFloatAsState(
+                targetValue = if (isVisible) 1f else 0.9f,
+                animationSpec = PicZenMotion.Springs.snappy()
+            )
+
+            AlbumCard(
+                album = album,
+                onClick = { onAlbumClick(album.id) },
+                modifier = Modifier.graphicsLayer {
+                    this.alpha = alpha
+                    scaleX = scale; scaleY = scale
+                }
+            )
+        }
+    }
+}
+```
+
+### 10.3 AlbumProgressRing (相册进度环)
+
+显示相册整理进度的圆环指示器。
+
+**增强效果:**
+- 进度颜色渐变: 根据进度从灰色过渡到绿色
+- 完成脉冲: `1.2f` (完成时触发)
+
+```kotlin
+@Composable
+fun AlbumProgressRing(
+    progress: Float,  // 0f - 1f
+    modifier: Modifier = Modifier
+) {
+    val isComplete = progress >= 1f
+
+    // 完成脉冲
+    var triggerPulse by remember { mutableStateOf(false) }
+    LaunchedEffect(isComplete) {
+        if (isComplete) triggerPulse = true
+    }
+    val pulseScale by animateFloatAsState(
+        targetValue = if (triggerPulse) 1.2f else 1f,
+        animationSpec = PicZenMotion.Springs.playful(),
+        finishedListener = { triggerPulse = false }
+    )
+
+    // 颜色渐变
+    val ringColor by animateColorAsState(
+        targetValue = when {
+            progress < 0.3f -> Color.Gray
+            progress < 0.7f -> MaybeAmber
+            else -> KeepGreen
+        },
+        animationSpec = tween(PicZenMotion.Duration.Normal)
+    )
+
+    Box(
+        modifier = modifier.graphicsLayer {
+            scaleX = pulseScale; scaleY = pulseScale
+        }
+    ) {
+        CircularProgressIndicator(
+            progress = { progress },
+            color = ringColor
+        )
+    }
+}
+```
+
+### 10.4 AlbumStatusBadge (相册状态徽章)
+
+显示相册整理状态的徽章。
+
+**三种状态:**
+- `NOT_STARTED`: 灰色，未开始图标
+- `IN_PROGRESS`: 琥珀色，进行中图标
+- `COMPLETED`: 绿色，完成勾选图标
+
+```kotlin
+enum class AlbumStatus {
+    NOT_STARTED,
+    IN_PROGRESS,
+    COMPLETED
+}
+
+@Composable
+fun AlbumStatusBadge(
+    status: AlbumStatus,
+    modifier: Modifier = Modifier
+) {
+    val (icon, color) = when (status) {
+        AlbumStatus.NOT_STARTED -> Icons.Outlined.Circle to Color.Gray
+        AlbumStatus.IN_PROGRESS -> Icons.Default.Schedule to MaybeAmber
+        AlbumStatus.COMPLETED -> Icons.Default.CheckCircle to KeepGreen
+    }
+
+    // 颜色过渡
+    val animatedColor by animateColorAsState(
+        targetValue = color,
+        animationSpec = tween(PicZenMotion.Duration.Normal)
+    )
+
+    Surface(
+        color = animatedColor.copy(alpha = 0.2f),
+        shape = CircleShape
+    ) {
+        Icon(
+            imageVector = icon,
+            tint = animatedColor,
+            modifier = Modifier.padding(4.dp)
+        )
+    }
+}
+```
+
+---
+
+## 11. Phase 4 增强组件 - 细节打磨
+
+Phase 4 为多个组件添加了微交互动画，确保极致流畅的用户体验。
+
+### 11.1 按压动画增强
+
+以下组件已内置按压缩放动画，无需额外配置：
+
+| 组件 | 按压缩放 | 附加效果 |
+|------|----------|----------|
+| `SelectionTopBar` 关闭按钮 | 0.85f | 旋转90° |
+| `PhotoActionSheet` 列表项 | 0.98f | 图标右移2dp + 背景色 |
+| `AlbumPickerBottomSheet` 网格项 | 0.96f | 选中1.02f + 勾选弹入 |
+| `FilterBottomSheet` 按钮 | 0.97f | - |
+| `ConfirmDeleteSheet` 危险按钮 | 0.95f (按压时暂停脉冲) | 脉冲1.02f + 红色光晕 |
+| `DateRangePicker` Chip | 0.95f | 触觉反馈 |
+| `CalendarHeatmap` 单元格 | 0.9f | 颜色过渡 |
+| `TimelineEventPhotoRow` 照片 | 0.95f | 阴影动画 + 错开入场 |
+
+### 11.2 状态动画增强
+
+| 组件 | 状态动画效果 |
+|------|--------------|
+| `SelectionTopBar` | 选中数量变化时脉冲1.15f |
+| `PhotoStatusBadge` | 状态切换脉冲1.2f + 图标AnimatedContent + 颜色过渡 |
+| `GuideTooltip` | 呼吸脉冲1.02f + 箭头移动±4dp |
+
+### 11.3 入场动画增强
+
+| 组件 | 错开延迟 | 动画效果 |
+|------|----------|----------|
+| `PhotoActionSheet` | 50ms/项 | 淡入 + 从右滑入30dp |
+| `TimelineEventPhotoRow` | 30ms/项 | 淡入 + 从右滑入30dp |
+| `GuideTooltip` | - | 缩放0.8→1 (playful spring) |
+
+---
+
+## 12. 最佳实践
 
 ### DO ✓
 
@@ -415,6 +896,9 @@ fun PhotoListScreen(
 2. **根据列数选择正确的 ThumbnailSizePolicy** - 优化内存使用
 3. **在滑动操作后调用 preload** - 提升用户体验
 4. **使用 optimizedTransform 进行动画** - 避免不必要的重组
+5. **使用 PicZenMotion.Springs.snappy() 做按压动画** - 确保丝滑反馈
+6. **使用 graphicsLayer 进行变换** - GPU加速避免重组
+7. **为可点击组件添加按压缩放** - 提供触觉反馈
 
 ### DON'T ✗
 
@@ -422,3 +906,5 @@ fun PhotoListScreen(
 2. **不要使用 offset/rotate 进行动画** - 使用 graphicsLayer 系列
 3. **不要在每帧重新创建 ImageRequest** - 缓存或使用 remember
 4. **不要忽略 BackHandler** - 确保选择模式可正常退出
+5. **不要使用 tween 做按压动画** - 使用 Spring 更流畅
+6. **不要硬编码动画时长** - 使用 PicZenMotion.Duration

@@ -60,6 +60,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import com.example.photozen.ui.components.shareImage
 import com.example.photozen.ui.components.PhotoGridMode
+import com.example.photozen.ui.components.ViewModeDropdownButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -112,7 +113,6 @@ import com.example.photozen.ui.components.DragSelectPhotoGrid
 import com.example.photozen.ui.components.EmptyStates
 import com.example.photozen.ui.components.GuideTooltip
 import com.example.photozen.ui.components.ArrowDirection
-import com.example.photozen.ui.components.PhotoListActionSheet
 import com.example.photozen.ui.guide.rememberGuideState
 import com.example.photozen.domain.model.GuideKey
 import androidx.compose.ui.geometry.Rect
@@ -133,7 +133,6 @@ import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.SnackbarResult
-import com.example.photozen.ui.components.onboarding.PinchZoomOnboarding
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -151,15 +150,6 @@ fun PhotoListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val haptic = LocalHapticFeedback.current
     
-    // Action sheet state
-    var showActionSheet by remember { mutableStateOf(false) }
-    var selectedPhotoId by remember { mutableStateOf<String?>(null) }
-    var selectedPhotoUri by remember { mutableStateOf<String?>(null) }
-    
-    // Single photo album picker state (for long-press add to album)
-    var showSinglePhotoAlbumPicker by remember { mutableStateOf(false) }
-    var singlePhotoIdForAlbum by remember { mutableStateOf<String?>(null) }
-    
     // Phase 3-9: 删除确认弹窗状态
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
 
@@ -174,12 +164,6 @@ fun PhotoListScreen(
     )
     var gridBounds by remember { mutableStateOf<Rect?>(null) }
 
-    // REQ-067: 双指缩放新手引导
-    val pinchZoomGuide = rememberGuideState(
-        guideKey = GuideKey.PINCH_ZOOM_GUIDE,
-        guideRepository = viewModel.guideRepository
-    )
-    
     // 处理 UI 事件（撤销等）
     LaunchedEffect(Unit) {
         viewModel.uiEvent.collect { event ->
@@ -295,49 +279,34 @@ fun PhotoListScreen(
                             }
                         }
                         
-                        // Grid mode toggle (square vs waterfall)
+                        // 视图模式切换（统一下拉菜单）
                         if (uiState.photos.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.toggleGridMode() }) {
-                                Icon(
-                                    imageVector = when (uiState.gridMode) {
-                                        PhotoGridMode.SQUARE -> Icons.Default.Dashboard
-                                        PhotoGridMode.WATERFALL -> Icons.Default.ViewComfy
-                                    },
-                                    contentDescription = when (uiState.gridMode) {
-                                        PhotoGridMode.SQUARE -> "切换到瀑布流"
-                                        PhotoGridMode.WATERFALL -> "切换到网格"
-                                    }
-                                )
-                            }
-                            // Grid columns toggle
-                            IconButton(onClick = { viewModel.cycleGridColumns() }) {
-                                Icon(
-                                    imageVector = when (uiState.gridColumns) {
-                                        1 -> Icons.Default.ViewColumn
-                                        2 -> Icons.Default.GridView
-                                        else -> Icons.Default.ViewModule
-                                    },
-                                    contentDescription = "${uiState.gridColumns}列视图"
-                                )
-                            }
+                            ViewModeDropdownButton(
+                                currentMode = uiState.gridMode,
+                                currentColumns = uiState.gridColumns,
+                                onModeChanged = { mode -> viewModel.setGridMode(mode) },
+                                onColumnsChanged = { cols -> viewModel.setGridColumns(cols) }
+                            )
                         }
                         
                         // Sort dropdown button (REQ-022, REQ-028, REQ-033, REQ-038)
                         if (uiState.photos.isNotEmpty()) {
                             // 将 PhotoListSortOrder 转换为 SortOption
+                            // KEEP 状态使用专用的排序选项文字
+                            val isKeepStatus = uiState.status == PhotoStatus.KEEP
                             val currentSortOption = when (uiState.sortOrder) {
                                 PhotoListSortOrder.DATE_DESC -> SortOptions.photoTimeDesc
                                 PhotoListSortOrder.DATE_ASC -> SortOptions.photoTimeAsc
-                                PhotoListSortOrder.ADDED_DESC -> SortOptions.addedTimeDesc
-                                PhotoListSortOrder.ADDED_ASC -> SortOptions.addedTimeAsc
+                                PhotoListSortOrder.ADDED_DESC -> if (isKeepStatus) SortOptions.keepAddedTimeDesc else SortOptions.addedTimeDesc
+                                PhotoListSortOrder.ADDED_ASC -> if (isKeepStatus) SortOptions.keepAddedTimeAsc else SortOptions.addedTimeAsc
                                 PhotoListSortOrder.RANDOM -> SortOptions.random
                             }
                             val sortOptions = uiState.availableSortOptions.map { order ->
                                 when (order) {
                                     PhotoListSortOrder.DATE_DESC -> SortOptions.photoTimeDesc
                                     PhotoListSortOrder.DATE_ASC -> SortOptions.photoTimeAsc
-                                    PhotoListSortOrder.ADDED_DESC -> SortOptions.addedTimeDesc
-                                    PhotoListSortOrder.ADDED_ASC -> SortOptions.addedTimeAsc
+                                    PhotoListSortOrder.ADDED_DESC -> if (isKeepStatus) SortOptions.keepAddedTimeDesc else SortOptions.addedTimeDesc
+                                    PhotoListSortOrder.ADDED_ASC -> if (isKeepStatus) SortOptions.keepAddedTimeAsc else SortOptions.addedTimeAsc
                                     PhotoListSortOrder.RANDOM -> SortOptions.random
                                 }
                             }
@@ -540,11 +509,13 @@ fun PhotoListScreen(
                                         }
                                     }
                                 },
-                                onPhotoLongPress = { photoId, photoUri ->
-                                    // Show action sheet for single photo
-                                    selectedPhotoId = photoId
-                                    selectedPhotoUri = photoUri
-                                    showActionSheet = true
+                                onPhotoLongPress = { photoId, _ ->
+                                    // 长按不动时，进入选择模式并选中该照片
+                                    // 注意：onDragStart 已经选中该照片，此处仅在未选中时才添加
+                                    // 避免 toggle 导致选中又取消的问题
+                                    if (photoId !in uiState.selectedPhotoIds) {
+                                        viewModel.togglePhotoSelectionWithLimit(photoId)
+                                    }
                                 },
                                 columns = uiState.gridColumns,
                                 gridMode = uiState.gridMode,
@@ -574,64 +545,11 @@ fun PhotoListScreen(
                                     onDismiss = longPressGuide.dismiss
                                 )
                             }
-
-                            // REQ-067: 双指缩放新手引导（首次进入且有照片时显示）
-                            if (pinchZoomGuide.shouldShow && uiState.photos.isNotEmpty()) {
-                                PinchZoomOnboarding(
-                                    onDismiss = pinchZoomGuide.dismiss
-                                )
-                            }
                         }
                     }
                 }
             }
         }
-    }
-    
-    // Action Sheet
-    if (showActionSheet && selectedPhotoId != null && selectedPhotoUri != null) {
-        val photoId = selectedPhotoId!!
-        val photoUri = selectedPhotoUri!!
-        
-        PhotoListActionSheet(
-            imageUri = photoUri,
-            onDismiss = {
-                showActionSheet = false
-                selectedPhotoId = null
-                selectedPhotoUri = null
-            },
-            onEdit = { onNavigateToEditor(photoId) },
-            onMoveToKeep = if (uiState.status != PhotoStatus.KEEP) {
-                { viewModel.moveToKeep(photoId) }
-            } else null,
-            onMoveToMaybe = if (uiState.status != PhotoStatus.MAYBE) {
-                { viewModel.moveToMaybe(photoId) }
-            } else null,
-            onMoveToTrash = if (uiState.status != PhotoStatus.TRASH) {
-                { viewModel.moveToTrash(photoId) }
-            } else null,
-            onResetToUnsorted = { viewModel.resetToUnsorted(photoId) },
-            onOpenWithApp = { packageName ->
-                openImageWithApp(context, Uri.parse(photoUri), packageName)
-            },
-            defaultAppPackage = uiState.defaultExternalApp,
-            onSetDefaultApp = { packageName ->
-                scope.launch {
-                    viewModel.setDefaultExternalApp(packageName)
-                }
-            },
-            // Only show duplicate option for KEEP status photos
-            onDuplicatePhoto = if (uiState.status == PhotoStatus.KEEP) {
-                { viewModel.duplicatePhoto(photoId) }
-            } else null,
-            // Add to album option for KEEP status
-            onAddToAlbum = if (uiState.status == PhotoStatus.KEEP && uiState.albumBubbleList.isNotEmpty()) {
-                {
-                    singlePhotoIdForAlbum = photoId
-                    showSinglePhotoAlbumPicker = true
-                }
-            } else null
-        )
     }
     
     // Album picker for batch add to album (selection mode)
@@ -644,25 +562,6 @@ fun PhotoListScreen(
                 viewModel.addSelectedToAlbum(album.bucketId)
             },
             onDismiss = { viewModel.hideAlbumDialog() }
-        )
-    }
-    
-    // Album picker for single photo (long-press menu)
-    if (showSinglePhotoAlbumPicker && singlePhotoIdForAlbum != null) {
-        val photoIdToAdd = singlePhotoIdForAlbum!!
-        AlbumPickerBottomSheet(
-            albums = uiState.albumBubbleList,
-            title = "添加到相册",
-            showAddAlbum = false,
-            onAlbumSelected = { album ->
-                viewModel.addPhotoToAlbum(photoIdToAdd, album.bucketId)
-                showSinglePhotoAlbumPicker = false
-                singlePhotoIdForAlbum = null
-            },
-            onDismiss = {
-                showSinglePhotoAlbumPicker = false
-                singlePhotoIdForAlbum = null
-            }
         )
     }
     
