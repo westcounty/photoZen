@@ -1,6 +1,10 @@
 package com.example.photozen.ui.screens.photolist
 
+import android.app.Activity
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -194,7 +198,27 @@ fun PhotoListScreen(
             viewModel.clearMessage()
         }
     }
-    
+
+    // Permanent delete activity result launcher
+    val deleteResultLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        viewModel.onDeleteComplete(result.resultCode == Activity.RESULT_OK)
+    }
+
+    // Launch delete confirmation when intent sender is available
+    LaunchedEffect(uiState.deleteIntentSender) {
+        uiState.deleteIntentSender?.let { intentSender ->
+            try {
+                deleteResultLauncher.launch(
+                    IntentSenderRequest.Builder(intentSender).build()
+                )
+            } catch (e: Exception) {
+                viewModel.clearDeleteIntent()
+            }
+        }
+    }
+
     val (title, color) = when (uiState.status) {
         PhotoStatus.KEEP -> "保留的照片" to KeepGreen
         PhotoStatus.TRASH -> "回收站" to TrashRed
@@ -218,7 +242,7 @@ fun PhotoListScreen(
                     }
                     FullscreenActionType.EDIT -> onNavigateToEditor(photo.id)
                     FullscreenActionType.SHARE -> shareImage(context, Uri.parse(photo.systemUri))
-                    FullscreenActionType.DELETE -> viewModel.moveToTrash(photo.id)
+                    FullscreenActionType.DELETE -> viewModel.requestPermanentDelete(photo.id)
                 }
             }
         )
@@ -479,13 +503,9 @@ fun PhotoListScreen(
                                         showFullscreenViewer = true
                                     }
                                 },
-                                onPhotoLongPress = { photoId, _ ->
-                                    // 长按不动时，进入选择模式并选中该照片
-                                    // 注意：onDragStart 已经选中该照片，此处仅在未选中时才添加
-                                    // 避免 toggle 导致选中又取消的问题
-                                    if (photoId !in uiState.selectedPhotoIds) {
-                                        viewModel.togglePhotoSelectionWithLimit(photoId)
-                                    }
+                                onPhotoLongPress = { _, _ ->
+                                    // 长按选择已在 DragSelectPhotoGrid.onLongPress 中处理
+                                    // 此回调仅用于额外操作（如显示操作菜单），目前无需额外处理
                                 },
                                 columns = uiState.gridColumns,
                                 gridMode = uiState.gridMode,

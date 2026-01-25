@@ -1,6 +1,10 @@
 package com.example.photozen.ui.screens.photolist
 
+import android.content.Context
+import android.content.IntentSender
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,6 +29,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -144,7 +149,10 @@ data class PhotoListUiState(
     val classifyModePhotos: List<PhotoEntity> = emptyList(),
     val classifyModeIndex: Int = 0,
     // REQ-029: 待定列表选择数量限制
-    val selectionLimit: Int? = null
+    val selectionLimit: Int? = null,
+    // Permanent delete support
+    val deleteIntentSender: IntentSender? = null,
+    val pendingDeletePhotoId: String? = null
 ) {
     val selectedCount: Int get() = selectedPhotoIds.size
     val allSelected: Boolean get() = photos.isNotEmpty() && selectedPhotoIds.size == photos.size
@@ -171,7 +179,10 @@ private data class InternalState(
     val showPhotosInAlbum: Boolean = true,
     // Album classify mode
     val isClassifyMode: Boolean = false,
-    val classifyModeIndex: Int = 0
+    val classifyModeIndex: Int = 0,
+    // Permanent delete support
+    val deleteIntentSender: IntentSender? = null,
+    val pendingDeletePhotoId: String? = null
 )
 
 private data class AlbumState(
@@ -183,6 +194,7 @@ private data class AlbumState(
 @HiltViewModel
 class PhotoListViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
+    @ApplicationContext private val context: Context,
     private val getPhotosUseCase: GetPhotosUseCase,
     private val sortPhotoUseCase: SortPhotoUseCase,
     private val preferencesRepository: PreferencesRepository,
@@ -270,7 +282,10 @@ class PhotoListViewModel @Inject constructor(
             classifyModePhotos = photosNotInAlbum,
             classifyModeIndex = internal.classifyModeIndex,
             // REQ-029, REQ-030: 待定列表选择限制
-            selectionLimit = if (status == PhotoStatus.MAYBE) MAYBE_LIST_SELECTION_LIMIT else null
+            selectionLimit = if (status == PhotoStatus.MAYBE) MAYBE_LIST_SELECTION_LIMIT else null,
+            // Permanent delete
+            deleteIntentSender = internal.deleteIntentSender,
+            pendingDeletePhotoId = internal.pendingDeletePhotoId
         )
     }.stateIn(
         scope = viewModelScope,
@@ -400,7 +415,87 @@ class PhotoListViewModel @Inject constructor(
             }
         }
     }
-    
+
+    /**
+     * Request permanent deletion via system API.
+     * For Android 11+, this creates an IntentSender for user confirmation.
+     */
+    fun requestPermanentDelete(photoId: String) {
+        val photo = uiState.value.photos.find { it.id == photoId } ?: return
+
+        viewModelScope.launch {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // Android 11+: Use MediaStore.createDeleteRequest
+                    val uri = try {
+                        Uri.parse(photo.systemUri)
+                    } catch (e: Exception) {
+                        null
+                    }
+
+                    if (uri != null) {
+                        val intentSender = MediaStore.createDeleteRequest(
+                            context.contentResolver,
+                            listOf(uri)
+                        ).intentSender
+
+                        _internalState.update {
+                            it.copy(
+                                deleteIntentSender = intentSender,
+                                pendingDeletePhotoId = photoId
+                            )
+                        }
+                    }
+                } else {
+                    // Older versions: Just remove from database
+                    photoDao.deleteById(photoId)
+                    _internalState.update { it.copy(message = "已删除") }
+                }
+            } catch (e: Exception) {
+                _internalState.update { it.copy(message = "删除失败: ${e.message}") }
+            }
+        }
+    }
+
+    /**
+     * Called after system delete dialog completes.
+     */
+    fun onDeleteComplete(success: Boolean) {
+        viewModelScope.launch {
+            val pendingId = uiState.value.pendingDeletePhotoId
+            if (success && pendingId != null) {
+                // Remove from our database after system confirms deletion
+                photoDao.deleteById(pendingId)
+                _internalState.update {
+                    it.copy(
+                        deleteIntentSender = null,
+                        pendingDeletePhotoId = null,
+                        message = "已永久删除"
+                    )
+                }
+            } else {
+                _internalState.update {
+                    it.copy(
+                        deleteIntentSender = null,
+                        pendingDeletePhotoId = null
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Clear delete intent sender (e.g., if dialog was dismissed).
+     */
+    fun clearDeleteIntent() {
+        _internalState.update {
+            it.copy(
+                deleteIntentSender = null,
+                pendingDeletePhotoId = null
+            )
+        }
+    }
+
     fun moveToMaybe(photoId: String) {
         viewModelScope.launch {
             try {

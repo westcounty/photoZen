@@ -217,15 +217,6 @@ fun SettingsScreen(
                     sensitivity = uiState.swipeSensitivity,
                     onSensitivityChange = { viewModel.setSwipeSensitivity(it) }
                 )
-
-                // 重置整理进度
-                EnhancedSettingsItem(
-                    icon = Icons.Default.RestartAlt,
-                    title = "重置整理进度",
-                    subtitle = "清除所有照片的筛选标记",
-                    onClick = { showResetProgressDialog = true },
-                    iconTint = MaterialTheme.colorScheme.error
-                )
             }
             
             // ==================== 外观与显示分组（默认展开）====================
@@ -260,13 +251,22 @@ fun SettingsScreen(
                 EnhancedSettingsItem(
                     icon = Icons.AutoMirrored.Filled.Help,
                     title = "使用引导",
-                    subtitle = if (guideCompletedCount > 0) 
-                        "已完成 $guideCompletedCount/${viewModel.guideRepository.totalGuideCount}" 
-                    else 
+                    subtitle = if (guideCompletedCount > 0)
+                        "已完成 $guideCompletedCount/${viewModel.guideRepository.totalGuideCount}"
+                    else
                         "查看操作指南",
                     onClick = { showResetGuideDialog = true }
                 )
-                
+
+                // 重置整理进度
+                EnhancedSettingsItem(
+                    icon = Icons.Default.RestartAlt,
+                    title = "重置整理进度",
+                    subtitle = "清除所有照片的筛选标记",
+                    onClick = { showResetProgressDialog = true },
+                    iconTint = MaterialTheme.colorScheme.error
+                )
+
                 // 版本更新日志
                 EnhancedSettingsItem(
                     icon = Icons.Default.NewReleases,

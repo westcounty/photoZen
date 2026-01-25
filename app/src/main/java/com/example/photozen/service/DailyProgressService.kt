@@ -7,7 +7,10 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -172,9 +175,14 @@ class DailyProgressService : Service() {
         
         val (title, subtitle) = getMotivationMessage(current, target, isCompleted)
         val progressText = "$current / $target 张"
-        
-        // 通知中心左侧的大图标（彩色应用图标）
-        val largeIcon = BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
+
+        // 通知中心左侧的大图标（使用vector drawable转换为bitmap）
+        val largeIcon = try {
+            ContextCompat.getDrawable(this, R.drawable.ic_notification_large)?.toBitmap(96, 96)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to load large icon", e)
+            null
+        }
 
         return NotificationCompat.Builder(this, PROGRESS_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)

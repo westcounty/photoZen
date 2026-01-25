@@ -309,13 +309,9 @@ fun TrashScreen(
                                 viewModel.toggleSelection(photoId)
                             }
                         },
-                        onPhotoLongPress = { photoId, _ ->
-                            // REQ-035: 长按进入选择模式
-                            // 注意：onDragStart 已经选中该照片，此处仅在未选中时才添加
-                            // 避免 toggle 导致选中又取消的问题
-                            if (photoId !in uiState.selectedIds) {
-                                viewModel.toggleSelection(photoId)
-                            }
+                        onPhotoLongPress = { _, _ ->
+                            // 长按选择已在 DragSelectPhotoGrid.onLongPress 中处理
+                            // 此回调仅用于额外操作（如显示操作菜单），目前无需额外处理
                         },
                         columns = uiState.gridColumns,
                         gridMode = uiState.gridMode,

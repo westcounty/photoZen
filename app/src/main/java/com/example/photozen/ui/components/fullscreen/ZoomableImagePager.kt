@@ -2,34 +2,40 @@ package com.example.photozen.ui.components.fullscreen
 
 import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.IntSize
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 // 边缘穿透冷却时间（毫秒）
 private const val EDGE_SWIPE_COOLDOWN_MS = 500L
@@ -42,13 +48,13 @@ private const val EDGE_SWIPE_COOLDOWN_MS = 500L
  * - REQ-017: 双击缩放 (1x↔2.5x，以点击位置为中心)
  * - REQ-018: 双指缩放 (1-10倍)，缩放后可平移查看
  * - REQ-019: 1x时左右滑动切换前后张
- * - REQ-020: 下滑退出 (在1x时向下滑动)
+ * - REQ-020: 上下滑退出 (在1x时垂直滑动)
  * - 边缘穿透: 缩放状态下滑到边缘继续滑动切换照片
  *
  * @param photos 照片列表
  * @param currentIndex 当前索引
  * @param onIndexChange 索引变更回调
- * @param onDismiss 下滑退出回调
+ * @param onDismiss 滑动退出回调
  * @param modifier Modifier
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -68,14 +74,13 @@ fun ZoomableImagePager(
     val coroutineScope = rememberCoroutineScope()
 
     // 只在 currentIndex 真正变化时同步（外部控制）
-    // 使用 isScrollInProgress 检查避免滚动过程中的冲突
     LaunchedEffect(currentIndex) {
         if (pagerState.currentPage != currentIndex && !pagerState.isScrollInProgress) {
             pagerState.scrollToPage(currentIndex)
         }
     }
 
-    // 用户滑动后同步到外部（使用 settledPage 避免滚动过程中触发）
+    // 用户滑动后同步到外部
     LaunchedEffect(pagerState.settledPage) {
         if (pagerState.settledPage != currentIndex) {
             onIndexChange(pagerState.settledPage)
@@ -116,12 +121,11 @@ fun ZoomableImagePager(
 /**
  * 单张可缩放图片
  *
- * @param photo 照片实体
- * @param isCurrentPage 是否为当前页
- * @param onSwipeToNext 滑到右边缘时触发下一张
- * @param onSwipeToPrevious 滑到左边缘时触发上一张
- * @param onDismiss 下滑退出回调
- * @param onTap 单击回调（用于切换覆盖层显示）
+ * 手势行为:
+ * - 1x缩放时：水平滑动切换照片（由Pager处理），垂直滑动退出预览
+ * - 放大时：拖动平移查看，滑到边缘切换照片
+ * - 双指捏合：缩放图片
+ * - 双击：切换1x/2.5x缩放
  */
 @Composable
 private fun ZoomableImage(
@@ -143,11 +147,14 @@ private fun ZoomableImage(
     var containerWidth by remember { mutableFloatStateOf(0f) }
     var containerHeight by remember { mutableFloatStateOf(0f) }
 
-    // 下滑累积距离
+    // 垂直滑动累积距离（用于退出）
     var dismissProgress by remember { mutableFloatStateOf(0f) }
 
-    // 边缘穿透冷却：防止快速重复触发切换
+    // 边缘穿透冷却
     var lastEdgeSwipeTime by remember { mutableLongStateOf(0L) }
+
+    // 是否正在处理垂直滑动退出手势
+    var isHandlingVerticalGesture by remember { mutableStateOf(false) }
 
     // 切换页面时重置状态
     LaunchedEffect(isCurrentPage) {
@@ -156,6 +163,7 @@ private fun ZoomableImage(
             offsetX = 0f
             offsetY = 0f
             dismissProgress = 0f
+            isHandlingVerticalGesture = false
         }
     }
 
@@ -166,67 +174,142 @@ private fun ZoomableImage(
                 containerWidth = size.width.toFloat()
                 containerHeight = size.height.toFloat()
             }
-            .pointerInput(isCurrentPage) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    // 只在当前页处理手势
-                    if (!isCurrentPage) return@detectTransformGestures
+            // 自定义手势检测：选择性消费手势
+            .pointerInput(isCurrentPage, scale) {
+                if (!isCurrentPage) return@pointerInput
 
-                    // 缩放: 限制在 1-10 倍 (REQ-018)
-                    val newScale = (scale * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
-                    scale = newScale
+                awaitEachGesture {
+                    // 等待第一个触点
+                    val firstDown = awaitFirstDown(requireUnconsumed = false)
 
-                    if (newScale > 1f) {
-                        // 缩放状态下的平移
-                        val newOffsetX = offsetX + pan.x
-                        val newOffsetY = offsetY + pan.y
+                    var totalPanX = 0f
+                    var totalPanY = 0f
+                    var pointerId = firstDown.id
+                    var gestureStarted = false
+                    var isMultiTouch = false
 
-                        // 计算最大偏移量 (基于缩放比例)
-                        val maxOffsetX = (newScale - 1f) * containerWidth / 2f
-                        val maxOffsetY = (newScale - 1f) * containerHeight / 2f
+                    do {
+                        val event = awaitPointerEvent()
 
-                        // 边界检测 - 滑到边缘后触发切换 (REQ-018)
-                        // 添加冷却机制防止快速重复触发
-                        val currentTime = System.currentTimeMillis()
-                        val canSwipe = currentTime - lastEdgeSwipeTime > EDGE_SWIPE_COOLDOWN_MS
-
-                        if (newOffsetX > maxOffsetX + EDGE_THRESHOLD && canSwipe) {
-                            lastEdgeSwipeTime = currentTime
-                            onSwipeToPrevious()
-                            offsetX = maxOffsetX
-                        } else if (newOffsetX < -maxOffsetX - EDGE_THRESHOLD && canSwipe) {
-                            lastEdgeSwipeTime = currentTime
-                            onSwipeToNext()
-                            offsetX = -maxOffsetX
-                        } else {
-                            offsetX = newOffsetX.coerceIn(-maxOffsetX, maxOffsetX)
+                        // 检测多点触控（捏合缩放）
+                        val pointerCount = event.changes.count { it.pressed }
+                        if (pointerCount >= 2) {
+                            isMultiTouch = true
+                            gestureStarted = true
                         }
 
-                        offsetY = newOffsetY.coerceIn(-maxOffsetY, maxOffsetY)
-                        dismissProgress = 0f
-                    } else {
-                        // 1x时：水平手势由HorizontalPager处理，只处理垂直下滑退出 (REQ-019, REQ-020)
-                        // 不再设置 offsetX = 0f，让水平滑动由Pager接管
+                        if (event.type == PointerEventType.Move) {
+                            if (isMultiTouch && pointerCount >= 2) {
+                                // 处理捏合缩放
+                                val zoom = event.calculateZoom()
+                                val pan = event.calculatePan()
 
-                        if (pan.y > 0) {
-                            dismissProgress += pan.y
-                            offsetY = dismissProgress * 0.5f // 阻尼效果
+                                val newScale = (scale * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
+                                scale = newScale
 
-                            if (dismissProgress > DISMISS_THRESHOLD && onDismiss != null) {
-                                onDismiss()
-                                dismissProgress = 0f
-                                offsetY = 0f
+                                if (newScale > 1f) {
+                                    val maxOffsetX = (newScale - 1f) * containerWidth / 2f
+                                    val maxOffsetY = (newScale - 1f) * containerHeight / 2f
+                                    offsetX = (offsetX + pan.x).coerceIn(-maxOffsetX, maxOffsetX)
+                                    offsetY = (offsetY + pan.y).coerceIn(-maxOffsetY, maxOffsetY)
+                                }
+
+                                // 消费所有变化
+                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                            } else if (pointerCount == 1) {
+                                // 单指拖动
+                                val change = event.changes.firstOrNull { it.id == pointerId }
+                                    ?: event.changes.firstOrNull { it.pressed }
+
+                                if (change != null) {
+                                    pointerId = change.id
+                                    val panX = change.position.x - change.previousPosition.x
+                                    val panY = change.position.y - change.previousPosition.y
+
+                                    totalPanX += panX
+                                    totalPanY += panY
+
+                                    if (scale > 1.01f) {
+                                        // 放大状态：处理平移
+                                        gestureStarted = true
+
+                                        val newOffsetX = offsetX + panX
+                                        val newOffsetY = offsetY + panY
+                                        val maxOffsetX = (scale - 1f) * containerWidth / 2f
+                                        val maxOffsetY = (scale - 1f) * containerHeight / 2f
+
+                                        // 边缘穿透检测
+                                        val currentTime = System.currentTimeMillis()
+                                        val canSwipe = currentTime - lastEdgeSwipeTime > EDGE_SWIPE_COOLDOWN_MS
+
+                                        if (newOffsetX > maxOffsetX + EDGE_THRESHOLD && canSwipe) {
+                                            lastEdgeSwipeTime = currentTime
+                                            onSwipeToPrevious()
+                                            offsetX = maxOffsetX
+                                        } else if (newOffsetX < -maxOffsetX - EDGE_THRESHOLD && canSwipe) {
+                                            lastEdgeSwipeTime = currentTime
+                                            onSwipeToNext()
+                                            offsetX = -maxOffsetX
+                                        } else {
+                                            offsetX = newOffsetX.coerceIn(-maxOffsetX, maxOffsetX)
+                                        }
+
+                                        offsetY = newOffsetY.coerceIn(-maxOffsetY, maxOffsetY)
+
+                                        change.consume()
+                                    } else {
+                                        // 1x状态：判断是水平还是垂直滑动
+                                        val absX = abs(totalPanX)
+                                        val absY = abs(totalPanY)
+
+                                        // 需要足够的移动距离才判断方向
+                                        if (absX > 20f || absY > 20f) {
+                                            if (!gestureStarted) {
+                                                // 首次判断方向
+                                                if (absY > absX * 0.8f) {
+                                                    // 垂直方向为主 -> 处理退出手势
+                                                    gestureStarted = true
+                                                    isHandlingVerticalGesture = true
+                                                } else {
+                                                    // 水平方向为主 -> 不消费，让Pager处理
+                                                    isHandlingVerticalGesture = false
+                                                    // 不设置gestureStarted，继续观察
+                                                }
+                                            }
+                                        }
+
+                                        // 处理垂直退出手势
+                                        if (isHandlingVerticalGesture) {
+                                            dismissProgress += panY
+                                            offsetY = dismissProgress * 0.5f
+
+                                            // 上滑或下滑超过阈值都退出
+                                            if (abs(dismissProgress) > DISMISS_THRESHOLD && onDismiss != null) {
+                                                onDismiss()
+                                                dismissProgress = 0f
+                                                offsetY = 0f
+                                            }
+
+                                            change.consume()
+                                        }
+                                        // 水平滑动不消费，让Pager处理
+                                    }
+                                }
                             }
-                        } else {
-                            dismissProgress = 0f
-                            offsetY = 0f
                         }
+                    } while (event.changes.any { it.pressed })
+
+                    // 手势结束时重置状态
+                    if (scale <= 1.01f) {
+                        dismissProgress = 0f
+                        offsetY = 0f
                     }
+                    isHandlingVerticalGesture = false
                 }
             }
             .pointerInput(isCurrentPage, onTap) {
                 detectTapGestures(
                     onTap = {
-                        // REQ-016: 单击切换覆盖层显示
                         if (isCurrentPage) {
                             onTap?.invoke()
                         }
@@ -236,14 +319,11 @@ private fun ZoomableImage(
 
                         // 双击缩放 (REQ-017)
                         if (scale > 1.1f) {
-                            // 缩放状态下恢复1x
                             scale = 1f
                             offsetX = 0f
                             offsetY = 0f
                         } else {
-                            // 1x时放大到2.5x，以点击位置为中心
                             scale = DOUBLE_TAP_SCALE
-                            // 计算偏移使点击位置成为中心
                             val centerX = containerWidth / 2f
                             val centerY = containerHeight / 2f
                             offsetX = (centerX - tapOffset.x) * (DOUBLE_TAP_SCALE - 1f)
@@ -267,9 +347,9 @@ private fun ZoomableImage(
                     scaleY = scale
                     translationX = offsetX
                     translationY = offsetY
-                    // 下滑时的透明度变化
-                    alpha = if (scale <= 1f && dismissProgress > 0) {
-                        (1f - dismissProgress / DISMISS_THRESHOLD * 0.3f).coerceIn(0.7f, 1f)
+                    // 滑动退出时的透明度变化
+                    alpha = if (scale <= 1f && abs(dismissProgress) > 0) {
+                        (1f - abs(dismissProgress) / DISMISS_THRESHOLD * 0.3f).coerceIn(0.7f, 1f)
                     } else 1f
                 },
             contentScale = ContentScale.Fit
@@ -282,4 +362,4 @@ private const val MIN_SCALE = 1f
 private const val MAX_SCALE = 10f
 private const val DOUBLE_TAP_SCALE = 2.5f
 private const val EDGE_THRESHOLD = 100f  // 边缘穿透阈值
-private const val DISMISS_THRESHOLD = 450f  // 下滑退出阈值（增大以避免误触）
+private const val DISMISS_THRESHOLD = 300f  // 垂直滑动退出阈值
