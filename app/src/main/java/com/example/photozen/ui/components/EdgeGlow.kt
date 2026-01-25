@@ -11,9 +11,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import com.example.photozen.ui.theme.KeepGreen
-import com.example.photozen.ui.theme.MaybeAmber
-import com.example.photozen.ui.theme.TrashRed
+import com.example.photozen.ui.theme.PicZenActionColors
 import kotlin.math.abs
 
 /**
@@ -74,7 +72,7 @@ fun EdgeGlowOverlay(
                     // 右滑 - 左边缘绿色发光
                     isHorizontalSwipe && swipeProgressX > 0.1f -> {
                         drawLeftEdgeGlow(
-                            color = KeepGreen,
+                            color = PicZenActionColors.Keep.Primary,
                             progress = swipeProgressX,
                             intensity = glowIntensity * effectivePulse
                         )
@@ -82,7 +80,7 @@ fun EdgeGlowOverlay(
                     // 左滑 - 右边缘绿色发光
                     isHorizontalSwipe && swipeProgressX < -0.1f -> {
                         drawRightEdgeGlow(
-                            color = KeepGreen,
+                            color = PicZenActionColors.Keep.Primary,
                             progress = abs(swipeProgressX),
                             intensity = glowIntensity * effectivePulse
                         )
@@ -90,7 +88,7 @@ fun EdgeGlowOverlay(
                     // 上滑 - 底边缘红色发光
                     !isHorizontalSwipe && swipeProgressY < -0.1f -> {
                         drawBottomEdgeGlow(
-                            color = TrashRed,
+                            color = PicZenActionColors.Trash.Primary,
                             progress = abs(swipeProgressY),
                             intensity = glowIntensity * effectivePulse
                         )
@@ -98,7 +96,7 @@ fun EdgeGlowOverlay(
                     // 下滑 - 顶边缘黄色发光
                     !isHorizontalSwipe && swipeProgressY > 0.1f -> {
                         drawTopEdgeGlow(
-                            color = MaybeAmber,
+                            color = PicZenActionColors.Maybe.Primary,
                             progress = swipeProgressY,
                             intensity = glowIntensity * effectivePulse
                         )
@@ -232,10 +230,10 @@ fun CornerGlowOverlay(
     
     // 确定发光颜色和位置
     val (glowColor, glowPosition) = when {
-        isHorizontalSwipe && swipeProgressX > 0.1f -> KeepGreen to GlowPosition.LEFT
-        isHorizontalSwipe && swipeProgressX < -0.1f -> KeepGreen to GlowPosition.RIGHT
-        !isHorizontalSwipe && swipeProgressY < -0.1f -> TrashRed to GlowPosition.BOTTOM
-        !isHorizontalSwipe && swipeProgressY > 0.1f -> MaybeAmber to GlowPosition.TOP
+        isHorizontalSwipe && swipeProgressX > 0.1f -> PicZenActionColors.Keep.Primary to GlowPosition.LEFT
+        isHorizontalSwipe && swipeProgressX < -0.1f -> PicZenActionColors.Keep.Primary to GlowPosition.RIGHT
+        !isHorizontalSwipe && swipeProgressY < -0.1f -> PicZenActionColors.Trash.Primary to GlowPosition.BOTTOM
+        !isHorizontalSwipe && swipeProgressY > 0.1f -> PicZenActionColors.Maybe.Primary to GlowPosition.TOP
         else -> Color.Transparent to GlowPosition.NONE
     }
     

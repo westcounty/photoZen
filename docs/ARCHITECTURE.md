@@ -1,6 +1,8 @@
 # PhotoZen 架构设计
 
-本文档描述 PhotoZen 应用的整体架构设计，包括状态管理、批量操作、性能优化等核心模块。
+> 📅 文档版本: v2.0.0 | 更新日期: 2026-01-25
+
+本文档描述 PhotoZen 应用的整体架构设计，包括状态管理、批量操作、设计系统、动效系统和性能优化等核心模块。
 
 ## 技术栈
 
@@ -8,7 +10,9 @@
 |------|------|------|
 | Kotlin | 2.0 | 主要开发语言 |
 | Jetpack Compose | 1.6+ | UI 框架 |
-| Material 3 | 1.2+ | 设计系统 |
+| Material 3 | 1.2+ | 设计系统基础 |
+| PicZenTokens | - | 自定义设计 Token |
+| PicZenMotion | - | 自定义动效系统 |
 | Hilt | 2.51+ | 依赖注入 |
 | Room | 2.6+ | 本地数据库 |
 | DataStore | 1.1+ | 偏好设置存储 |
@@ -352,8 +356,69 @@ object StateModule {
 - Compose UI 测试：使用 ComposeTestRule
 - 截图测试：验证 UI 一致性
 
+## 设计系统架构
+
+### 设计 Token 层
+
+PhotoZen 使用自定义设计 Token 系统确保全应用视觉一致性：
+
+```
+ui/theme/
+├── DesignTokens.kt      # 核心设计 Token
+│   └── PicZenTokens
+│       ├── Radius       # 圆角 Token (XS~Full)
+│       ├── Spacing      # 间距 Token (XXS~XXXL)
+│       ├── Elevation    # 阴影层级 (Level0~Level5)
+│       ├── IconSize     # 图标尺寸 (XS~XL)
+│       ├── Alpha        # 透明度常量
+│       └── ComponentSize # 组件尺寸规范
+│
+├── MotionTokens.kt      # 动效 Token
+│   └── PicZenMotion
+│       ├── Duration     # 时长常量 (Instant~Deliberate)
+│       ├── Easing       # 缓动曲线 (Standard/Emphasized)
+│       ├── Springs      # 弹簧动画 (snappy/playful/gentle)
+│       ├── Specs        # 预定义动画规格
+│       └── Delay        # 延迟常量 (Stagger)
+│
+└── Color.kt             # 颜色系统扩展
+    ├── PicZenDarkSurfaces  # 6 级表面层次
+    └── PicZenActionColors  # Keep/Trash/Maybe 操作色
+```
+
+### 增强组件层
+
+基于设计 Token 的增强组件：
+
+| 组件 | 文件 | 功能 |
+|------|------|------|
+| EnhancedCard | `components/EnhancedCard.kt` | 动态缩放、阴影、光泽效果 |
+| FloatingBottomBar | `components/FloatingBottomBar.kt` | 毛玻璃浮动底栏 |
+| PressableButton | `components/PressableButton.kt` | 按压微缩放按钮 |
+| SelectableListItem | `components/SelectableListItem.kt` | 选中反馈列表项 |
+| PhotoStatusPill | `components/PhotoStatusBadge.kt` | 渐变状态胶囊 |
+| AnimatedEmptyState | `components/EmptyState.kt` | 浮动空状态 |
+
+### 动画层
+
+```
+ui/animation/
+├── ListAnimations.kt    # 错落入场动画
+│   ├── staggeredEntry() # 列表项错落进入
+│   └── AnimatedListItem # 封装组件
+│
+└── PageTransitions.kt   # 页面过渡动画
+    ├── PageTransitions  # 过渡定义
+    │   ├── horizontalEnter/Exit  # 水平滑动
+    │   ├── modalEnter/Exit       # 模态弹出
+    │   ├── detailEnter/Exit      # 详情缩放
+    │   └── fullscreenEnter/Exit  # 全屏过渡
+    └── NavTransitions   # 导航过渡工厂
+```
+
 ## 相关文档
 
+- [设计系统规范](DESIGN_SYSTEM.md) - 完整的设计系统文档
 - [状态管理指南](STATE_MANAGEMENT.md) - 详细的状态管理使用说明
 - [组件使用示例](COMPONENT_USAGE.md) - UI 组件的使用示例
 - [手势规范](GESTURE_SPEC.md) - 手势交互设计规范

@@ -1179,7 +1179,7 @@ private fun FilterOption(
 
 /**
  * App introduction dialog showing features and highlights.
- * Updated for v2.0 - emphasizing new navigation and efficiency features.
+ * Updated for v2.1 - comprehensive introduction with target audience, core features, and highlights.
  */
 @Composable
 private fun AboutDialog(
@@ -1205,7 +1205,7 @@ private fun AboutDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // App positioning - v2.0
+                // App positioning
                 Text(
                     text = "📷 让整理照片变成一种享受",
                     style = MaterialTheme.typography.titleSmall,
@@ -1213,42 +1213,77 @@ private fun AboutDialog(
                     color = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    text = "PhotoZen 2.0 全面升级！全新底部导航、统一手势交互、智能筛选预设，让照片整理更高效、更流畅、更愉悦。",
+                    text = "PhotoZen（图禅）帮你轻松整理手机里堆积如山的照片，把「筛选-分类-删除」变成一件有趣的事。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                
+
                 HorizontalDivider()
-                
-                // v2.0 New features
+
+                // Target audience
                 FeatureSection(
-                    title = "📱 全新底部导航",
-                    description = "首页/时间线/相册/设置一键直达，Tab 切换自动保持状态，整理流程沉浸式体验。"
+                    title = "🎯 适合谁用",
+                    description = "手机里照片太多、舍不得删又懒得整理的你。不管是摄影爱好者还是拍照记录生活的普通人，都能在这里找到整理的乐趣。"
                 )
-                
+
+                HorizontalDivider()
+
+                // Core features
+                Text(
+                    text = "🔑 核心功能",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
                 FeatureSection(
                     title = "🎴 滑动整理",
-                    description = "像刷 Tinder 一样筛选照片！左右滑保留，上滑删除，下滑待定。边缘发光 + 震动反馈，整理变成解压游戏。"
+                    description = "像刷 Tinder 一样筛选照片！左右滑保留，上滑删除，下滑待定。配合边缘发光和震动反馈，整理变成解压游戏。"
                 )
-                
+
                 FeatureSection(
-                    title = "👆 统一手势交互",
-                    description = "所有页面手势一致：点击看大图、长按选择、拖动批量选。学一次，处处通用。"
+                    title = "🔍 照片对比",
+                    description = "同屏对比 2-6 张相似照片，同步缩放看细节，快速决定留哪张。选择困难症的救星！"
                 )
-                
+
                 FeatureSection(
-                    title = "⚡ 批量操作升级",
-                    description = "选择顶栏显示已选数量、支持全选、一键撤销。批量操作从未如此高效。"
+                    title = "📁 相册分类",
+                    description = "边整理边归档，滑动时底部显示相册标签，点一下就能分类。告别「整理完还要移动」的二次工作。"
                 )
-                
+
                 FeatureSection(
-                    title = "📊 整理统计",
-                    description = "日历热力图展示整理足迹，统计卡片记录成就。看得见的进步，更有动力！"
+                    title = "📅 时间线浏览",
+                    description = "照片按时间自动分组，每个分组显示整理进度。想整理上周末的出游照？一键定位！"
                 )
-                
+
+                HorizontalDivider()
+
+                // Highlights
+                Text(
+                    text = "✨ 特色亮点",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                FeatureSection(
+                    title = "🌊 丝滑动效",
+                    description = "弹性回弹、倾斜透视、动态阴影……每一个动画都经过打磨，用起来就是舒服。"
+                )
+
+                FeatureSection(
+                    title = "📳 触感反馈",
+                    description = "方向感知震动，保留轻震、删除强震、待定双击。不看屏幕也知道滑到哪了。"
+                )
+
                 FeatureSection(
                     title = "🏆 成就系统",
                     description = "50+ 成就等你解锁！从整理新手到传说大师，每一步都有惊喜。"
+                )
+
+                FeatureSection(
+                    title = "📊 整理统计",
+                    description = "日历热力图展示你的整理足迹，连续整理天数让你更有动力坚持。"
                 )
             }
         },

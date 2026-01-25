@@ -23,12 +23,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.ui.theme.PicZenMotion
 import com.example.photozen.ui.util.HapticFeedbackManager
 import com.example.photozen.ui.util.SwipeHapticDirection
 import com.example.photozen.ui.util.rememberHapticFeedbackManager
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
+import kotlin.math.pow
 
 /**
  * Base threshold for triggering a swipe action (as fraction of screen width/height)
@@ -150,19 +153,28 @@ fun SwipeablePhotoCard(
     // Determine overall threshold state for visual feedback
     val hasReachedThreshold = currentlyReachedRight || currentlyReachedLeft || currentlyReachedUp || currentlyReachedDown
     
-    // Calculate rotation based on horizontal offset
+    // Calculate rotation based on horizontal offset (DES-019: 倾斜透视效果)
     val rotation = (offsetX.value / screenWidthPx) * ROTATION_MULTIPLIER
-    
+
+    // DES-021: 倾斜透视效果 - 基于垂直偏移的X轴旋转
+    val rotationXValue = -(offsetY.value / screenHeightPx) * 5f
+
     // Scale effect during swipe
     val scale = when {
-        offsetY.value > 0 -> 1f - (offsetY.value / screenHeightPx) * 0.3f
-        else -> 1f + (abs(offsetX.value) / screenWidthPx) * 0.05f
+        offsetY.value > 0 -> 1f - (offsetY.value / screenHeightPx) * 0.15f
+        else -> 1f + (abs(offsetX.value) / screenWidthPx) * 0.03f
     }
-    
+
     // Alpha for sinking effect
     val alpha = if (offsetY.value > 0) {
         1f - (offsetY.value / screenHeightPx) * 0.5f
     } else 1f
+
+    // DES-020: 动态阴影高度 - 基于滑动进度
+    val swipeDistance = sqrt(offsetX.value.pow(2) + offsetY.value.pow(2))
+    val maxDistance = sqrt(screenWidthPx.pow(2) + screenHeightPx.pow(2))
+    val swipeProgressTotal = (swipeDistance / maxDistance).coerceIn(0f, 1f)
+    val dynamicElevation = 8f + (swipeProgressTotal * 12f) // 8dp base + up to 12dp extra
     
     
     Box(
@@ -171,9 +183,12 @@ fun SwipeablePhotoCard(
             .offset { IntOffset(offsetX.value.roundToInt(), offsetY.value.roundToInt()) }
             .graphicsLayer {
                 rotationZ = rotation
+                rotationX = rotationXValue  // DES-021: 垂直倾斜透视
                 scaleX = scale
                 scaleY = scale
                 this.alpha = alpha
+                shadowElevation = dynamicElevation  // DES-020: 动态阴影
+                cameraDistance = 12f * density.density  // 增加透视效果
             }
             .pointerInput(photo.id, swipeSensitivity) {
                 detectDragGestures(
@@ -238,17 +253,12 @@ fun SwipeablePhotoCard(
                             // Snap back to center
                             else -> {
                                 scope.launch {
+                                    // DES-033: 手势回弹增强 - 使用更活泼的弹性动画
                                     launch {
-                                        offsetX.animateTo(0f, spring(
-                                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                                            stiffness = Spring.StiffnessMedium
-                                        ))
+                                        offsetX.animateTo(0f, PicZenMotion.Springs.playful())
                                     }
                                     launch {
-                                        offsetY.animateTo(0f, spring(
-                                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                                            stiffness = Spring.StiffnessMedium
-                                        ))
+                                        offsetY.animateTo(0f, PicZenMotion.Springs.playful())
                                     }
                                 }
                             }
@@ -256,9 +266,10 @@ fun SwipeablePhotoCard(
                     },
                     onDragCancel = {
                         if (!currentIsTopCard || hasTriggeredSwipe) return@detectDragGestures
+                        // DES-033: 手势回弹增强
                         scope.launch {
-                            launch { offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy)) }
-                            launch { offsetY.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy)) }
+                            launch { offsetX.animateTo(0f, PicZenMotion.Springs.playful()) }
+                            launch { offsetY.animateTo(0f, PicZenMotion.Springs.playful()) }
                         }
                     },
                     onDrag = { change, dragAmount ->

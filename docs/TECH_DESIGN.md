@@ -1,6 +1,6 @@
 # PhotoZen 图禅 - 技术设计文档
 
-> 📅 文档版本: v1.6.0 | 更新日期: 2026-01-18
+> 📅 文档版本: v2.0.0 | 更新日期: 2026-01-25
 
 ## 1. 技术架构概览
 
@@ -41,7 +41,15 @@ app/src/main/java/com/example/photozen/
 ├── di/                         # 依赖注入模块
 ├── navigation/                 # 导航定义
 ├── ui/                         # UI 层
+│   ├── animation/              # 动画系统 (NEW)
+│   │   ├── ListAnimations.kt   # 列表错落动画
+│   │   └── PageTransitions.kt  # 页面过渡动画
 │   ├── components/             # 通用组件
+│   │   ├── EnhancedCard.kt     # 增强卡片组件
+│   │   ├── FloatingBottomBar.kt # 浮动底栏
+│   │   ├── PressableButton.kt  # 按压按钮
+│   │   ├── SelectableListItem.kt # 可选列表项
+│   │   └── ...                 # 其他组件
 │   ├── screens/                # 各功能页面
 │   │   ├── home/               # 首页
 │   │   ├── flowsorter/         # 滑动整理
@@ -53,7 +61,13 @@ app/src/main/java/com/example/photozen/
 │   │   ├── trash/              # 回收站
 │   │   ├── settings/           # 设置
 │   │   └── share/              # 系统分享
-│   └── theme/                  # 主题定义
+│   ├── theme/                  # 主题定义
+│   │   ├── Color.kt            # 颜色 + 操作色扩展
+│   │   ├── DesignTokens.kt     # 设计 Token 系统
+│   │   ├── MotionTokens.kt     # 动效 Token 系统
+│   │   └── Theme.kt            # 主题配置
+│   └── util/                   # UI 工具
+│       └── HapticFeedbackManager.kt # 震动反馈
 ├── service/                    # 后台服务
 ├── receiver/                   # 广播接收器
 ├── widget/                     # 桌面小组件
@@ -509,7 +523,30 @@ w.x.y.z
 
 ---
 
-## 11. 待优化项
+## 11. 已完成优化 (v2.0.0)
+
+### 设计系统
+- [x] 统一设计 Token 系统 (PicZenTokens)
+- [x] 统一动效系统 (PicZenMotion)
+- [x] 操作色彩系统 (PicZenActionColors)
+- [x] 6 级表面层次 (PicZenDarkSurfaces)
+
+### 动画效果
+- [x] 列表错落入场动画
+- [x] 页面过渡动画系统
+- [x] 按压微交互效果
+- [x] 选中状态动画反馈
+- [x] 空状态浮动动画
+- [x] 滑动卡片倾斜透视
+- [x] 动态阴影效果
+- [x] 弹性回弹动画
+
+### 震动反馈
+- [x] 方向感知震动反馈
+- [x] 临界点震动提示
+- [x] 操作完成震动确认
+
+## 12. 待优化项
 
 ### 性能
 - [ ] 大量照片时首页加载优化
@@ -522,5 +559,4 @@ w.x.y.z
 
 ### 体验
 - [ ] 更多自定义手势
-- [ ] 动画效果增强
 - [ ] 多语言支持

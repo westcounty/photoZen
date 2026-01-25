@@ -99,3 +99,91 @@ val PicZenLightError = Color(0xFFBA1A1A)
 val PicZenLightOnError = Color(0xFFFFFFFF)
 val PicZenLightErrorContainer = Color(0xFFFFDAD6)
 val PicZenLightOnErrorContainer = Color(0xFF410002)
+
+// ==================== Enhanced Surface System ====================
+
+/**
+ * 增强的深色主题表面层级系统
+ * 解决原有层次扁平问题，增加空间深度感
+ */
+object PicZenDarkSurfaces {
+    /** 基础背景 - 纯黑偏冷，最深层 */
+    val Background = Color(0xFF0A0A0C)
+
+    /** Level 0: 卡片底层 */
+    val Surface0 = Color(0xFF0F0F12)
+
+    /** Level 1: 默认卡片 */
+    val Surface1 = Color(0xFF1A1A1F)
+
+    /** Level 2: 悬浮卡片 */
+    val Surface2 = Color(0xFF232329)
+
+    /** Level 3: 下拉菜单 */
+    val Surface3 = Color(0xFF2C2C35)
+
+    /** Level 4: 底部栏 */
+    val Surface4 = Color(0xFF35353F)
+
+    /** Level 5: 对话框 */
+    val Surface5 = Color(0xFF3E3E4A)
+
+    /** 青绿容器 - 带品牌色 */
+    val PrimaryContainer = Color(0xFF004D47)
+
+    /** 中性容器 */
+    val SecondaryContainer = Color(0xFF2A3635)
+
+    /** 琥珀容器 */
+    val TertiaryContainer = Color(0xFF4A3A1A)
+}
+
+// ==================== Action Colors with Gradients ====================
+
+/**
+ * 操作反馈色彩系统
+ * 包含主色、高亮、深色、光晕、容器等变体
+ */
+object PicZenActionColors {
+
+    /** Keep - 绿色系 (右滑保留) */
+    object Keep {
+        val Primary = Color(0xFF22C55E)        // 主色
+        val Light = Color(0xFF4ADE80)          // 高亮
+        val Dark = Color(0xFF16A34A)           // 深色
+        val Glow = Color(0x4022C55E)           // 光晕 (25% alpha)
+        val Container = Color(0xFF0D3320)      // 容器背景
+        val OnContainer = Color(0xFFBBF7D0)    // 容器上文字
+    }
+
+    /** Trash - 红色系 (左滑/上滑删除) */
+    object Trash {
+        val Primary = Color(0xFFEF4444)        // 主色
+        val Light = Color(0xFFF87171)          // 高亮
+        val Dark = Color(0xFFDC2626)           // 深色
+        val Glow = Color(0x40EF4444)           // 光晕
+        val Container = Color(0xFF3D1515)      // 容器背景
+        val OnContainer = Color(0xFFFECACA)    // 容器上文字
+    }
+
+    /** Maybe - 琥珀系 (下滑待定) */
+    object Maybe {
+        val Primary = Color(0xFFFBBF24)        // 主色
+        val Light = Color(0xFFFCD34D)          // 高亮
+        val Dark = Color(0xFFF59E0B)           // 深色
+        val Glow = Color(0x40FBBF24)           // 光晕
+        val Container = Color(0xFF3D3010)      // 容器背景
+        val OnContainer = Color(0xFFFEF3C7)    // 容器上文字
+    }
+
+    /** 根据滑动方向获取光晕颜色 */
+    fun getGlowColor(offsetX: Float, offsetY: Float): Color {
+        return when {
+            offsetX > 50 -> Keep.Glow
+            offsetX < -50 -> Trash.Glow
+            offsetY < -50 -> Trash.Glow
+            offsetY > 50 -> Maybe.Glow
+            else -> Color.Transparent
+        }
+    }
+}

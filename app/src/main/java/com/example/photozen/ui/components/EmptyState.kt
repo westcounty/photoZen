@@ -1,22 +1,36 @@
 package com.example.photozen.ui.components
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
+import com.example.photozen.ui.theme.PicZenTokens
 import com.example.photozen.ui.theme.TrashRed
 
 /**
@@ -91,8 +105,156 @@ fun EmptyState(
 }
 
 /**
+ * 带浮动动画的空状态组件 (DES-028)
+ *
+ * 增强版空状态，图标区域有微妙的浮动动画效果，
+ * 增加视觉趣味性和空间感。
+ *
+ * @param icon 显示图标
+ * @param title 标题文字
+ * @param description 描述文字
+ * @param modifier Modifier
+ * @param iconTint 图标颜色
+ * @param iconSize 图标大小
+ * @param action 可选的操作按钮
+ */
+@Composable
+fun AnimatedEmptyState(
+    icon: ImageVector,
+    title: String,
+    description: String,
+    modifier: Modifier = Modifier,
+    iconTint: Color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+    iconSize: Dp = PicZenTokens.IconSize.XXXL,
+    action: (@Composable () -> Unit)? = null
+) {
+    // 浮动动画
+    val infiniteTransition = rememberInfiniteTransition(label = "emptyStateFloat")
+    val floatOffset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 8f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "floatOffset"
+    )
+
+    // 脉冲光晕动画
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.1f,
+        targetValue = 0.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowAlpha"
+    )
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(PicZenTokens.Spacing.XXL),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        // 带浮动效果的图标容器
+        Box(
+            contentAlignment = Alignment.Center
+        ) {
+            // 外层光晕
+            Box(
+                modifier = Modifier
+                    .size(140.dp)
+                    .offset(y = floatOffset.dp)
+                    .background(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                iconTint.copy(alpha = glowAlpha),
+                                Color.Transparent
+                            )
+                        ),
+                        shape = CircleShape
+                    )
+            )
+
+            // 主图标容器
+            Box(
+                modifier = Modifier
+                    .size(120.dp)
+                    .offset(y = floatOffset.dp)
+                    .clip(CircleShape)
+                    .background(iconTint.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(iconSize)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(PicZenTokens.Spacing.XL))
+
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(PicZenTokens.Spacing.S))
+
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+
+        if (action != null) {
+            Spacer(modifier = Modifier.height(PicZenTokens.Spacing.XL))
+            action()
+        }
+    }
+}
+
+/**
+ * 卡片式空状态组件 (DES-028)
+ *
+ * 带卡片背景的空状态，适用于需要更强视觉边界的场景。
+ */
+@Composable
+fun CardEmptyState(
+    icon: ImageVector,
+    title: String,
+    description: String,
+    modifier: Modifier = Modifier,
+    iconTint: Color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+    action: (@Composable () -> Unit)? = null
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        shape = RoundedCornerShape(PicZenTokens.Radius.L)
+    ) {
+        AnimatedEmptyState(
+            icon = icon,
+            title = title,
+            description = description,
+            iconTint = iconTint,
+            action = action
+        )
+    }
+}
+
+/**
  * 紧凑型空状态组件
- * 
+ *
  * 用于空间有限的场景，如列表项内嵌空状态。
  */
 @Composable

@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -33,11 +34,12 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.ui.theme.PicZenTokens
 import kotlin.math.abs
 
 /**
- * PhotoZen 底部照片预览条 (REQ-014)
- * =================================
+ * PhotoZen 底部照片预览条 (REQ-014, DES-026)
+ * =========================================
  *
  * 特性:
  * - 固定高宽比 2:1 (高度:宽度)
@@ -45,6 +47,11 @@ import kotlin.math.abs
  * - 丝滑滑动，有惯性
  * - 滑动过程中实时将预览照片替换为预览条中央的照片
  * - 点击预览条中的照片切换到该照片
+ *
+ * DES-026 增强:
+ * - 当前项使用 PicZenTokens.ComponentSize 尺寸
+ * - 更明显的放大效果
+ * - 渐变边框增加选中态
  *
  * @param photos 照片列表
  * @param currentIndex 当前照片索引
@@ -59,8 +66,9 @@ fun BottomPreviewStrip(
     currentIndex: Int,
     onIndexChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    itemWidth: Dp = 36.dp,
-    currentItemWidth: Dp = 48.dp
+    // DES-026: 使用 Token 定义的尺寸
+    itemWidth: Dp = PicZenTokens.ComponentSize.PreviewStripItem,
+    currentItemWidth: Dp = PicZenTokens.ComponentSize.PreviewStripCurrentItem
 ) {
     val listState = rememberLazyListState()
 
@@ -128,7 +136,11 @@ fun BottomPreviewStrip(
 }
 
 /**
- * 预览条单个项目
+ * 预览条单个项目 (DES-026 增强)
+ *
+ * - 当前项渐变边框
+ * - 非当前项半透明遮罩
+ * - 使用 Token 定义的圆角
  */
 @Composable
 private fun PreviewStripItem(
@@ -139,18 +151,25 @@ private fun PreviewStripItem(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val cornerRadius = PicZenTokens.Radius.XS
 
     Box(
         modifier = Modifier
             .width(width)
             .height(height)
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(cornerRadius))
             .then(
                 if (isCurrent) {
+                    // DES-026: 当前项渐变边框
                     Modifier.border(
                         width = 2.dp,
-                        color = Color.White,
-                        shape = RoundedCornerShape(4.dp)
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.White,
+                                Color.White.copy(alpha = 0.8f)
+                            )
+                        ),
+                        shape = RoundedCornerShape(cornerRadius)
                     )
                 } else Modifier
             )

@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,12 +12,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.QuestionMark
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Fill
@@ -25,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
+import com.example.photozen.ui.theme.PicZenActionColors
+import com.example.photozen.ui.theme.PicZenTokens
 import com.example.photozen.ui.theme.TrashRed
 
 /**
@@ -309,4 +317,131 @@ fun PhotoStatus.toColor(): Color = when (this) {
     PhotoStatus.MAYBE -> MaybeAmber
     PhotoStatus.TRASH -> TrashRed
     PhotoStatus.UNSORTED -> Color.Gray
+}
+
+/**
+ * 状态徽章尺寸枚举
+ */
+enum class PillSize {
+    Small,   // 18dp x 10dp icon
+    Medium,  // 24dp x 14dp icon
+    Large    // 32dp x 18dp icon
+}
+
+/**
+ * 精致圆角状态徽章 (DES-017, DES-018)
+ *
+ * 设计特性:
+ * - 带光泽效果的渐变背景
+ * - 微阴影层次增加深度感
+ * - 平滑圆角设计
+ * - 语义化图标 (勾号/时钟/关闭)
+ *
+ * @param status 照片状态
+ * @param modifier Modifier
+ * @param size 徽章尺寸
+ */
+@Composable
+fun PhotoStatusPill(
+    status: PhotoStatus,
+    modifier: Modifier = Modifier,
+    size: PillSize = PillSize.Medium
+) {
+    // UNSORTED 状态不显示
+    if (status == PhotoStatus.UNSORTED) return
+
+    val (icon, color) = when (status) {
+        PhotoStatus.KEEP -> Icons.Rounded.Check to PicZenActionColors.Keep.Primary
+        PhotoStatus.MAYBE -> Icons.Rounded.Schedule to PicZenActionColors.Maybe.Primary
+        PhotoStatus.TRASH -> Icons.Rounded.Close to PicZenActionColors.Trash.Primary
+        PhotoStatus.UNSORTED -> return
+    }
+
+    // 根据尺寸计算容器和图标大小
+    val (containerSize, iconSize) = when (size) {
+        PillSize.Small -> 18.dp to 10.dp
+        PillSize.Medium -> 24.dp to 14.dp
+        PillSize.Large -> 32.dp to 18.dp
+    }
+
+    Box(
+        modifier = modifier
+            .size(containerSize)
+            .shadow(
+                elevation = 2.dp,
+                shape = RoundedCornerShape(PicZenTokens.Radius.S),
+                ambientColor = color.copy(alpha = 0.3f),
+                spotColor = color.copy(alpha = 0.2f)
+            )
+            .background(
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        color,
+                        color.copy(alpha = 0.85f)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(containerSize.value, containerSize.value)
+                ),
+                shape = RoundedCornerShape(PicZenTokens.Radius.S)
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        // 顶部光泽层
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.25f),
+                            Color.Transparent
+                        ),
+                        startY = 0f,
+                        endY = containerSize.value * 0.5f
+                    ),
+                    shape = RoundedCornerShape(PicZenTokens.Radius.S)
+                )
+        )
+
+        // 图标
+        Icon(
+            imageVector = icon,
+            contentDescription = status.name,
+            modifier = Modifier.size(iconSize),
+            tint = Color.White
+        )
+    }
+}
+
+/**
+ * 带精致状态徽章的照片容器
+ *
+ * @param status 照片状态
+ * @param showBadge 是否显示徽章
+ * @param badgeSize 徽章尺寸
+ * @param badgePadding 徽章边距
+ * @param content 内容
+ */
+@Composable
+fun PhotoWithStatusPill(
+    status: PhotoStatus,
+    modifier: Modifier = Modifier,
+    showBadge: Boolean = true,
+    badgeSize: PillSize = PillSize.Medium,
+    badgePadding: Dp = 6.dp,
+    content: @Composable () -> Unit
+) {
+    Box(modifier = modifier) {
+        content()
+
+        if (showBadge && status != PhotoStatus.UNSORTED) {
+            PhotoStatusPill(
+                status = status,
+                size = badgeSize,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(badgePadding)
+            )
+        }
+    }
 }

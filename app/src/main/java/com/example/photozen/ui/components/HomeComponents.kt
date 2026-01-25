@@ -56,9 +56,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.shadow
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
+import com.example.photozen.ui.theme.PicZenTokens
 
 /**
  * 首页新组件集合
@@ -81,27 +84,34 @@ import com.example.photozen.ui.theme.TrashRed
 // ==================== 设计 Token ====================
 
 /**
- * 首页设计规范参数
- * 
+ * 首页设计规范参数 (DES-023: 使用统一 Token)
+ *
  * 定义首页组件的尺寸、间距等设计常量。
- * 
+ * 与 PicZenTokens 保持一致。
+ *
  * @see [INTERACTION_SPEC.md] 设计规范文档
  */
 object HomeDesignTokens {
-    /** 卡片圆角半径 */
-    val CardCornerRadius: Dp = 24.dp
-    
-    /** 卡片内边距 */
-    val CardPadding: Dp = 24.dp
-    
-    /** 组件间距 */
-    val SectionSpacing: Dp = 16.dp
-    
+    /** 卡片圆角半径 - 使用 XL Token */
+    val CardCornerRadius: Dp = PicZenTokens.Radius.XL
+
+    /** 卡片内边距 - 使用 XL Token */
+    val CardPadding: Dp = PicZenTokens.Spacing.XL
+
+    /** 组件间距 - 使用 L Token */
+    val SectionSpacing: Dp = PicZenTokens.Spacing.L
+
     /** 快捷入口图标容器尺寸 */
-    val QuickActionIconSize: Dp = 48.dp
-    
+    val QuickActionIconSize: Dp = PicZenTokens.ComponentSize.QuickActionIcon
+
     /** 主操作按钮高度 */
-    val MainActionButtonHeight: Dp = 56.dp
+    val MainActionButtonHeight: Dp = PicZenTokens.ComponentSize.MainButtonHeight
+
+    /** DES-024: 主卡片阴影高度 */
+    val MainCardElevation: Dp = PicZenTokens.Elevation.Level4
+
+    /** DES-022: 主数字字体大小 (放大) */
+    val MainNumberFontSize = 72.sp
 }
 
 // ==================== 主操作区 ====================
@@ -135,8 +145,16 @@ fun HomeMainAction(
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
+    // DES-024: 主卡片阴影增强
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = HomeDesignTokens.MainCardElevation,
+                shape = RoundedCornerShape(HomeDesignTokens.CardCornerRadius),
+                ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+            ),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
         ),
@@ -148,10 +166,12 @@ fun HomeMainAction(
                 .padding(HomeDesignTokens.CardPadding),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 待整理数量 - 大字号
+            // DES-022: 待整理数量 - 放大字号
             Text(
                 text = unsortedCount.toString(),
-                style = MaterialTheme.typography.displayLarge,
+                style = MaterialTheme.typography.displayLarge.copy(
+                    fontSize = HomeDesignTokens.MainNumberFontSize
+                ),
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )

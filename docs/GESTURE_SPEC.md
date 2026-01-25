@@ -1,6 +1,6 @@
-# PhotoZen 手势交互规范 v1.0
+# PhotoZen 手势交互规范 v2.0
 
-> 📌 更新日期: 2026-01-19 | Phase 1-A 基础规范
+> 📌 更新日期: 2026-01-25 | 设计系统集成版
 
 ---
 
@@ -57,96 +57,51 @@
 
 ---
 
-## 2. 统一实现
+## 2. 滑动整理手势规范
 
-### 2.1 核心组件
+### 2.1 基本手势
 
-使用 `DragSelectPhotoGrid` 组件实现统一手势：
+| 手势 | 方向 | 操作 | 颜色反馈 | 震动反馈 |
+|:----|:----|:----|:--------|:--------|
+| 右滑 | → | 保留 (Keep) | 绿色边缘发光 | 轻微震动 |
+| 左滑 | ← | 保留 (Keep) | 绿色边缘发光 | 轻微震动 |
+| 上滑 | ↑ | 删除 (Trash) | 红色边缘发光 | 强震动 |
+| 下滑 | ↓ | 待定 (Maybe) | 黄色边缘发光 | 双击震动 |
 
-```kotlin
-DragSelectPhotoGrid(
-    photos = photos,
-    selectedIds = selectedIds,
-    onSelectionChanged = { newSelection -> 
-        viewModel.updateSelection(newSelection) 
-    },
-    onPhotoClick = { id, index -> 
-        // 进入全屏预览
-    },
-    onPhotoLongPress = { id, uri ->
-        // 长按不动回调，已经选中
-    },
-    columns = columns,
-    enableDragSelect = true
-)
-```
+### 2.2 触发阈值
 
-### 2.2 关键参数
+基础阈值为屏幕宽度的 20%，受灵敏度设置影响：
 
-| 参数 | 类型 | 说明 |
-|:----|:----|:----|
-| `photos` | `List<PhotoEntity>` | 照片列表 |
-| `selectedIds` | `Set<String>` | 已选中的照片 ID 集合 |
-| `onSelectionChanged` | `(Set<String>) -> Unit` | 选中状态变化回调 |
-| `onPhotoClick` | `(String, Int) -> Unit` | 点击回调 (ID, 索引) |
-| `onPhotoLongPress` | `(String, String) -> Unit` | 长按不动回调 (ID, URI) |
-| `columns` | `Int` | 列数 (默认 3) |
-| `enableDragSelect` | `Boolean` | 是否启用拖动选择 |
+| 方向 | 阈值乘数 | 说明 |
+|:----|:--------|:----|
+| 右滑 | 1.0 | 基准阈值 |
+| 左滑 | 0.9 | 稍易触发 |
+| 上滑 | 0.8 | 较易触发（破坏性操作需明确意图） |
+| 下滑 | 0.7 | 最易触发（非破坏性） |
 
-### 2.3 实现细节
+### 2.3 视觉反馈
 
-```kotlin
-// 拖动阈值 - 区分"长按不动"和"长按拖动"
-private const val DRAG_THRESHOLD_DP = 10
+**动态效果**:
+- **倾斜透视**: 水平滑动时卡片沿 Z 轴旋转（最大 15°）
+- **垂直倾斜**: 垂直滑动时卡片沿 X 轴旋转（最大 5°）
+- **动态阴影**: 基础 8dp，滑动时最高增至 20dp
+- **缩放效果**: 下滑时微缩（最小 0.85），上滑时微放（最大 1.03）
 
-// 在 detectDragGesturesAfterLongPress 中判断
-val distance = sqrt(totalDrag.x.pow(2) + totalDrag.y.pow(2))
-if (distance < dragThreshold) {
-    // 长按不动
-    onPhotoLongPress(photo.id, photo.systemUri)
-} else {
-    // 长按拖动，批量选择
-}
-```
+**回弹动画**:
+- 使用 `PicZenMotion.Springs.playful()` 弹簧动画
+- 提供活泼的弹跳效果
 
----
+### 2.4 震动反馈系统
 
-## 3. 应用页面状态
+使用 `HapticFeedbackManager` 提供方向感知的震动反馈：
 
-### 3.1 已统一页面
+| 时机 | 反馈类型 | 说明 |
+|:----|:--------|:----|
+| 开始拖动 | 轻微震动 | 确认手势开始 |
+| 达到临界点 | 方向特定震动 | Keep=轻/Trash=强/Maybe=双击 |
+| 操作完成 | 确认震动 | 确认操作成功 |
 
-| 页面 | 文件 | 状态 |
-|:----|:----|:----|
-| PhotoListScreen | `ui/screens/photolist/` | ✅ 已使用 DragSelectPhotoGrid |
-| TrashScreen | `ui/screens/trash/` | ✅ 已使用 DragSelectPhotoGrid |
-
-### 3.2 待改造页面 (Phase 1-B)
-
-| 页面 | 文件 | 当前实现 | 改造方案 |
-|:----|:----|:--------|:--------|
-| AlbumPhotoListScreen | `ui/screens/albums/` | 自定义 LazyVerticalStaggeredGrid | 改用 DragSelectPhotoGrid |
-| TimelineScreen | `ui/screens/timeline/` | 自定义实现 | 在事件组内使用统一手势 |
-
----
-
-## 4. 滑动整理手势规范
-
-### 4.1 基本手势
-
-| 手势 | 方向 | 操作 | 颜色反馈 |
-|:----|:----|:----|:--------|
-| 右滑 | → | 保留 (Keep) | 绿色边缘发光 |
-| 左滑 | ← | 删除 (Trash) | 红色边缘发光 |
-| 上滑 | ↑ | 待定 (Maybe) | 黄色边缘发光 |
-| 下滑 | ↓ | 跳过 (Skip) | 灰色边缘发光 |
-
-### 4.2 触发阈值
-
-- **水平阈值**: 屏幕宽度的 30%
-- **垂直阈值**: 屏幕高度的 25%
-- **临界反馈**: 达到阈值的 80% 时触发震动
-
-### 4.3 点击手势
+### 2.5 点击手势
 
 | 操作 | 行为 |
 |:----|:----|
@@ -156,9 +111,9 @@ if (distance < dragThreshold) {
 
 ---
 
-## 5. 全屏预览手势规范
+## 3. 全屏预览手势规范
 
-### 5.1 缩放手势
+### 3.1 缩放手势
 
 | 手势 | 行为 |
 |:----|:----|
@@ -166,14 +121,14 @@ if (distance < dragThreshold) {
 | 双指捏合 | 平滑缩放 (1x - 5x) |
 | 双指张开 | 平滑放大 |
 
-### 5.2 平移手势
+### 3.2 平移手势
 
 | 手势 | 条件 | 行为 |
 |:----|:----|:----|
 | 单指拖动 | 缩放 > 1x | 平移查看细节 |
 | 单指拖动 | 缩放 = 1x | 切换上一张/下一张 |
 
-### 5.3 退出手势
+### 3.3 退出手势
 
 | 手势 | 行为 |
 |:----|:----|
@@ -183,15 +138,15 @@ if (distance < dragThreshold) {
 
 ---
 
-## 6. Light Table 手势规范
+## 4. Light Table 手势规范
 
-### 6.1 同步缩放
+### 4.1 同步缩放
 
 - 所有对比照片共享同一个 `TransformState`
 - 缩放/平移操作同步应用到所有照片
 - 支持 1x - 5x 缩放范围
 
-### 6.2 选择手势
+### 4.2 选择手势
 
 | 手势 | 行为 |
 |:----|:----|
@@ -200,53 +155,113 @@ if (distance < dragThreshold) {
 
 ---
 
-## 7. 震动反馈规范
+## 5. 震动反馈规范
 
-### 7.1 反馈类型
+### 5.1 HapticFeedbackManager
 
-| 场景 | HapticFeedbackType | 说明 |
-|:----|:-------------------|:----|
-| 长按选中 | `LongPress` | 明显的反馈 |
-| 拖动多选 | `TextHandleMove` | 轻微的反馈 |
-| 滑动临界 | `LongPress` | 提示达到阈值 |
-| 操作完成 | `TextHandleMove` | 确认反馈 |
-
-### 7.2 使用方式
+PhotoZen 使用统一的 `HapticFeedbackManager` 处理所有震动反馈：
 
 ```kotlin
-val haptic = LocalHapticFeedback.current
+@Composable
+fun rememberHapticFeedbackManager(
+    enabled: Boolean = true
+): HapticFeedbackManager
+```
 
-// 长按反馈
-haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+### 5.2 反馈类型
 
-// 轻微反馈
-haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+| 方法 | 场景 | 反馈强度 |
+|:----|:----|:--------|
+| `performDragStart()` | 开始拖动 | 轻微 |
+| `performThresholdReached(direction)` | 达到滑动临界点 | 方向特定 |
+| `performActionComplete(direction)` | 滑动操作完成 | 确认 |
+
+### 5.3 方向特定反馈
+
+| SwipeHapticDirection | 震动模式 | 用途 |
+|:--------------------|:--------|:----|
+| KEEP | 轻微单次 | 保留操作 |
+| TRASH | 强烈单次 | 删除操作 |
+| MAYBE | 双击模式 | 待定操作 |
+
+### 5.4 设置控制
+
+用户可在设置中开关震动反馈：
+- 设置项: `hapticFeedbackEnabled`
+- 默认值: `true`
+
+---
+
+## 6. 统一实现组件
+
+### 6.1 DragSelectPhotoGrid
+
+```kotlin
+DragSelectPhotoGrid(
+    photos = photos,
+    selectedIds = selectedIds,
+    onSelectionChanged = { newSelection ->
+        viewModel.updateSelection(newSelection)
+    },
+    onPhotoClick = { id, index ->
+        // 进入全屏预览
+    },
+    onPhotoLongPress = { id, uri ->
+        // 长按不动回调
+    },
+    columns = columns,
+    enableDragSelect = true
+)
+```
+
+### 6.2 SwipeablePhotoCard
+
+```kotlin
+SwipeablePhotoCard(
+    photo = photo,
+    isTopCard = true,
+    swipeSensitivity = 1.0f,
+    hapticFeedbackEnabled = true,
+    onSwipeLeft = { /* Keep */ },
+    onSwipeRight = { /* Keep */ },
+    onSwipeUp = { /* Trash */ },
+    onSwipeDown = { /* Maybe */ },
+    showInfoOnImage = false
+)
 ```
 
 ---
 
-## 8. 边缘情况处理
+## 7. 边缘情况处理
 
-### 8.1 空列表
+### 7.1 空列表
 
-- 显示空状态插画和提示文字
+- 显示 `AnimatedEmptyState` 空状态组件
+- 带浮动动画效果
 - 禁用所有手势交互
 
-### 8.2 单张照片
+### 7.2 单张照片
 
 - 禁用拖动多选
 - 保留点击和长按功能
 
-### 8.3 正在加载
+### 7.3 正在加载
 
 - 显示加载占位符
 - 禁用交互直到加载完成
 
-### 8.4 手势冲突
+### 7.4 手势冲突
 
 - 嵌套滚动: 使用 `nestedScroll` 协调
 - 多手指: 优先处理缩放，忽略额外手指
 
 ---
 
-*本规范为 Phase 1-A 基础版本，Phase 1-B 将完成所有页面的手势统一改造。*
+## 8. 相关文档
+
+- [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) - 设计系统规范
+- [INTERACTION_SPEC.md](INTERACTION_SPEC.md) - 交互设计规范
+
+---
+
+*本规范基于 HapticFeedbackManager 和 PicZenMotion 动效系统，确保一致的触感体验。*
