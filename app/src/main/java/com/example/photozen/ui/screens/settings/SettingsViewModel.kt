@@ -334,4 +334,21 @@ class SettingsViewModel @Inject constructor(
     fun refreshPermissionStatus() {
         _internalState.update { it }  // Trigger recomposition
     }
+
+    // ==================== RESET PROGRESS ====================
+
+    /**
+     * Reset all photo sorting progress.
+     * This clears all photo status (KEEP/TRASH/MAYBE -> UNSORTED).
+     * DailyStats is NOT affected, preserving historical sorting records.
+     */
+    fun resetAllProgress() {
+        viewModelScope.launch {
+            try {
+                photoRepository.resetAllPhotoStatus()
+            } catch (e: Exception) {
+                _internalState.update { it.copy(error = "重置失败: ${e.message}") }
+            }
+        }
+    }
 }

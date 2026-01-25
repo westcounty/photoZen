@@ -375,7 +375,12 @@ class PhotoRepositoryImpl @Inject constructor(
             incrementDailyStats(photoIds.size)
         }
     }
-    
+
+    override suspend fun resetAllPhotoStatus() {
+        photoDao.resetAllStatus()
+        // Note: DailyStats is NOT cleared, preserving historical sorting records
+    }
+
     override suspend fun keepPhoto(photoId: String) {
         photoDao.updateStatus(photoId, PhotoStatus.KEEP)
         incrementDailyStats(1)

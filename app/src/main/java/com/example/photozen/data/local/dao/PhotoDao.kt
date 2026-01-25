@@ -65,7 +65,14 @@ interface PhotoDao {
      */
     @Query("UPDATE photos SET status = :status, updated_at = :updatedAt WHERE id IN (:photoIds)")
     suspend fun updateStatusBatch(photoIds: List<String>, status: PhotoStatus, updatedAt: Long = System.currentTimeMillis())
-    
+
+    /**
+     * Reset all photo status to UNSORTED.
+     * Used for "Reset Progress" feature. Does not affect DailyStats.
+     */
+    @Query("UPDATE photos SET status = 'UNSORTED', updated_at = :updatedAt WHERE is_virtual_copy = 0")
+    suspend fun resetAllStatus(updatedAt: Long = System.currentTimeMillis())
+
     // ==================== DELETE ====================
     
     /**

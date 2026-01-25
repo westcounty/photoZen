@@ -190,7 +190,13 @@ interface PhotoRepository {
      * Batch update status for multiple photos.
      */
     suspend fun updatePhotoStatusBatch(photoIds: List<String>, status: PhotoStatus)
-    
+
+    /**
+     * Reset all photo status to UNSORTED.
+     * Used for "Reset Progress" feature. Does not affect DailyStats.
+     */
+    suspend fun resetAllPhotoStatus()
+
     /**
      * Move photo to Keep (swipe right).
      */

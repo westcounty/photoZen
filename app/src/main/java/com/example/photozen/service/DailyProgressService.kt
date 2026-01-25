@@ -177,7 +177,7 @@ class DailyProgressService : Service() {
         val largeIcon = BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
 
         return NotificationCompat.Builder(this, PROGRESS_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_monochrome)
+            .setSmallIcon(R.drawable.ic_notification)
             .setLargeIcon(largeIcon)
             .setContentTitle(title)
             .setContentText("$progressText · $subtitle")

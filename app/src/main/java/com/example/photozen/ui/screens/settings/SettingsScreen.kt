@@ -126,6 +126,7 @@ fun SettingsScreen(
     var showAcknowledgementDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showClassificationModeDialog by remember { mutableStateOf(false) }
+    var showResetProgressDialog by remember { mutableStateOf(false) }
     
     // Show error messages
     LaunchedEffect(uiState.error) {
@@ -215,6 +216,15 @@ fun SettingsScreen(
                 SwipeSensitivitySettingCompact(
                     sensitivity = uiState.swipeSensitivity,
                     onSensitivityChange = { viewModel.setSwipeSensitivity(it) }
+                )
+
+                // 重置整理进度
+                EnhancedSettingsItem(
+                    icon = Icons.Default.RestartAlt,
+                    title = "重置整理进度",
+                    subtitle = "清除所有照片的筛选标记",
+                    onClick = { showResetProgressDialog = true },
+                    iconTint = MaterialTheme.colorScheme.error
                 )
             }
             
@@ -387,6 +397,55 @@ fun SettingsScreen(
         )
     }
     
+    // 重置整理进度确认对话框
+    if (showResetProgressDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetProgressDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = {
+                Text("重置整理进度")
+            },
+            text = {
+                Column {
+                    Text("确定要重置所有整理进度吗？")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "此操作将清除所有照片的筛选标记（保留/删除/待定），照片将恢复为未整理状态。\n\n注意：历史整理统计数据不会被清除。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.resetAllProgress()
+                        showResetProgressDialog = false
+                        scope.launch {
+                            snackbarHostState.showSnackbar("整理进度已重置")
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("确认重置")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetProgressDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
     if (showClassificationModeDialog) {
         QuickAlbumSettingsDialog(
             albumAddAction = uiState.albumAddAction,
