@@ -443,7 +443,7 @@ fun MiniStatsCard(
                 shape = RoundedCornerShape(12.dp)
             ),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
         ),
         onClick = onClick,
         interactionSource = interactionSource

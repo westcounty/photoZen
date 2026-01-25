@@ -82,7 +82,9 @@ fun SyncZoomImage(
                 } else Modifier
             )
             .onSizeChanged { containerSize = it }
-            .pointerInput(Unit) {
+            // Use transformState as key to ensure gesture handlers are recreated when state reference changes
+            // This fixes the issue where zoomed photo becomes unresponsive after toggling sync mode
+            .pointerInput(transformState) {
                 detectTransformGestures(
                     onGesture = { centroid, pan, zoom, _ ->
                         // Calculate new scale
@@ -111,7 +113,7 @@ fun SyncZoomImage(
                     }
                 )
             }
-            .pointerInput(Unit) {
+            .pointerInput(transformState) {
                 detectTapGestures(
                     onDoubleTap = { offset ->
                         // Double tap to toggle zoom

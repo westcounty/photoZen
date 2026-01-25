@@ -42,23 +42,22 @@ object BottomBarConfigs {
     /**
      * 保留列表 - 单选模式
      *
-     * 显示所有可用操作：编辑、分享、相册、待定、回收站、重置
+     * 5项操作：添加到相册、设置为待定、移至回收站、重置为未筛选、彻底删除
+     * (与多选模式相同)
      */
     @Composable
     fun keepListSingleSelect(
-        onEdit: () -> Unit,
-        onShare: () -> Unit,
         onAlbum: () -> Unit,
         onMaybe: () -> Unit,
         onTrash: () -> Unit,
-        onReset: () -> Unit
+        onReset: () -> Unit,
+        onPermanentDelete: () -> Unit
     ): List<BottomBarAction> = listOf(
-        editAction(onEdit),
-        shareAction(onShare),
         albumAction(onAlbum),
         maybeAction(onMaybe),
         deleteAction(onTrash),
-        resetAction(onReset)
+        resetAction(onReset),
+        permanentDeleteAction(onPermanentDelete)
     )
 
     /**
@@ -175,20 +174,17 @@ object BottomBarConfigs {
     /**
      * 相册照片列表 - 单选模式 (REQ-047)
      *
-     * 操作: 编辑、分享、添加到其他相册、批量修改筛选状态、复制、从此开始筛选、彻底删除
+     * 操作: 添加到其他相册、批量修改筛选状态、复制、从此开始筛选、彻底删除
+     * (与多选相比，单选额外有"从此开始筛选")
      */
     @Composable
     fun albumPhotosSingleSelect(
-        onEdit: () -> Unit,
-        onShare: () -> Unit,
         onAddToOtherAlbum: () -> Unit,
         onBatchChangeStatus: () -> Unit,
         onCopy: () -> Unit,
         onStartFromHere: () -> Unit,
         onDelete: () -> Unit
     ): List<BottomBarAction> = listOf(
-        editAction(onEdit),
-        shareAction(onShare),
         albumAction(onAddToOtherAlbum),
         changeStatusAction(onBatchChangeStatus),
         copyAction(onCopy),

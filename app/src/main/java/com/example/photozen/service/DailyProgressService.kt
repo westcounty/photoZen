@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -172,8 +173,12 @@ class DailyProgressService : Service() {
         val (title, subtitle) = getMotivationMessage(current, target, isCompleted)
         val progressText = "$current / $target 张"
         
+        // 通知中心左侧的大图标（彩色应用图标）
+        val largeIcon = BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
+
         return NotificationCompat.Builder(this, PROGRESS_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_gallery)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
+            .setLargeIcon(largeIcon)
             .setContentTitle(title)
             .setContentText("$progressText · $subtitle")
             .setProgress(target, current.coerceAtMost(target), false)

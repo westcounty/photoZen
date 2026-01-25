@@ -193,14 +193,14 @@ fun SelectionBottomBar(
     }
 
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding(),
         tonalElevation = 8.dp,
         shadowElevation = 8.dp
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
+            modifier = Modifier.fillMaxWidth()
         ) {
             LazyRow(
                 state = lazyListState,

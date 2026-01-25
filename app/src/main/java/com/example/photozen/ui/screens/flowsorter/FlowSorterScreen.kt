@@ -96,13 +96,18 @@ import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.ui.components.ComboOverlay
 import com.example.photozen.ui.components.DailyTaskTitle
+import com.example.photozen.ui.components.DragSelectPhotoGrid
 import com.example.photozen.ui.components.FlowSorterTitle
 import com.example.photozen.ui.components.fullscreen.UnifiedFullscreenViewer
 import com.example.photozen.ui.components.fullscreen.FullscreenActionType
 import com.example.photozen.ui.components.GuideTooltip
 import com.example.photozen.ui.components.ArrowDirection
+import com.example.photozen.ui.components.PhotoGridMode
 import com.example.photozen.ui.components.SelectableStaggeredPhotoGrid
 import com.example.photozen.ui.components.SelectionModeTitle
+import com.example.photozen.ui.components.SortDropdownButton
+import com.example.photozen.ui.components.SortOptions
+import com.example.photozen.ui.components.ViewModeDropdownButton
 import com.example.photozen.ui.guide.rememberGuideState
 import com.example.photozen.domain.model.GuideKey
 import com.example.photozen.ui.theme.KeepGreen
@@ -167,7 +172,10 @@ fun FlowSorterScreen(
     val albumNames by viewModel.albumNames.collectAsState()
     val albumsForFilter by viewModel.albumBubblesForFilter.collectAsState()
     var showFilterSheet by remember { mutableStateOf(false) }
-    
+
+    // 列表模式的网格/瀑布流视图状态
+    var gridMode by remember { mutableStateOf(PhotoGridMode.WATERFALL) }
+
     // Fullscreen viewer state - 使用索引而非单个照片对象
     var fullscreenPhotoIndex by remember { mutableIntStateOf(-1) }
     val showFullscreen = fullscreenPhotoIndex >= 0
@@ -239,74 +247,62 @@ fun FlowSorterScreen(
                                 )
                             }
                         } else {
-                            // 筛选按钮
+                            // 1. 筛选按钮
                             FilterButton(
                                 activeFilterCount = filterConfig.activeFilterCount,
                                 onClick = { showFilterSheet = true }
                             )
-                            
-                            // Sort order button - dropdown menu for consistency with other screens
-                            var showSortMenu by remember { mutableStateOf(false) }
-                            Box {
-                                IconButton(onClick = { showSortMenu = true }) {
-                                    Icon(
-                                        imageVector = when (uiState.sortOrder) {
-                                            PhotoSortOrder.DATE_DESC -> Icons.Default.ArrowDownward
-                                            PhotoSortOrder.DATE_ASC -> Icons.Default.ArrowUpward
-                                            PhotoSortOrder.RANDOM -> Icons.Default.Shuffle
-                                        },
-                                        contentDescription = "排序: ${uiState.sortOrder.displayName}"
-                                    )
-                                }
-                                DropdownMenu(
-                                    expanded = showSortMenu,
-                                    onDismissRequest = { showSortMenu = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("时间正序") },
-                                        onClick = {
-                                            viewModel.setSortOrder(PhotoSortOrder.DATE_ASC)
-                                            showSortMenu = false
-                                        },
-                                        leadingIcon = if (uiState.sortOrder == PhotoSortOrder.DATE_ASC) {
-                                            { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
-                                        } else null
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("时间倒序") },
-                                        onClick = {
-                                            viewModel.setSortOrder(PhotoSortOrder.DATE_DESC)
-                                            showSortMenu = false
-                                        },
-                                        leadingIcon = if (uiState.sortOrder == PhotoSortOrder.DATE_DESC) {
-                                            { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
-                                        } else null
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("随机") },
-                                        onClick = {
-                                            viewModel.setSortOrder(PhotoSortOrder.RANDOM)
-                                            showSortMenu = false
-                                        },
-                                        leadingIcon = if (uiState.sortOrder == PhotoSortOrder.RANDOM) {
-                                            { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
-                                        } else null
-                                    )
-                                }
+
+                            // 2. 排序按钮
+                            val currentSortOption = when (uiState.sortOrder) {
+                                PhotoSortOrder.DATE_ASC -> SortOptions.photoTimeAsc
+                                PhotoSortOrder.DATE_DESC -> SortOptions.photoTimeDesc
+                                PhotoSortOrder.RANDOM -> SortOptions.random
                             }
-                            
-                            // View mode toggle with column selector (merged for list mode)
-                            FlowSorterViewModeDropdown(
-                                viewMode = uiState.viewMode,
-                                gridColumns = uiState.gridColumns,
-                                onViewModeChanged = { viewModel.setViewMode(it) },
-                                onColumnsChanged = { viewModel.setGridColumns(it) },
-                                modifier = Modifier.onGloballyPositioned { coordinates ->
-                                    viewToggleBounds = coordinates.boundsInRoot()
+                            SortDropdownButton(
+                                currentSort = currentSortOption,
+                                options = SortOptions.filterListOptions,
+                                onSortSelected = { option ->
+                                    val newSortOrder = when (option.id) {
+                                        SortOptions.photoTimeAsc.id -> PhotoSortOrder.DATE_ASC
+                                        SortOptions.photoTimeDesc.id -> PhotoSortOrder.DATE_DESC
+                                        SortOptions.random.id -> PhotoSortOrder.RANDOM
+                                        else -> PhotoSortOrder.DATE_DESC
+                                    }
+                                    viewModel.setSortOrder(newSortOrder)
                                 }
                             )
 
-                            // Undo button (only in card mode)
+                            // 3. 视图模式下拉按钮（仅列表模式显示）
+                            if (uiState.viewMode == FlowSorterViewMode.LIST) {
+                                ViewModeDropdownButton(
+                                    currentMode = gridMode,
+                                    currentColumns = uiState.gridColumns,
+                                    onModeChanged = { gridMode = it },
+                                    onColumnsChanged = { viewModel.setGridColumns(it) }
+                                )
+                            }
+
+                            // 4. 筛选模式切换按钮 (card/list)
+                            IconButton(
+                                onClick = {
+                                    val newMode = if (uiState.viewMode == FlowSorterViewMode.CARD)
+                                        FlowSorterViewMode.LIST else FlowSorterViewMode.CARD
+                                    viewModel.setViewMode(newMode)
+                                },
+                                modifier = Modifier.onGloballyPositioned { coordinates ->
+                                    viewToggleBounds = coordinates.boundsInRoot()
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = if (uiState.viewMode == FlowSorterViewMode.CARD)
+                                        Icons.Default.ViewCarousel else Icons.Default.GridView,
+                                    contentDescription = if (uiState.viewMode == FlowSorterViewMode.CARD)
+                                        "切换到列表模式" else "切换到卡片模式"
+                                )
+                            }
+
+                            // 5. 撤销按钮（仅卡片模式显示）
                             AnimatedVisibility(
                                 visible = uiState.lastAction != null && uiState.viewMode == FlowSorterViewMode.CARD,
                                 enter = fadeIn() + scaleIn(),
@@ -430,6 +426,16 @@ fun FlowSorterContent(
     var localViewMode by remember { mutableStateOf(FlowSorterViewMode.CARD) }
     val effectiveViewMode = if (isWorkflowMode) localViewMode else uiState.viewMode
 
+    // Local grid mode state for list view (SQUARE = grid, WATERFALL = staggered)
+    var gridMode by remember { mutableStateOf(PhotoGridMode.WATERFALL) }
+
+    // 筛选相关状态（深度整理模式下使用）
+    val filterConfig by viewModel.filterConfig.collectAsState()
+    val filterPresets by viewModel.filterPresets.collectAsState()
+    val albumNames by viewModel.albumNames.collectAsState()
+    val albumsForFilter by viewModel.albumBubblesForFilter.collectAsState()
+    var showFilterSheet by remember { mutableStateOf(false) }
+
     // Handle back press in fullscreen or selection mode
     BackHandler(enabled = showFullscreen || uiState.isSelectionMode) {
         when {
@@ -455,7 +461,7 @@ fun FlowSorterContent(
                 } else {
                     uiState.progress
                 }
-                
+
                 LinearProgressIndicator(
                     progress = { progress },
                     modifier = Modifier
@@ -465,7 +471,18 @@ fun FlowSorterContent(
                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             }
-            
+
+            // 深度整理模式下展示筛选条件 Chip 行
+            if (isWorkflowMode && filterConfig.activeFilterCount > 0) {
+                FilterChipRow(
+                    config = filterConfig,
+                    albumNames = albumNames,
+                    onEditFilter = { showFilterSheet = true },
+                    onClearFilter = viewModel::clearFilter,
+                    onClearAll = viewModel::clearAllFilters
+                )
+            }
+
             // Main content
             Box(
                 modifier = Modifier
@@ -513,19 +530,31 @@ fun FlowSorterContent(
                         }
                     }
                     effectiveViewMode == FlowSorterViewMode.LIST -> {
-                        // List view with staggered grid
-                        // Long press enters selection mode directly (no context menu popup)
-                        // "从此张开始筛选" is now in the bottom action bar when single photo is selected
-                        SelectableStaggeredPhotoGrid(
+                        // List view with drag select photo grid
+                        // Supports both SQUARE (grid) and WATERFALL (staggered) modes
+                        // Long press enters selection mode directly
+                        DragSelectPhotoGrid(
                             photos = uiState.photos,
                             selectedIds = uiState.selectedPhotoIds,
                             onSelectionChanged = { viewModel.updateSelection(it) },
                             onPhotoClick = { photoId, index ->
-                                // 点击进入全屏预览
-                                fullscreenPhotoIndex = index
+                                // 点击直接选中/取消选中照片
+                                val newSelection = if (uiState.selectedPhotoIds.contains(photoId)) {
+                                    uiState.selectedPhotoIds - photoId
+                                } else {
+                                    uiState.selectedPhotoIds + photoId
+                                }
+                                viewModel.updateSelection(newSelection)
                             },
-                            columns = uiState.gridColumns
-                            // onPhotoLongClick removed - long press now only enters selection mode
+                            onPhotoLongPress = { photoId, photoUri ->
+                                // Long press selects the photo and enters selection mode
+                                if (!uiState.selectedPhotoIds.contains(photoId)) {
+                                    viewModel.updateSelection(uiState.selectedPhotoIds + photoId)
+                                }
+                            },
+                            columns = uiState.gridColumns,
+                            gridMode = gridMode,
+                            enableDragSelect = false  // Disable drag select, use simple long press
                         )
                     }
                     else -> {
@@ -679,72 +708,80 @@ fun FlowSorterContent(
                             )
                         }
                     } else {
-                        // Sort order button - dropdown menu for consistency with other screens
-                        var showWorkflowSortMenu by remember { mutableStateOf(false) }
-                        Box {
-                            IconButton(
-                                onClick = { showWorkflowSortMenu = true },
+                        // 1. 筛选器按钮
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
+                        ) {
+                            FilterButton(
+                                activeFilterCount = filterConfig.activeFilterCount,
+                                onClick = { showFilterSheet = true }
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        // 2. 排序按钮
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
+                        ) {
+                            val workflowSortOption = when (uiState.sortOrder) {
+                                PhotoSortOrder.DATE_ASC -> SortOptions.photoTimeAsc
+                                PhotoSortOrder.DATE_DESC -> SortOptions.photoTimeDesc
+                                PhotoSortOrder.RANDOM -> SortOptions.random
+                            }
+                            SortDropdownButton(
+                                currentSort = workflowSortOption,
+                                options = SortOptions.filterListOptions,
+                                onSortSelected = { option ->
+                                    val newSortOrder = when (option.id) {
+                                        SortOptions.photoTimeAsc.id -> PhotoSortOrder.DATE_ASC
+                                        SortOptions.photoTimeDesc.id -> PhotoSortOrder.DATE_DESC
+                                        SortOptions.random.id -> PhotoSortOrder.RANDOM
+                                        else -> PhotoSortOrder.DATE_DESC
+                                    }
+                                    viewModel.setSortOrder(newSortOrder)
+                                }
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        // View mode toggle button (card/list)
+                        IconButton(
+                            onClick = {
+                                val newMode = if (effectiveViewMode == FlowSorterViewMode.CARD)
+                                    FlowSorterViewMode.LIST else FlowSorterViewMode.CARD
+                                localViewMode = newMode
+                                viewModel.clearSelection()
+                            },
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
+                        ) {
+                            Icon(
+                                imageVector = if (effectiveViewMode == FlowSorterViewMode.CARD)
+                                    Icons.Default.ViewCarousel else Icons.Default.GridView,
+                                contentDescription = if (effectiveViewMode == FlowSorterViewMode.CARD)
+                                    "切换到列表模式" else "切换到卡片模式",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        // View mode dropdown (only in list mode, for grid/waterfall and columns)
+                        if (effectiveViewMode == FlowSorterViewMode.LIST) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Box(
                                 modifier = Modifier
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
                             ) {
-                                Icon(
-                                    imageVector = when (uiState.sortOrder) {
-                                        PhotoSortOrder.DATE_DESC -> Icons.Default.ArrowDownward
-                                        PhotoSortOrder.DATE_ASC -> Icons.Default.ArrowUpward
-                                        PhotoSortOrder.RANDOM -> Icons.Default.Shuffle
-                                    },
-                                    contentDescription = "排序: ${uiState.sortOrder.displayName}",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = showWorkflowSortMenu,
-                                onDismissRequest = { showWorkflowSortMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("时间正序") },
-                                    onClick = {
-                                        viewModel.setSortOrder(PhotoSortOrder.DATE_ASC)
-                                        showWorkflowSortMenu = false
-                                    },
-                                    leadingIcon = if (uiState.sortOrder == PhotoSortOrder.DATE_ASC) {
-                                        { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
-                                    } else null
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("时间倒序") },
-                                    onClick = {
-                                        viewModel.setSortOrder(PhotoSortOrder.DATE_DESC)
-                                        showWorkflowSortMenu = false
-                                    },
-                                    leadingIcon = if (uiState.sortOrder == PhotoSortOrder.DATE_DESC) {
-                                        { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
-                                    } else null
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("随机") },
-                                    onClick = {
-                                        viewModel.setSortOrder(PhotoSortOrder.RANDOM)
-                                        showWorkflowSortMenu = false
-                                    },
-                                    leadingIcon = if (uiState.sortOrder == PhotoSortOrder.RANDOM) {
-                                        { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
-                                    } else null
+                                ViewModeDropdownButton(
+                                    currentMode = gridMode,
+                                    currentColumns = uiState.gridColumns,
+                                    onModeChanged = { gridMode = it },
+                                    onColumnsChanged = { viewModel.setGridColumns(it) }
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.width(4.dp))
-                        // View mode dropdown (unified)
-                        WorkflowViewModeDropdown(
-                            viewMode = effectiveViewMode,
-                            gridColumns = uiState.gridColumns,
-                            onViewModeChanged = { newMode ->
-                                localViewMode = newMode
-                                viewModel.clearSelection()
-                            },
-                            onColumnsChanged = { viewModel.setGridColumns(it) }
-                        )
                         // Undo button (card mode only)
                         AnimatedVisibility(
                             visible = uiState.lastAction != null && effectiveViewMode == FlowSorterViewMode.CARD,
@@ -852,7 +889,20 @@ fun FlowSorterContent(
             showRetryError = uiState.permissionRetryError
         )
     }
-    
+
+    // 筛选面板（深度整理模式下使用）
+    if (showFilterSheet) {
+        FilterBottomSheet(
+            currentConfig = filterConfig,
+            presets = filterPresets,
+            albums = albumsForFilter,
+            onConfigChange = viewModel::applyFilter,
+            onSavePreset = viewModel::saveFilterPreset,
+            onApplyPreset = { viewModel.applyFilter(it.config) },
+            onDeletePreset = viewModel::deleteFilterPreset,
+            onDismiss = { showFilterSheet = false }
+        )
+    }
 }
 
 /**

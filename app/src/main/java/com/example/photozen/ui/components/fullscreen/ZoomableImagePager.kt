@@ -204,8 +204,8 @@ private fun ZoomableImage(
                         offsetY = newOffsetY.coerceIn(-maxOffsetY, maxOffsetY)
                         dismissProgress = 0f
                     } else {
-                        // 1x时检测下滑退出 (REQ-020)
-                        offsetX = 0f
+                        // 1x时：水平手势由HorizontalPager处理，只处理垂直下滑退出 (REQ-019, REQ-020)
+                        // 不再设置 offsetX = 0f，让水平滑动由Pager接管
 
                         if (pan.y > 0) {
                             dismissProgress += pan.y

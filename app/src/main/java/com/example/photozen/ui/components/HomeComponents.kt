@@ -26,8 +26,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
-import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -523,7 +523,7 @@ fun HomeDailyTask(
                         imageVector = if (status.isCompleted)
                             Icons.Default.Check
                         else
-                            Icons.Default.Assignment,
+                            Icons.AutoMirrored.Filled.Assignment,
                         contentDescription = null,
                         tint = if (status.isCompleted) KeepGreen else MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp)
@@ -694,7 +694,7 @@ fun HomeDailyTaskWithSortAll(
                 .padding(20.dp)
         ) {
             // 每日任务进度区（仅当启用时显示）
-            if (isDailyTaskEnabled && dailyTaskStatus != null) {
+            if (isDailyTaskEnabled) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -706,7 +706,7 @@ fun HomeDailyTaskWithSortAll(
                             imageVector = if (isCompleted)
                                 Icons.Default.Check
                             else
-                                Icons.Default.Assignment,
+                                Icons.AutoMirrored.Filled.Assignment,
                             contentDescription = null,
                             tint = if (isCompleted) KeepGreen else MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)
@@ -747,7 +747,7 @@ fun HomeDailyTaskWithSortAll(
             // 待整理照片数量提示 + 预计完成天数
             if (unsortedCount > 0) {
                 // 计算预计完成天数（仅在每日任务启用时显示）
-                val daysRemaining = if (isDailyTaskEnabled && dailyTaskStatus != null && dailyTaskStatus.target > 0) {
+                val daysRemaining = if (isDailyTaskEnabled && dailyTaskStatus!!.target > 0) {
                     val remaining = unsortedCount - (if (isCompleted) 0 else dailyTaskStatus.current)
                     kotlin.math.ceil(remaining.toFloat() / dailyTaskStatus.target).toInt().coerceAtLeast(0)
                 } else null
@@ -777,6 +777,15 @@ fun HomeDailyTaskWithSortAll(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // 次按钮：整理全部
+                    FilledTonalButton(
+                        onClick = onStartSortAll,
+                        modifier = Modifier.weight(1f),
+                        enabled = unsortedCount > 0
+                    ) {
+                        Text("整理全部")
+                    }
+
                     // 主按钮：开始/继续任务
                     Button(
                         onClick = onStartDailyTask,
@@ -790,15 +799,6 @@ fun HomeDailyTaskWithSortAll(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(taskButtonText)
-                    }
-
-                    // 次按钮：整理全部
-                    FilledTonalButton(
-                        onClick = onStartSortAll,
-                        modifier = Modifier.weight(1f),
-                        enabled = unsortedCount > 0
-                    ) {
-                        Text("整理全部")
                     }
                 }
             } else if (isCompleted) {

@@ -269,28 +269,8 @@ fun PhotoListScreen(
                         }
                     },
                     actions = {
-                        // Compare mode button for MAYBE status
-                        if (uiState.status == PhotoStatus.MAYBE && uiState.photos.isNotEmpty()) {
-                            IconButton(onClick = onNavigateToLightTable) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.CompareArrows,
-                                    contentDescription = "对比模式"
-                                )
-                            }
-                        }
-                        
-                        // 视图模式切换（统一下拉菜单）
                         if (uiState.photos.isNotEmpty()) {
-                            ViewModeDropdownButton(
-                                currentMode = uiState.gridMode,
-                                currentColumns = uiState.gridColumns,
-                                onModeChanged = { mode -> viewModel.setGridMode(mode) },
-                                onColumnsChanged = { cols -> viewModel.setGridColumns(cols) }
-                            )
-                        }
-                        
-                        // Sort dropdown button (REQ-022, REQ-028, REQ-033, REQ-038)
-                        if (uiState.photos.isNotEmpty()) {
+                            // 1. 排序按钮 (REQ-022, REQ-028, REQ-033, REQ-038)
                             // 将 PhotoListSortOrder 转换为 SortOption
                             // KEEP 状态使用专用的排序选项文字
                             val isKeepStatus = uiState.status == PhotoStatus.KEEP
@@ -326,20 +306,27 @@ fun PhotoListScreen(
                                     viewModel.setSortOrder(order)
                                 }
                             )
+
+                            // 2. 视图模式切换（统一下拉菜单）
+                            ViewModeDropdownButton(
+                                currentMode = uiState.gridMode,
+                                currentColumns = uiState.gridColumns,
+                                onModeChanged = { mode -> viewModel.setGridMode(mode) },
+                                onColumnsChanged = { cols -> viewModel.setGridColumns(cols) }
+                            )
                         }
-                        
-                        // Phase 6.2: Album filter toggle button (KEEP status only)
+
+                        // 3. 已分类至相册照片过滤开关 (KEEP status only)
                         if (uiState.status == PhotoStatus.KEEP && uiState.myAlbumBucketIds.isNotEmpty()) {
                             IconButton(onClick = { viewModel.toggleShowPhotosInAlbum() }) {
                                 Icon(
-                                    imageVector = if (uiState.showPhotosInAlbum) 
+                                    imageVector = if (uiState.showPhotosInAlbum)
                                         Icons.Default.FilterAlt else Icons.Default.FilterAltOff,
-                                    contentDescription = if (uiState.showPhotosInAlbum) 
+                                    contentDescription = if (uiState.showPhotosInAlbum)
                                         "隐藏已在相册中的照片" else "显示所有照片"
                                 )
                             }
                         }
-                        
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface
@@ -354,34 +341,15 @@ fun PhotoListScreen(
                 enter = slideInVertically(initialOffsetY = { it }),
                 exit = slideOutVertically(targetOffsetY = { it })
             ) {
-                // Get the single selected photo for single-select actions
-                val singleSelectedPhoto = if (uiState.selectedCount == 1) {
-                    uiState.photos.find { it.id in uiState.selectedPhotoIds }
-                } else null
-                
-                // Phase 4: 使用 BottomBarConfigs.adaptive 根据状态和选择数量自动配置
+                // Phase 4: 使用 BottomBarConfigs 根据状态配置
+                // 保留列表单选和多选使用相同的5个按钮
                 val bottomBarActions = when (uiState.status) {
-                    PhotoStatus.KEEP -> BottomBarConfigs.adaptive(
-                        selectedCount = uiState.selectedCount,
-                        singleSelectActions = {
-                            BottomBarConfigs.keepListSingleSelect(
-                                onEdit = { singleSelectedPhoto?.let { onNavigateToEditor(it.id) } },
-                                onShare = { singleSelectedPhoto?.let { shareImage(context, Uri.parse(it.systemUri)) } },
-                                onAlbum = { viewModel.showAlbumDialog() },
-                                onMaybe = { viewModel.moveSelectedToMaybe() },
-                                onTrash = { showDeleteConfirmSheet = true },
-                                onReset = { viewModel.resetSelectedToUnsorted() }
-                            )
-                        },
-                        multiSelectActions = {
-                            BottomBarConfigs.keepListMultiSelect(
-                                onAlbum = { viewModel.showAlbumDialog() },
-                                onMaybe = { viewModel.moveSelectedToMaybe() },
-                                onTrash = { showDeleteConfirmSheet = true },
-                                onReset = { viewModel.resetSelectedToUnsorted() },
-                                onPermanentDelete = { showDeleteConfirmSheet = true } // REQ-041
-                            )
-                        }
+                    PhotoStatus.KEEP -> BottomBarConfigs.keepListMultiSelect(
+                        onAlbum = { viewModel.showAlbumDialog() },
+                        onMaybe = { viewModel.moveSelectedToMaybe() },
+                        onTrash = { showDeleteConfirmSheet = true },
+                        onReset = { viewModel.resetSelectedToUnsorted() },
+                        onPermanentDelete = { showDeleteConfirmSheet = true }
                     )
                     PhotoStatus.MAYBE -> {
                         // REQ-031: 待定列表使用清除+对比按钮
@@ -495,18 +463,20 @@ fun PhotoListScreen(
                                     }
                                 },
                                 onPhotoClick = { photoId, index ->
-                                    if (!uiState.isSelectionMode) {
-                                        // 非选择模式 - 进入全屏预览 (REQ-032)
-                                        fullscreenInitialIndex = index
-                                        showFullscreenViewer = true
-                                    } else {
-                                        // 选择模式 - 切换选中状态
+                                    // 待定列表：点击始终切换选中状态
+                                    // 其他列表：根据 isSelectionMode 判断
+                                    if (uiState.status == PhotoStatus.MAYBE || uiState.isSelectionMode) {
+                                        // 切换选中状态
                                         val success = viewModel.togglePhotoSelectionWithLimit(photoId)
                                         if (!success) {
                                             scope.launch {
                                                 snackbarHostState.showSnackbar("最多可对比${MAYBE_LIST_SELECTION_LIMIT}张照片")
                                             }
                                         }
+                                    } else {
+                                        // 非选择模式 - 进入全屏预览 (REQ-032)
+                                        fullscreenInitialIndex = index
+                                        showFullscreenViewer = true
                                     }
                                 },
                                 onPhotoLongPress = { photoId, _ ->

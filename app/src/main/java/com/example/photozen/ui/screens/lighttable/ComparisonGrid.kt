@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -297,27 +295,26 @@ private fun RenderLayout(
     // Track the previous sync mode to detect transitions
     val previousSyncEnabled = remember { mutableStateOf(syncZoomEnabled) }
 
-    // Handle state synchronization when switching between sync and individual modes
-    // Use LaunchedEffect to ensure proper side effect handling
-    LaunchedEffect(syncZoomEnabled) {
-        if (syncZoomEnabled != previousSyncEnabled.value) {
-            if (syncZoomEnabled) {
-                // Switching TO sync mode: copy first non-default individual state to shared state
-                val sourceState = individualTransformStates.firstOrNull {
-                    it.scale != 1f || it.offsetX != 0f || it.offsetY != 0f
-                } ?: individualTransformStates.firstOrNull()
+    // Handle state synchronization SYNCHRONOUSLY when switching between sync and individual modes
+    // This prevents screen flashing by ensuring states are synchronized BEFORE rendering
+    // (Using LaunchedEffect caused async delay which led to brief flash of default state)
+    if (syncZoomEnabled != previousSyncEnabled.value) {
+        if (syncZoomEnabled) {
+            // Switching TO sync mode: copy first non-default individual state to shared state
+            val sourceState = individualTransformStates.firstOrNull {
+                it.scale != 1f || it.offsetX != 0f || it.offsetY != 0f
+            } ?: individualTransformStates.firstOrNull()
 
-                sourceState?.let {
-                    transformState.copyFrom(it)
-                }
-            } else {
-                // Switching TO individual mode: copy shared state to all individual states
-                individualTransformStates.forEach { state ->
-                    state.copyFrom(transformState)
-                }
+            sourceState?.let {
+                transformState.copyFrom(it)
             }
-            previousSyncEnabled.value = syncZoomEnabled
+        } else {
+            // Switching TO individual mode: copy shared state to all individual states
+            individualTransformStates.forEach { state ->
+                state.copyFrom(transformState)
+            }
         }
+        previousSyncEnabled.value = syncZoomEnabled
     }
 
     var photoIndex = 0

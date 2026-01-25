@@ -79,9 +79,9 @@ fun StaggeredPhotoGrid(
 ) {
     LazyVerticalStaggeredGrid(
         columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 5)),
-        contentPadding = PaddingValues(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalItemSpacing = 8.dp,
+        contentPadding = PaddingValues(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalItemSpacing = 2.dp,
         modifier = modifier.fillMaxSize()
     ) {
         itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
@@ -190,13 +190,14 @@ private fun StaggeredPhotoItem(
 
 /**
  * Staggered photo grid with selection support for batch operations.
- * Supports 1-5 column layouts with drag-to-select functionality.
- * 
+ * Supports 1-5 column layouts.
+ *
  * Features:
- * - Long press to enter selection mode
- * - Drag to select multiple photos
- * - Auto-scroll when dragging near edges
+ * - Long press to enter selection mode and select photo
+ * - Tap to toggle selection in selection mode
  * - Haptic feedback on selection changes
+ *
+ * Note: Drag-select functionality has been removed (Phase 3-10)
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -211,156 +212,26 @@ fun SelectableStaggeredPhotoGrid(
     onPhotoLongClick: ((String, Int) -> Unit)? = null  // Optional callback for context menu
 ) {
     val haptic = LocalHapticFeedback.current
-    val density = LocalDensity.current
-    val coroutineScope = rememberCoroutineScope()
-    
-    // Grid size for auto-scroll calculation
-    var gridSize by remember { mutableStateOf(IntSize.Zero) }
-    
-    // Drag selection state
-    var isDragging by remember { mutableStateOf(false) }
-    var dragStartIndex by remember { mutableStateOf(-1) }
-    var dragCurrentIndex by remember { mutableStateOf(-1) }
-    var initialSelection by remember { mutableStateOf<Set<String>>(emptySet()) }
-    
-    // Auto-scroll state
-    var autoScrollDirection by remember { mutableStateOf(0) } // -1: up, 0: none, 1: down
-    
-    // Auto-scroll threshold in pixels
-    val scrollThreshold = with(density) { 80.dp.toPx() }
-    val scrollSpeed = 10f
-    
-    // Auto-scroll effect
-    if (autoScrollDirection != 0 && isDragging) {
-        coroutineScope.launch {
-            while (isActive && autoScrollDirection != 0 && isDragging) {
-                gridState.animateScrollBy(scrollSpeed * autoScrollDirection)
-                delay(16) // ~60fps
-            }
-        }
-    }
-    
-    // Helper function to get item index at position
-    fun getItemIndexAtPosition(position: Offset): Int {
-        val visibleItems = gridState.layoutInfo.visibleItemsInfo
-        for (itemInfo in visibleItems) {
-            val itemLeft = itemInfo.offset.x
-            val itemTop = itemInfo.offset.y
-            val itemRight = itemLeft + itemInfo.size.width
-            val itemBottom = itemTop + itemInfo.size.height
-            
-            if (position.x >= itemLeft && position.x <= itemRight &&
-                position.y >= itemTop && position.y <= itemBottom) {
-                return itemInfo.index
-            }
-        }
-        return -1
-    }
-    
-    // Helper function to select range between two indices
-    fun selectRange(startIndex: Int, endIndex: Int): Set<String> {
-        if (startIndex < 0 || endIndex < 0) return initialSelection
-        
-        val minIndex = minOf(startIndex, endIndex)
-        val maxIndex = maxOf(startIndex, endIndex)
-        
-        val rangeIds = photos
-            .filterIndexed { index, _ -> index in minIndex..maxIndex }
-            .map { it.id }
-            .toSet()
-        
-        return initialSelection + rangeIds
-    }
-    
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .onSizeChanged { gridSize = it }
-            .pointerInput(photos, selectedIds) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { offset ->
-                        val index = getItemIndexAtPosition(offset)
-                        if (index >= 0 && index < photos.size) {
-                            isDragging = true
-                            dragStartIndex = index
-                            dragCurrentIndex = index
-                            initialSelection = selectedIds
-                            
-                            // Add initial item to selection
-                            val photoId = photos[index].id
-                            val newSelection = if (selectedIds.contains(photoId)) {
-                                selectedIds
-                            } else {
-                                selectedIds + photoId
-                            }
-                            onSelectionChanged(newSelection)
-                            
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        }
-                    },
-                    onDrag = { change, _ ->
-                        if (!isDragging) return@detectDragGesturesAfterLongPress
-                        
-                        change.consume()
-                        val position = change.position
-                        
-                        // Check for auto-scroll
-                        autoScrollDirection = when {
-                            position.y < scrollThreshold -> -1
-                            position.y > gridSize.height - scrollThreshold -> 1
-                            else -> 0
-                        }
-                        
-                        // Find item at current position
-                        val currentIndex = getItemIndexAtPosition(position)
-                        if (currentIndex >= 0 && currentIndex != dragCurrentIndex) {
-                            dragCurrentIndex = currentIndex
-                            
-                            // Select range from start to current
-                            val newSelection = selectRange(dragStartIndex, dragCurrentIndex)
-                            if (newSelection != selectedIds) {
-                                onSelectionChanged(newSelection)
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            }
-                        }
-                    },
-                    onDragEnd = {
-                        isDragging = false
-                        autoScrollDirection = 0
-                        dragStartIndex = -1
-                        dragCurrentIndex = -1
-                    },
-                    onDragCancel = {
-                        isDragging = false
-                        autoScrollDirection = 0
-                        dragStartIndex = -1
-                        dragCurrentIndex = -1
-                    }
-                )
-            }
-    ) {
+
+    Box(modifier = modifier.fillMaxSize()) {
         LazyVerticalStaggeredGrid(
             columns = StaggeredGridCells.Fixed(columns.coerceIn(1, 5)),
             state = gridState,
-            contentPadding = PaddingValues(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalItemSpacing = 8.dp,
+            contentPadding = PaddingValues(2.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalItemSpacing = 2.dp,
             modifier = Modifier.fillMaxSize()
         ) {
             itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
                 val isSelected = selectedIds.contains(photo.id)
-                val selectionMode = selectedIds.isNotEmpty() || isDragging
-                val isInDragRange = isDragging && 
-                    dragStartIndex >= 0 && 
-                    dragCurrentIndex >= 0 &&
-                    index in minOf(dragStartIndex, dragCurrentIndex)..maxOf(dragStartIndex, dragCurrentIndex)
-                
+                val selectionMode = selectedIds.isNotEmpty()
+
                 SelectableStaggeredPhotoItem(
                     photo = photo,
-                    isSelected = isSelected || isInDragRange,
+                    isSelected = isSelected,
                     selectionMode = selectionMode,
                     onClick = {
-                        if (selectionMode && !isDragging) {
+                        if (selectionMode) {
                             // Toggle selection
                             val newSelection = if (isSelected) {
                                 selectedIds - photo.id
@@ -368,21 +239,18 @@ fun SelectableStaggeredPhotoGrid(
                                 selectedIds + photo.id
                             }
                             onSelectionChanged(newSelection)
-                        } else if (!isDragging) {
+                        } else {
                             onPhotoClick(photo.id, index)
                         }
                     },
                     onLongPress = {
-                        // Long press without drag
-                        if (!isDragging) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            // If custom callback provided, use it; otherwise enter selection mode
-                            if (onPhotoLongClick != null && !selectionMode) {
-                                onPhotoLongClick(photo.id, index)
-                            } else if (!selectionMode) {
-                                onSelectionChanged(setOf(photo.id))
-                            }
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        // Select the photo and enter selection mode
+                        if (!isSelected) {
+                            onSelectionChanged(selectedIds + photo.id)
                         }
+                        // Optionally trigger the long click callback
+                        onPhotoLongClick?.invoke(photo.id, index)
                     }
                 )
             }

@@ -188,20 +188,10 @@ fun TimelineDetailScreen(
                 enter = slideInVertically(initialOffsetY = { it }),
                 exit = slideOutVertically(targetOffsetY = { it })
             ) {
-                val singleSelectedPhoto = if (uiState.selectedCount == 1) {
-                    uiState.photos.find { it.id in uiState.selectedIds }
-                } else null
-
                 val bottomBarActions = BottomBarConfigs.adaptive(
                     selectedCount = uiState.selectedCount,
                     singleSelectActions = {
                         BottomBarConfigs.albumPhotosSingleSelect(
-                            onEdit = { /* Not used in timeline */ },
-                            onShare = {
-                                singleSelectedPhoto?.let {
-                                    shareImage(context, Uri.parse(it.systemUri))
-                                }
-                            },
                             onAddToOtherAlbum = { showAlbumPicker = true },
                             onBatchChangeStatus = { showBatchChangeStatusDialog = true },
                             onCopy = { viewModel.copySelectedPhotos() },

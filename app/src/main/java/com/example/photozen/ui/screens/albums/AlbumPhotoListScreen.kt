@@ -70,6 +70,9 @@ import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
 import com.example.photozen.ui.screens.photolist.PhotoListSortOrder
 import com.example.photozen.ui.components.PhotoGridMode
+import com.example.photozen.ui.components.SortDropdownButton
+import com.example.photozen.ui.components.SortOption
+import com.example.photozen.ui.components.SortOptions
 import com.example.photozen.ui.components.ViewModeDropdownButton
 
 /**
@@ -151,18 +154,11 @@ fun AlbumPhotoListScreen(
                 enter = slideInVertically(initialOffsetY = { it }),
                 exit = slideOutVertically(targetOffsetY = { it })
             ) {
-                // Get the single selected photo for single-select actions
-                val singleSelectedPhoto = if (uiState.selectedCount == 1) {
-                    uiState.photos.find { it.id in uiState.selectedIds }
-                } else null
-
                 // Phase 4 + REQ-047, REQ-048: 使用 BottomBarConfigs.adaptive 根据选择数量自动配置
                 val bottomBarActions = BottomBarConfigs.adaptive(
                     selectedCount = uiState.selectedCount,
                     singleSelectActions = {
                         BottomBarConfigs.albumPhotosSingleSelect(
-                            onEdit = { singleSelectedPhoto?.let { onNavigateToEditor(it.id) } },
-                            onShare = { singleSelectedPhoto?.let { shareImage(context, Uri.parse(it.systemUri)) } },
                             onAddToOtherAlbum = {
                                 pickerMode = "move"
                                 showAlbumPicker = true
@@ -241,48 +237,29 @@ fun AlbumPhotoListScreen(
                         }
                     },
                     actions = {
-                        // REQ-038: 排序按钮
-                        var showSortMenu by remember { mutableStateOf(false) }
-                        Box {
-                            IconButton(onClick = { showSortMenu = true }) {
-                                Icon(Icons.Default.Sort, contentDescription = "排序")
-                            }
-                            DropdownMenu(
-                                expanded = showSortMenu,
-                                onDismissRequest = { showSortMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("时间正序") },
-                                    onClick = {
-                                        viewModel.setSortOrder(PhotoListSortOrder.DATE_ASC)
-                                        showSortMenu = false
-                                    },
-                                    leadingIcon = if (uiState.sortOrder == PhotoListSortOrder.DATE_ASC) {
-                                        { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
-                                    } else null
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("时间倒序") },
-                                    onClick = {
-                                        viewModel.setSortOrder(PhotoListSortOrder.DATE_DESC)
-                                        showSortMenu = false
-                                    },
-                                    leadingIcon = if (uiState.sortOrder == PhotoListSortOrder.DATE_DESC) {
-                                        { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
-                                    } else null
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("随机") },
-                                    onClick = {
-                                        viewModel.setSortOrder(PhotoListSortOrder.RANDOM)
-                                        showSortMenu = false
-                                    },
-                                    leadingIcon = if (uiState.sortOrder == PhotoListSortOrder.RANDOM) {
-                                        { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) }
-                                    } else null
-                                )
-                            }
+                        // REQ-038: 排序按钮（使用统一组件）
+                        val currentSortOption = when (uiState.sortOrder) {
+                            PhotoListSortOrder.DATE_ASC -> SortOptions.photoTimeAsc
+                            PhotoListSortOrder.DATE_DESC -> SortOptions.photoTimeDesc
+                            PhotoListSortOrder.ADDED_ASC -> SortOptions.addedTimeAsc
+                            PhotoListSortOrder.ADDED_DESC -> SortOptions.addedTimeDesc
+                            PhotoListSortOrder.RANDOM -> SortOptions.random
                         }
+                        SortDropdownButton(
+                            currentSort = currentSortOption,
+                            options = SortOptions.albumListOptions,
+                            onSortSelected = { option ->
+                                val newSortOrder = when (option.id) {
+                                    SortOptions.photoTimeAsc.id -> PhotoListSortOrder.DATE_ASC
+                                    SortOptions.photoTimeDesc.id -> PhotoListSortOrder.DATE_DESC
+                                    SortOptions.addedTimeAsc.id -> PhotoListSortOrder.ADDED_ASC
+                                    SortOptions.addedTimeDesc.id -> PhotoListSortOrder.ADDED_DESC
+                                    SortOptions.random.id -> PhotoListSortOrder.RANDOM
+                                    else -> PhotoListSortOrder.DATE_DESC
+                                }
+                                viewModel.setSortOrder(newSortOrder)
+                            }
+                        )
                         // REQ-027: 视图模式切换（统一下拉菜单）
                         ViewModeDropdownButton(
                             currentMode = uiState.gridMode,

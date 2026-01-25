@@ -210,39 +210,13 @@ fun TrashScreen(
                         }
                     },
                     actions = {
-                        // Grid mode toggle (square vs waterfall)
                         if (uiState.photos.isNotEmpty()) {
-                            // 全选/取消全选按钮
-                            IconButton(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    if (uiState.allSelected) {
-                                        viewModel.clearSelection()
-                                    } else {
-                                        viewModel.selectAll()
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = if (uiState.allSelected) Icons.Default.Close else Icons.Default.Checklist,
-                                    contentDescription = if (uiState.allSelected) "取消全选" else "全选",
-                                    tint = if (uiState.allSelected) TrashRed else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-
-                            // 视图模式切换（统一下拉菜单）
-                            ViewModeDropdownButton(
-                                currentMode = uiState.gridMode,
-                                currentColumns = uiState.gridColumns,
-                                onModeChanged = { mode -> viewModel.setGridMode(mode) },
-                                onColumnsChanged = { cols -> viewModel.setGridColumns(cols) }
-                            )
-                            // Sort dropdown (REQ-033)
+                            // 1. 排序按钮 (REQ-033)
                             val currentSortOption = when (uiState.sortOrder) {
                                 com.example.photozen.ui.screens.photolist.PhotoListSortOrder.DATE_DESC -> SortOptions.photoTimeDesc
                                 com.example.photozen.ui.screens.photolist.PhotoListSortOrder.DATE_ASC -> SortOptions.photoTimeAsc
-                                com.example.photozen.ui.screens.photolist.PhotoListSortOrder.ADDED_DESC -> SortOptions.addedTimeDesc
-                                com.example.photozen.ui.screens.photolist.PhotoListSortOrder.ADDED_ASC -> SortOptions.addedTimeAsc
+                                com.example.photozen.ui.screens.photolist.PhotoListSortOrder.ADDED_DESC -> SortOptions.trashAddedTimeDesc
+                                com.example.photozen.ui.screens.photolist.PhotoListSortOrder.ADDED_ASC -> SortOptions.trashAddedTimeAsc
                                 com.example.photozen.ui.screens.photolist.PhotoListSortOrder.RANDOM -> SortOptions.random
                             }
                             SortDropdownButton(
@@ -259,6 +233,32 @@ fun TrashScreen(
                                     viewModel.setSortOrder(order)
                                 }
                             )
+
+                            // 2. 视图模式切换（统一下拉菜单）
+                            ViewModeDropdownButton(
+                                currentMode = uiState.gridMode,
+                                currentColumns = uiState.gridColumns,
+                                onModeChanged = { mode -> viewModel.setGridMode(mode) },
+                                onColumnsChanged = { cols -> viewModel.setGridColumns(cols) }
+                            )
+
+                            // 3. 全选/取消全选按钮
+                            IconButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    if (uiState.allSelected) {
+                                        viewModel.clearSelection()
+                                    } else {
+                                        viewModel.selectAll()
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = if (uiState.allSelected) Icons.Default.Close else Icons.Default.Checklist,
+                                    contentDescription = if (uiState.allSelected) "取消全选" else "全选",
+                                    tint = if (uiState.allSelected) TrashRed else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
