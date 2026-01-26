@@ -496,17 +496,18 @@ class TimelineDetailViewModel @Inject constructor(
 
     /**
      * Set filter session for "从此开始筛选" feature.
+     *
+     * 注意：这是一个 suspend 函数，调用者需要等待它完成后再导航，
+     * 否则导航会在筛选条件设置完成之前发生。
      */
-    fun setFilterSessionAndNavigate(photoIds: List<String>) {
-        viewModelScope.launch {
-            preferencesRepository.setSessionCustomFilter(
-                CustomFilterSession(
-                    photoIds = photoIds,
-                    preciseMode = true
-                )
+    suspend fun setFilterSessionAndNavigate(photoIds: List<String>) {
+        preferencesRepository.setSessionCustomFilter(
+            CustomFilterSession(
+                photoIds = photoIds,
+                preciseMode = true
             )
-            preferencesRepository.setPhotoFilterMode(PhotoFilterMode.CUSTOM)
-        }
+        )
+        preferencesRepository.setPhotoFilterMode(PhotoFilterMode.CUSTOM)
     }
 
     // ==================== Utility ====================
