@@ -495,7 +495,32 @@ class TimelineDetailViewModel @Inject constructor(
     // ==================== Navigation ====================
 
     /**
+     * Set filter session using time range for "开始整理" button.
+     * 使用时间范围而不是 photoIds，这样：
+     * 1. 与时间线分组列表的实现一致
+     * 2. 更高效，不需要传递大量 ID
+     * 3. 不受状态筛选影响，始终整理该时间段内所有未整理照片
+     */
+    suspend fun setFilterSessionByTimeRange() {
+        val startTime = _uiState.value.startTime
+        val endTime = _uiState.value.endTime
+        if (startTime == 0L || endTime == 0L) return
+
+        preferencesRepository.setSessionCustomFilter(
+            CustomFilterSession(
+                albumIds = null,
+                startDate = startTime,
+                endDate = endTime,
+                preciseMode = true,  // 使用精确时间戳，不扩展到一天结束
+                defaultSortOrder = com.example.photozen.data.model.PhotoSortOrder.DATE_ASC
+            )
+        )
+        // 不需要设置 PhotoFilterMode.CUSTOM，preciseMode=true 会被优先处理
+    }
+
+    /**
      * Set filter session for "从此开始筛选" feature.
+     * 用于选择模式下从某张照片开始整理。
      *
      * 注意：这是一个 suspend 函数，调用者需要等待它完成后再导航，
      * 否则导航会在筛选条件设置完成之前发生。

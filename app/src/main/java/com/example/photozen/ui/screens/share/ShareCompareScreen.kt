@@ -26,15 +26,12 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -65,7 +62,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,7 +80,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -93,11 +88,13 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.ui.components.AlbumPickerBottomSheet
 import com.example.photozen.ui.screens.lighttable.TransformState
+import com.example.photozen.ui.screens.lighttable.TransformSnapshot
 import com.example.photozen.ui.screens.lighttable.rememberTransformState
+import com.example.photozen.ui.components.fullscreen.UnifiedFullscreenViewer
+import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.TrashRed
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 
 /**
  * Screen for comparing shared photos from external apps.
@@ -125,7 +122,18 @@ fun ShareCompareScreen(
     
     // Transform state for sync zoom
     val transformState = rememberTransformState()
-    
+
+    // Individual transform states for each photo (max 6 photos)
+    val individualTransformStates = remember {
+        List(6) { TransformState() }
+    }
+
+    // Helper function to reset all zoom states
+    fun resetAllZoomStates() {
+        transformState.reset()
+        individualTransformStates.forEach { it.reset() }
+    }
+
     // Fullscreen viewer state
     var showFullscreen by remember { mutableStateOf(false) }
     var fullscreenStartIndex by remember { mutableIntStateOf(0) }
@@ -199,6 +207,7 @@ fun ShareCompareScreen(
                     selectedUris = uiState.selectedUris,
                     transformState = transformState,
                     syncZoomEnabled = uiState.syncZoomEnabled,
+                    individualTransformStates = individualTransformStates.take(uiState.photos.size),
                     onSelectPhoto = { uri ->
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         viewModel.toggleSelection(uri)
@@ -274,7 +283,7 @@ fun ShareCompareScreen(
                     SmallFloatingActionButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            transformState.reset()
+                            resetAllZoomStates()
                         },
                         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                         contentColor = MaterialTheme.colorScheme.onSurface
@@ -398,12 +407,33 @@ fun ShareCompareScreen(
             }
         }
         
-        // Fullscreen viewer
+        // Fullscreen viewer - 使用统一的全屏预览组件
         if (showFullscreen && uiState.photos.isNotEmpty()) {
-            ExternalFullscreenViewer(
-                photos = uiState.photos,
-                initialIndex = fullscreenStartIndex,
-                onDismiss = { showFullscreen = false }
+            // 将 ExternalPhoto 转换为 PhotoEntity
+            val photosForViewer = remember(uiState.photos) {
+                uiState.photos.mapIndexed { index, externalPhoto ->
+                    PhotoEntity(
+                        id = "external_$index",
+                        systemUri = externalPhoto.uri.toString(),
+                        displayName = "照片 ${index + 1}",
+                        dateTaken = System.currentTimeMillis(),
+                        size = 0L,
+                        mimeType = "image/*",
+                        width = externalPhoto.width,
+                        height = externalPhoto.height,
+                        bucketId = null
+                    )
+                }
+            }
+            UnifiedFullscreenViewer(
+                photos = photosForViewer,
+                initialIndex = fullscreenStartIndex.coerceIn(0, photosForViewer.lastIndex),
+                onExit = { showFullscreen = false },
+                onAction = { _, _ ->
+                    // 外部分享的照片不支持编辑等操作
+                },
+                showPhotoInfo = false,  // 外部分享的照片没有详细信息
+                showBottomBar = false   // 不显示操作栏，只保留预览条
             )
         }
     }
@@ -548,23 +578,50 @@ private fun ExternalComparisonGrid(
     selectedUris: Set<Uri>,
     transformState: TransformState,
     syncZoomEnabled: Boolean,
+    individualTransformStates: List<TransformState>,
     onSelectPhoto: (Uri) -> Unit,
     onFullscreenClick: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val photoCount = photos.size.coerceAtMost(6)
     if (photoCount == 0) return
-    
+
     val density = LocalDensity.current
     val spacing = 4.dp
     val spacingPx = with(density) { spacing.toPx() }
-    
+
     // Calculate average aspect ratio
     val avgAspectRatio = remember(photos) {
         if (photos.isEmpty()) 1f
         else photos.map { it.aspectRatio }.average().toFloat()
     }
-    
+
+    // Track the previous sync mode to detect transitions
+    val previousSyncEnabled = remember { mutableStateOf(syncZoomEnabled) }
+
+    // 保存每张照片在进入同步模式时的基准状态
+    val baseSnapshots = remember { mutableStateOf<List<TransformSnapshot>>(emptyList()) }
+
+    // Handle state synchronization when switching between sync and individual modes
+    if (syncZoomEnabled != previousSyncEnabled.value) {
+        if (syncZoomEnabled) {
+            // 切换到同步模式：保存当前状态作为基准，重置共享状态
+            baseSnapshots.value = individualTransformStates.map { it.toSnapshot() }
+            transformState.reset()
+        } else {
+            // 切换到独立模式：合并变换到独立状态
+            individualTransformStates.forEachIndexed { index, state ->
+                val base = baseSnapshots.value.getOrNull(index) ?: TransformSnapshot()
+                val finalScale = base.scale * transformState.scale
+                val finalOffsetX = base.offsetX + transformState.offsetX * base.scale
+                val finalOffsetY = base.offsetY + transformState.offsetY * base.scale
+                state.setAll(finalScale, finalOffsetX, finalOffsetY)
+            }
+            baseSnapshots.value = emptyList()
+        }
+        previousSyncEnabled.value = syncZoomEnabled
+    }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
@@ -572,12 +629,12 @@ private fun ExternalComparisonGrid(
     ) {
         val containerWidth = constraints.maxWidth.toFloat() - spacingPx
         val containerHeight = constraints.maxHeight.toFloat() - spacingPx
-        
+
         // Calculate optimal layout
         val layout = remember(photoCount, containerWidth, containerHeight, avgAspectRatio) {
             calculateOptimalLayout(photoCount, containerWidth, containerHeight, avgAspectRatio, spacingPx)
         }
-        
+
         // Render grid
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -585,10 +642,10 @@ private fun ExternalComparisonGrid(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             var photoIndex = 0
-            
+
             layout.rowDistribution.forEachIndexed { rowIndex, colsInRow ->
                 val isFirstRow = rowIndex == 0
-                
+
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically
@@ -598,11 +655,24 @@ private fun ExternalComparisonGrid(
                             val photo = photos[photoIndex]
                             val currentIndex = photoIndex
                             val isSelected = photo.uri in selectedUris
-                            
+
+                            // 选择有效的变换状态
+                            val effectiveTransformState = if (syncZoomEnabled) {
+                                transformState
+                            } else {
+                                individualTransformStates.getOrNull(currentIndex) ?: transformState
+                            }
+
+                            val baseSnapshot = if (syncZoomEnabled) {
+                                baseSnapshots.value.getOrNull(currentIndex)
+                            } else {
+                                null
+                            }
+
                             ExternalSyncZoomImage(
                                 photo = photo,
-                                transformState = transformState,
-                                syncZoomEnabled = syncZoomEnabled,
+                                transformState = effectiveTransformState,
+                                baseSnapshot = baseSnapshot,
                                 isSelected = isSelected,
                                 onSelect = { onSelectPhoto(photo.uri) },
                                 onFullscreenClick = { onFullscreenClick(currentIndex) },
@@ -611,7 +681,7 @@ private fun ExternalComparisonGrid(
                                     .width(with(density) { layout.photoWidth.toDp() })
                                     .height(with(density) { layout.photoHeight.toDp() })
                             )
-                            
+
                             photoIndex++
                         }
                     }
@@ -714,12 +784,13 @@ private fun createLayout(
 
 /**
  * Zoomable image for external URIs with selection support.
+ * 参考 SyncZoomImage 实现，支持同步和独立缩放模式。
  */
 @Composable
 private fun ExternalSyncZoomImage(
     photo: ExternalPhoto,
     transformState: TransformState,
-    syncZoomEnabled: Boolean,
+    baseSnapshot: TransformSnapshot? = null,
     isSelected: Boolean,
     onSelect: () -> Unit,
     onFullscreenClick: () -> Unit,
@@ -728,7 +799,7 @@ private fun ExternalSyncZoomImage(
 ) {
     val context = LocalContext.current
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
-    
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
@@ -743,39 +814,46 @@ private fun ExternalSyncZoomImage(
                 } else Modifier
             )
             .onSizeChanged { containerSize = it }
-            .pointerInput(syncZoomEnabled) {
-                if (syncZoomEnabled) {
-                    awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false)
-                        do {
-                            val event = awaitPointerEvent()
-                            val zoomChange = event.calculateZoom()
-                            val panChange = event.calculatePan()
-                            
-                            if (event.changes.size >= 2 && zoomChange != 1f) {
-                                val newScale = (transformState.scale * zoomChange).coerceIn(1f, 5f)
-                                if (transformState.scale != newScale) {
-                                    val scaleRatio = newScale / transformState.scale
-                                    transformState.updateScale(newScale)
-                                    event.changes.forEach { it.consume() }
-                                }
-                            } else if (event.changes.size == 1 && transformState.scale > 1.05f) {
-                                transformState.updateOffset(panChange.x, panChange.y)
+            // 使用 transformState 作为 key，确保切换模式时手势处理器被重新创建
+            .pointerInput(transformState) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        val event = awaitPointerEvent()
+                        val zoomChange = event.calculateZoom()
+                        val panChange = event.calculatePan()
+
+                        // 双指缩放
+                        if (event.changes.size >= 2 && zoomChange != 1f) {
+                            val newScale = (transformState.scale * zoomChange).coerceIn(1f, 5f)
+                            if (transformState.scale != newScale) {
+                                transformState.updateScale(newScale)
                                 event.changes.forEach { it.consume() }
                             }
-                        } while (event.changes.any { it.pressed })
-                    }
+                        }
+                        // 单指平移（仅在缩放状态）
+                        else if (event.changes.size == 1 && transformState.scale > 1.05f) {
+                            transformState.updateOffset(panChange.x, panChange.y)
+                            // 应用边界限制
+                            if (containerSize.width > 0 && containerSize.height > 0) {
+                                transformState.applyBounds(
+                                    containerSize.width.toFloat(),
+                                    containerSize.height.toFloat()
+                                )
+                            }
+                            event.changes.forEach { it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
                 }
             }
-            .pointerInput(Unit) {
+            .pointerInput(transformState) {
                 detectTapGestures(
                     onDoubleTap = { offset ->
-                        if (syncZoomEnabled) {
-                            if (transformState.scale > 1.5f) {
-                                transformState.reset()
-                            } else {
-                                transformState.updateScale(2.5f, offset)
-                            }
+                        // 双击切换缩放
+                        if (transformState.scale > 1.5f) {
+                            transformState.reset()
+                        } else {
+                            transformState.updateScale(2.5f, offset)
                         }
                     },
                     onTap = {
@@ -784,6 +862,23 @@ private fun ExternalSyncZoomImage(
                 )
             }
     ) {
+        // 计算最终变换值：如果有基准快照，则 最终值 = 基准 * 增量
+        val effectiveScale = if (baseSnapshot != null) {
+            baseSnapshot.scale * transformState.scale
+        } else {
+            transformState.scale
+        }
+        val effectiveOffsetX = if (baseSnapshot != null) {
+            baseSnapshot.offsetX + transformState.offsetX * baseSnapshot.scale
+        } else {
+            transformState.offsetX
+        }
+        val effectiveOffsetY = if (baseSnapshot != null) {
+            baseSnapshot.offsetY + transformState.offsetY * baseSnapshot.scale
+        } else {
+            transformState.offsetY
+        }
+
         // Image with transformation
         AsyncImage(
             model = ImageRequest.Builder(context)
@@ -795,15 +890,13 @@ private fun ExternalSyncZoomImage(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    if (syncZoomEnabled) {
-                        scaleX = transformState.scale
-                        scaleY = transformState.scale
-                        translationX = transformState.offsetX
-                        translationY = transformState.offsetY
-                    }
+                    scaleX = effectiveScale
+                    scaleY = effectiveScale
+                    translationX = effectiveOffsetX
+                    translationY = effectiveOffsetY
                 }
         )
-        
+
         // Selection indicator
         if (isSelected) {
             Box(
@@ -822,7 +915,7 @@ private fun ExternalSyncZoomImage(
                 )
             }
         }
-        
+
         // Fullscreen button
         IconButton(
             onClick = onFullscreenClick,
@@ -844,239 +937,3 @@ private fun ExternalSyncZoomImage(
     }
 }
 
-/**
- * Fullscreen viewer with circular paging.
- */
-@Composable
-private fun ExternalFullscreenViewer(
-    photos: List<ExternalPhoto>,
-    initialIndex: Int,
-    onDismiss: () -> Unit
-) {
-    val virtualPageCount = photos.size * 1000
-    val initialPage = (virtualPageCount / 2) - ((virtualPageCount / 2) % photos.size) + initialIndex
-    
-    val pagerState = rememberPagerState(initialPage = initialPage) { virtualPageCount }
-    val scope = rememberCoroutineScope()
-    val currentRealIndex = pagerState.currentPage % photos.size
-    
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize(),
-            beyondViewportPageCount = 1
-        ) { page ->
-            val realIndex = page % photos.size
-            val photo = photos[realIndex]
-            val isCurrentPage = page == pagerState.currentPage
-            
-            FullscreenZoomableImage(
-                photo = photo,
-                isCurrentPage = isCurrentPage,
-                onRequestNextPage = {
-                    scope.launch {
-                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                    }
-                },
-                onRequestPrevPage = {
-                    scope.launch {
-                        pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                    }
-                }
-            )
-        }
-        
-        // Close button
-        IconButton(
-            onClick = onDismiss,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "关闭",
-                tint = Color.White
-            )
-        }
-        
-        // Page indicator
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 32.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color.Black.copy(alpha = 0.6f))
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-        ) {
-            Text(
-                text = "${currentRealIndex + 1} / ${photos.size}",
-                color = Color.White,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-    }
-}
-
-/**
- * Zoomable image for fullscreen viewer.
- */
-@Composable
-private fun FullscreenZoomableImage(
-    photo: ExternalPhoto,
-    isCurrentPage: Boolean,
-    onRequestNextPage: () -> Unit,
-    onRequestPrevPage: () -> Unit
-) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
-    var offsetY by remember { mutableFloatStateOf(0f) }
-    var containerSize by remember { mutableStateOf(IntSize.Zero) }
-    var boundarySwipeDistance by remember { mutableFloatStateOf(0f) }
-    val swipeThreshold = 100f
-    val context = LocalContext.current
-    
-    LaunchedEffect(isCurrentPage) {
-        if (!isCurrentPage) {
-            scale = 1f
-            offsetX = 0f
-            offsetY = 0f
-            boundarySwipeDistance = 0f
-        }
-    }
-    
-    fun calculateBounds(): Pair<Float, Float> {
-        if (containerSize.width == 0 || containerSize.height == 0) return 0f to 0f
-        
-        val scaledWidth = containerSize.width * scale
-        val scaledHeight = containerSize.height * scale
-        
-        val maxOffsetX = ((scaledWidth - containerSize.width) / 2f).coerceAtLeast(0f)
-        val maxOffsetY = ((scaledHeight - containerSize.height) / 2f).coerceAtLeast(0f)
-        
-        return maxOffsetX to maxOffsetY
-    }
-    
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .onSizeChanged { containerSize = it }
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onDoubleTap = { tapOffset ->
-                        if (scale > 1.5f) {
-                            scale = 1f
-                            offsetX = 0f
-                            offsetY = 0f
-                        } else {
-                            val newScale = 2.5f
-                            val centerX = containerSize.width / 2f
-                            val centerY = containerSize.height / 2f
-                            
-                            val scaledWidth = containerSize.width * newScale
-                            val scaledHeight = containerSize.height * newScale
-                            val maxX = ((scaledWidth - containerSize.width) / 2f).coerceAtLeast(0f)
-                            val maxY = ((scaledHeight - containerSize.height) / 2f).coerceAtLeast(0f)
-                            
-                            val newOffsetX = ((centerX - tapOffset.x) * (newScale - 1)).coerceIn(-maxX, maxX)
-                            val newOffsetY = ((centerY - tapOffset.y) * (newScale - 1)).coerceIn(-maxY, maxY)
-                            
-                            scale = newScale
-                            offsetX = newOffsetX
-                            offsetY = newOffsetY
-                        }
-                    }
-                )
-            }
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
-                    boundarySwipeDistance = 0f
-                    
-                    do {
-                        val event = awaitPointerEvent()
-                        val zoomChange = event.calculateZoom()
-                        val panChange = event.calculatePan()
-                        val pointerCount = event.changes.size
-                        
-                        if (pointerCount >= 2 && zoomChange != 1f) {
-                            val newScale = (scale * zoomChange).coerceIn(1f, 5f)
-                            
-                            if (scale != newScale) {
-                                val scaleRatio = newScale / scale
-                                offsetX *= scaleRatio
-                                offsetY *= scaleRatio
-                                scale = newScale
-                                
-                                val (maxX, maxY) = calculateBounds()
-                                offsetX = offsetX.coerceIn(-maxX, maxX)
-                                offsetY = offsetY.coerceIn(-maxY, maxY)
-                            }
-                            
-                            event.changes.forEach { it.consume() }
-                        } else if (pointerCount == 1 && scale > 1.05f) {
-                            val (maxX, maxY) = calculateBounds()
-                            
-                            val newOffsetX = offsetX + panChange.x
-                            val newOffsetY = offsetY + panChange.y
-                            
-                            val atLeftEdge = offsetX >= maxX - 1f
-                            val atRightEdge = offsetX <= -maxX + 1f
-                            
-                            when {
-                                atRightEdge && panChange.x < -5f -> {
-                                    boundarySwipeDistance += abs(panChange.x)
-                                    if (boundarySwipeDistance > swipeThreshold) {
-                                        onRequestNextPage()
-                                        boundarySwipeDistance = 0f
-                                    }
-                                }
-                                atLeftEdge && panChange.x > 5f -> {
-                                    boundarySwipeDistance += abs(panChange.x)
-                                    if (boundarySwipeDistance > swipeThreshold) {
-                                        onRequestPrevPage()
-                                        boundarySwipeDistance = 0f
-                                    }
-                                }
-                                else -> {
-                                    boundarySwipeDistance = 0f
-                                    offsetX = newOffsetX.coerceIn(-maxX, maxX)
-                                    offsetY = newOffsetY.coerceIn(-maxY, maxY)
-                                }
-                            }
-                            
-                            event.changes.forEach { it.consume() }
-                        }
-                    } while (event.changes.any { it.pressed })
-                    
-                    if (scale < 1.1f && scale != 1f) {
-                        scale = 1f
-                        offsetX = 0f
-                        offsetY = 0f
-                    }
-                }
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(photo.uri)
-                .crossfade(true)
-                .build(),
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offsetX
-                    translationY = offsetY
-                }
-        )
-    }
-}

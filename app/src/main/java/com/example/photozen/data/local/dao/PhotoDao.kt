@@ -328,6 +328,28 @@ interface PhotoDao {
     @Query("SELECT * FROM photos WHERE id IN (:ids)")
     suspend fun getPhotosByIds(ids: List<String>): List<PhotoEntity>
 
+    /**
+     * Get photos by IDs as Flow (for observing status changes).
+     * 用于时间线分组整理时监听照片状态变化。
+     */
+    @Query("SELECT * FROM photos WHERE id IN (:ids)")
+    fun getPhotosFlowByIds(ids: List<String>): Flow<List<PhotoEntity>>
+
+    /**
+     * Get UNSORTED photo IDs from a list of IDs (database-level filtering).
+     * 用于时间线分组整理，直接在数据库层面过滤，避免加载完整照片数据。
+     * Note: SQLite IN clause has a limit (~999 parameters), caller should batch if needed.
+     */
+    @Query("SELECT id FROM photos WHERE id IN (:ids) AND status = 'UNSORTED' AND is_virtual_copy = 0")
+    suspend fun getUnsortedIdsByIds(ids: List<String>): List<String>
+
+    /**
+     * Get count of UNSORTED photos from a list of IDs as Flow.
+     * 用于时间线分组整理时实时监听未整理数量变化。
+     */
+    @Query("SELECT COUNT(*) FROM photos WHERE id IN (:ids) AND status = 'UNSORTED' AND is_virtual_copy = 0")
+    fun getUnsortedCountByIdsFlow(ids: List<String>): Flow<Int>
+
     // ==================== PAGED QUERIES FOR FLOW SORTER ====================
     // These queries apply ORDER BY to ALL matching photos, then paginate.
     // This ensures correct sorting across the entire dataset, not just within a page.

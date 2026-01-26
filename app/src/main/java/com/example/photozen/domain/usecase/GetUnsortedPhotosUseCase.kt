@@ -6,6 +6,9 @@ import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoSortOrder
 import com.example.photozen.data.repository.PhotoRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 /**
@@ -122,6 +125,23 @@ class GetUnsortedPhotosUseCase @Inject constructor(
         // Priority 1: If sessionFilter has preciseMode=true, use it directly
         // This allows timeline sorting to work without changing the global filter mode
         if (sessionFilter?.preciseMode == true) {
+            // Priority 1a: If photoIds is provided, use it directly (highest priority)
+            // 这是时间线分组整理的核心逻辑：只整理指定的照片
+            val photoIds = sessionFilter.photoIds
+            if (!photoIds.isNullOrEmpty()) {
+                // 直接在数据库层面过滤，避免加载完整照片数据
+                // 如果 photoIds 超过 SQLite 限制（~999），需要分批处理
+                return if (photoIds.size <= 900) {
+                    photoDao.getUnsortedIdsByIds(photoIds)
+                } else {
+                    // 分批查询，避免 SQLite IN 子句参数限制
+                    photoIds.chunked(900).flatMap { batch ->
+                        photoDao.getUnsortedIdsByIds(batch)
+                    }
+                }
+            }
+
+            // Priority 1b: Use date range and album filters
             val startDateMs = sessionFilter.startDate
             val endDateMs = sessionFilter.endDate
             val bucketIds = sessionFilter.albumIds
@@ -332,6 +352,30 @@ class GetUnsortedPhotosUseCase @Inject constructor(
             photoDao.getUnsortedCountAllFlow(startDateMs, endDateMs)
         } else {
             photoDao.getUnsortedCountByBucketsFlow(bucketIds, startDateMs, endDateMs)
+        }
+    }
+
+    /**
+     * Get count of unsorted photos from a specific list of photo IDs.
+     * 用于时间线分组整理时计算未整理照片数量。
+     * 直接在数据库层面计数，避免加载完整照片数据。
+     *
+     * @param photoIds List of photo IDs to check
+     * @return Flow of count of unsorted photos in the list
+     */
+    fun getCountByPhotoIds(photoIds: List<String>): Flow<Int> {
+        if (photoIds.isEmpty()) return flowOf(0)
+        // 直接在数据库层面计数，高效且实时
+        // 如果 photoIds 超过 SQLite 限制（~999），需要分批处理
+        return if (photoIds.size <= 900) {
+            photoDao.getUnsortedCountByIdsFlow(photoIds)
+        } else {
+            // 分批查询并合并结果
+            // 注意：这种情况下 Flow 的响应性可能不如单次查询，但能避免 crash
+            val batches = photoIds.chunked(900)
+            combine(batches.map { batch -> photoDao.getUnsortedCountByIdsFlow(batch) }) { counts ->
+                counts.sum()
+            }
         }
     }
 

@@ -854,6 +854,14 @@ class FlowSorterViewModel @Inject constructor(
             // This allows timeline sorting to work without changing the global filter mode
             val sessionFilter = params.sessionFilter
             if (sessionFilter?.preciseMode == true) {
+                // Priority 1a: If photoIds is provided, use it (highest priority)
+                // 这是时间线分组整理的核心逻辑
+                val photoIds = sessionFilter.photoIds
+                if (!photoIds.isNullOrEmpty()) {
+                    return@flatMapLatest getUnsortedPhotosUseCase.getCountByPhotoIds(photoIds)
+                }
+
+                // Priority 1b: Use date range and album filters
                 return@flatMapLatest getUnsortedPhotosUseCase.getCountFiltered(
                     sessionFilter.albumIds,
                     sessionFilter.startDate,

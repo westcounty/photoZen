@@ -240,13 +240,10 @@ fun TimelineDetailScreen(
                     totalCount = uiState.totalCount,
                     sortedCount = uiState.sortedCount,
                     onStartSort = {
-                        // 设置当前事件的所有照片为筛选范围，然后导航
-                        val photoIds = uiState.photos.map { it.id }
-                        if (photoIds.isNotEmpty()) {
-                            scope.launch {
-                                viewModel.setFilterSessionAndNavigate(photoIds)
-                                onNavigateToFlowSorter()
-                            }
+                        // 使用时间范围设置筛选，与时间线分组列表一致
+                        scope.launch {
+                            viewModel.setFilterSessionByTimeRange()
+                            onNavigateToFlowSorter()
                         }
                     },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)

@@ -69,6 +69,8 @@ import com.example.photozen.data.local.entity.PhotoEntity
  * @param onExit 退出回调
  * @param onAction 操作回调 (复制、分享等)
  * @param overlayContent 可选的覆盖层内容，如删除确认面板等
+ * @param showPhotoInfo 是否显示照片信息（左上角），默认 true
+ * @param showBottomBar 是否显示底部操作栏，默认 true
  * @param modifier Modifier
  */
 @Composable
@@ -78,6 +80,8 @@ fun UnifiedFullscreenViewer(
     onExit: () -> Unit,
     onAction: (FullscreenActionType, PhotoEntity) -> Unit,
     overlayContent: @Composable (() -> Unit)? = null,
+    showPhotoInfo: Boolean = true,
+    showBottomBar: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     // 当前照片索引 - 使用 initialIndex 作为 key，确保每次打开时都能正确定位
@@ -176,23 +180,25 @@ fun UnifiedFullscreenViewer(
                 .padding(top = 24.dp)
         )
 
-        // 可隐藏的覆盖层 (REQ-016)
-        AnimatedVisibility(
-            visible = showOverlay,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                // 图片信息 - 左上角 (REQ-013)
-                currentPhoto?.let { photo ->
-                    PhotoInfoOverlay(
-                        photo = photo,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .statusBarsPadding()
-                            .padding(start = 16.dp, top = 56.dp) // 避开序号指示器
-                    )
+        // 可隐藏的覆盖层 (REQ-016) - 仅在 showPhotoInfo 为 true 时显示
+        if (showPhotoInfo) {
+            AnimatedVisibility(
+                visible = showOverlay,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    // 图片信息 - 左上角 (REQ-013)
+                    currentPhoto?.let { photo ->
+                        PhotoInfoOverlay(
+                            photo = photo,
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .statusBarsPadding()
+                                .padding(start = 16.dp, top = 56.dp) // 避开序号指示器
+                        )
+                    }
                 }
             }
         }
@@ -207,25 +213,32 @@ fun UnifiedFullscreenViewer(
             Column(
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // 预览条 (REQ-014)
+                // 预览条 (REQ-014) - 始终显示
                 BottomPreviewStrip(
                     photos = photos,
                     currentIndex = currentIndex,
                     onIndexChange = { currentIndex = it },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            // 如果不显示底部操作栏，预览条需要自己处理导航栏间距
+                            if (!showBottomBar) Modifier.navigationBarsPadding() else Modifier
+                        )
                 )
 
-                // 底部操作栏 (REQ-015)
-                currentPhoto?.let { photo ->
-                    FullscreenBottomBar(
-                        photo = photo,
-                        onAction = { actionType ->
-                            onAction(actionType, photo)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                    )
+                // 底部操作栏 (REQ-015) - 仅在 showBottomBar 为 true 时显示
+                if (showBottomBar) {
+                    currentPhoto?.let { photo ->
+                        FullscreenBottomBar(
+                            photo = photo,
+                            onAction = { actionType ->
+                                onAction(actionType, photo)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                        )
+                    }
                 }
             }
         }
