@@ -116,6 +116,7 @@ import com.example.photozen.ui.components.ConfirmDeleteSheet
 import com.example.photozen.ui.components.DeleteType
 import com.example.photozen.ui.components.DragSelectPhotoGrid
 import com.example.photozen.ui.components.EmptyStates
+import com.example.photozen.ui.components.MaybePhotoActionSheet
 import com.example.photozen.ui.components.GuideTooltip
 import com.example.photozen.ui.components.ArrowDirection
 import com.example.photozen.ui.guide.rememberGuideState
@@ -163,7 +164,10 @@ fun PhotoListScreen(
     // REQ-032, REQ-034: 全屏预览状态
     var showFullscreenViewer by remember { mutableStateOf(false) }
     var fullscreenInitialIndex by remember { mutableStateOf(0) }
-    
+
+    // 待定照片长按操作菜单状态 (仅用于 MAYBE 列表)
+    var showMaybeActionSheet by remember { mutableStateOf(false) }
+    var maybeActionPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
 
     // 处理 UI 事件（撤销等）
     LaunchedEffect(Unit) {
@@ -512,14 +516,24 @@ fun PhotoListScreen(
                                         showFullscreenViewer = true
                                     }
                                 },
-                                onPhotoLongPress = { _, _ ->
-                                    // 长按选择已在 DragSelectPhotoGrid.onLongPress 中处理
-                                    // 此回调仅用于额外操作（如显示操作菜单），目前无需额外处理
+                                onPhotoLongPress = { photoId, _ ->
+                                    // 待定列表特殊处理：长按显示操作菜单
+                                    if (uiState.status == PhotoStatus.MAYBE) {
+                                        val photo = uiState.photos.find { it.id == photoId }
+                                        if (photo != null) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            maybeActionPhoto = photo
+                                            showMaybeActionSheet = true
+                                        }
+                                    }
+                                    // 其他列表的长按选择已在 DragSelectPhotoGrid.onLongPress 中处理
                                 },
                                 columns = uiState.gridColumns,
                                 gridMode = uiState.gridMode,
                                 selectionColor = color,
                                 clickAlwaysTogglesSelection = uiState.status == PhotoStatus.MAYBE,
+                                // 待定列表长按不进入选择模式，仅显示操作菜单
+                                longPressAddsToSelection = uiState.status != PhotoStatus.MAYBE,
                                 onSelectionToggle = { photoId ->
                                     // Toggle selection using ViewModel to ensure fresh state
                                     val success = viewModel.togglePhotoSelectionWithLimit(photoId)
@@ -557,6 +571,53 @@ fun PhotoListScreen(
             onPermissionGranted = { viewModel.onPermissionGranted() },
             onDismiss = { viewModel.dismissPermissionDialog() },
             showRetryError = uiState.permissionRetryError
+        )
+    }
+
+    // 待定照片长按操作菜单 (仅用于 MAYBE 列表)
+    if (showMaybeActionSheet && maybeActionPhoto != null) {
+        MaybePhotoActionSheet(
+            photo = maybeActionPhoto!!,
+            onDismiss = {
+                showMaybeActionSheet = false
+                maybeActionPhoto = null
+            },
+            onMarkAsKeep = {
+                maybeActionPhoto?.let { photo ->
+                    viewModel.moveToKeep(photo.id)
+                }
+            },
+            onMoveToTrash = {
+                maybeActionPhoto?.let { photo ->
+                    viewModel.moveToTrash(photo.id)
+                }
+            },
+            onPermanentDelete = {
+                // 使用统一的删除确认弹窗
+                pendingDeletePhoto = maybeActionPhoto
+                showDeleteConfirmSheet = true
+            }
+        )
+    }
+
+    // 待定照片彻底删除确认弹窗
+    if (showDeleteConfirmSheet && pendingDeletePhoto != null && uiState.status == PhotoStatus.MAYBE) {
+        ConfirmDeleteSheet(
+            photos = listOf(pendingDeletePhoto!!),
+            deleteType = DeleteType.PERMANENT_DELETE,
+            onConfirm = {
+                showDeleteConfirmSheet = false
+                pendingDeletePhoto?.let { photo ->
+                    viewModel.requestPermanentDelete(photo.id)
+                }
+                pendingDeletePhoto = null
+                showMaybeActionSheet = false
+                maybeActionPhoto = null
+            },
+            onDismiss = {
+                showDeleteConfirmSheet = false
+                pendingDeletePhoto = null
+            }
         )
     }
 }

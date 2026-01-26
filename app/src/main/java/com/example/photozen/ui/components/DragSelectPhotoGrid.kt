@@ -229,7 +229,9 @@ fun DragSelectPhotoGrid(
     config: DragSelectConfig = DragSelectPhotoGridDefaults.StandardConfig,
     showStatusBadge: Boolean = false,
     clickAlwaysTogglesSelection: Boolean = false,
-    onSelectionToggle: ((String) -> Unit)? = null
+    onSelectionToggle: ((String) -> Unit)? = null,
+    /** 长按时是否自动添加到选择 (默认 true，待定列表设为 false 以仅显示操作菜单) */
+    longPressAddsToSelection: Boolean = true
 ) {
     // Note: Drag select functionality has been removed (Phase 3-10)
     // Long press is now handled by individual items only
@@ -271,7 +273,8 @@ fun DragSelectPhotoGrid(
                 },
                 onLongPress = {
                     // Long press selects the photo and enters selection mode
-                    if (!selectedIds.contains(photo.id)) {
+                    // (unless longPressAddsToSelection is false, e.g., for MAYBE list action sheet)
+                    if (longPressAddsToSelection && !selectedIds.contains(photo.id)) {
                         onSelectionChanged(selectedIds + photo.id)
                     }
                     onPhotoLongPress(photo.id, photo.systemUri)

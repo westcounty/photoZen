@@ -188,38 +188,12 @@ fun TimelineDetailScreen(
                 enter = slideInVertically(initialOffsetY = { it }),
                 exit = slideOutVertically(targetOffsetY = { it })
             ) {
-                val bottomBarActions = BottomBarConfigs.adaptive(
-                    selectedCount = uiState.selectedCount,
-                    singleSelectActions = {
-                        BottomBarConfigs.albumPhotosSingleSelect(
-                            onAddToOtherAlbum = { showAlbumPicker = true },
-                            onBatchChangeStatus = { showBatchChangeStatusDialog = true },
-                            onCopy = { viewModel.copySelectedPhotos() },
-                            onStartFromHere = {
-                                val firstSelectedIndex = uiState.photos.indexOfFirst { it.id in uiState.selectedIds }
-                                if (firstSelectedIndex >= 0) {
-                                    val photoIdsFromHere = uiState.photos
-                                        .drop(firstSelectedIndex)
-                                        .map { it.id }
-                                    if (photoIdsFromHere.isNotEmpty()) {
-                                        scope.launch {
-                                            viewModel.setFilterSessionAndNavigate(photoIdsFromHere)
-                                            onNavigateToFlowSorter()
-                                        }
-                                    }
-                                }
-                            },
-                            onDelete = { showDeleteConfirmSheet = true }
-                        )
-                    },
-                    multiSelectActions = {
-                        BottomBarConfigs.albumPhotosMultiSelect(
-                            onAddToOtherAlbum = { showAlbumPicker = true },
-                            onBatchChangeStatus = { showBatchChangeStatusDialog = true },
-                            onCopy = { viewModel.copySelectedPhotos() },
-                            onDelete = { showDeleteConfirmSheet = true }
-                        )
-                    }
+                // 时间线详情页不显示"从这张开始"按钮，单选和多选都使用相同的配置
+                val bottomBarActions = BottomBarConfigs.albumPhotosMultiSelect(
+                    onAddToOtherAlbum = { showAlbumPicker = true },
+                    onBatchChangeStatus = { showBatchChangeStatusDialog = true },
+                    onCopy = { viewModel.copySelectedPhotos() },
+                    onDelete = { showDeleteConfirmSheet = true }
                 )
 
                 SelectionBottomBar(
