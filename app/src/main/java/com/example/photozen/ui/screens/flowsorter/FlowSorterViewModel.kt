@@ -6,6 +6,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.dao.AlbumBubbleDao
+import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoSortOrder
@@ -20,6 +21,7 @@ import com.example.photozen.data.source.MediaStoreDataSource
 import com.example.photozen.domain.usecase.AlbumOperationsUseCase
 import com.example.photozen.domain.usecase.GetDailyTaskStatusUseCase
 import com.example.photozen.domain.usecase.GetUnsortedPhotosUseCase
+import com.example.photozen.domain.usecase.ManageTrashUseCase
 import com.example.photozen.domain.usecase.MovePhotoResult
 import com.example.photozen.domain.usecase.SortPhotoUseCase
 import com.example.photozen.domain.usecase.SyncPhotosUseCase
@@ -32,6 +34,7 @@ import com.example.photozen.domain.model.FilterConfig
 import com.example.photozen.domain.model.FilterPreset
 import com.example.photozen.domain.model.FilterType
 import com.example.photozen.domain.model.UndoAction
+import com.example.photozen.ui.components.PhotoGridMode
 import com.example.photozen.ui.state.UndoManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -120,6 +123,7 @@ data class FlowSorterUiState(
     val selectedPhotoIds: Set<String> = emptySet(),
     val sortOrder: PhotoSortOrder = PhotoSortOrder.DATE_DESC,
     val gridColumns: Int = 2,
+    val gridMode: PhotoGridMode = PhotoGridMode.WATERFALL,  // 网格/瀑布流视图模式
     val filterMode: PhotoFilterMode = PhotoFilterMode.ALL,
     val cameraAlbumsLoaded: Boolean = false,
     val isDailyTask: Boolean = false,
@@ -189,6 +193,7 @@ class FlowSorterViewModel @Inject constructor(
     private val getDailyTaskStatusUseCase: GetDailyTaskStatusUseCase,
     private val widgetUpdater: WidgetUpdater,
     private val albumBubbleDao: AlbumBubbleDao,
+    private val photoDao: PhotoDao,
     private val albumOperationsUseCase: AlbumOperationsUseCase,
     private val storagePermissionHelper: StoragePermissionHelper,
     val guideRepository: GuideRepository,
@@ -197,7 +202,9 @@ class FlowSorterViewModel @Inject constructor(
     // Phase 4: 预加载器
     private val photoPreloader: PhotoPreloader,
     // REQ-060: 全局撤销管理器
-    private val undoManager: UndoManager
+    private val undoManager: UndoManager,
+    // 永久删除支持
+    private val manageTrashUseCase: ManageTrashUseCase
 ) : ViewModel() {
     
     private val isDailyTask: Boolean = savedStateHandle["isDailyTask"] ?: false
@@ -234,8 +241,19 @@ class FlowSorterViewModel @Inject constructor(
         .map { list -> list.associate { it.bucketId to it.displayName } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
     
-    /** 可选相册列表（用于 FilterBottomSheet） */
-    val albumBubblesForFilter: StateFlow<List<AlbumBubbleEntity>> = albumBubbleDao.getAll()
+    /** 系统相册列表缓存（用于获取相册名称） */
+    private val _systemAlbumsCache = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /** 可选相册列表（用于 FilterBottomSheet）- 仅显示有待筛选照片的相册 */
+    val albumBubblesForFilter: StateFlow<List<AlbumBubbleEntity>> = photoDao
+        .getBucketIdsWithUnsortedPhotos()
+        .combine(_systemAlbumsCache) { bucketIds, albumNamesMap ->
+            // Map bucket IDs to AlbumBubbleEntity, using cached album names
+            bucketIds.mapNotNull { bucketId ->
+                val displayName = albumNamesMap[bucketId] ?: return@mapNotNull null
+                AlbumBubbleEntity(bucketId, displayName, 0)
+            }.sortedBy { it.displayName }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     
     // Initialize view mode based on navigation parameter
@@ -245,6 +263,8 @@ class FlowSorterViewModel @Inject constructor(
     private val _selectedPhotoIds = MutableStateFlow<Set<String>>(emptySet())
     private val _sortOrder = MutableStateFlow(PhotoSortOrder.DATE_DESC)
     private val _gridColumns = MutableStateFlow(2)
+    private val _gridMode = MutableStateFlow(PhotoGridMode.WATERFALL)
+    val gridMode: StateFlow<PhotoGridMode> = _gridMode.asStateFlow()
     
     // Album mode state
     private val _cardSortingAlbumEnabled = MutableStateFlow(false)
@@ -852,6 +872,7 @@ class FlowSorterViewModel @Inject constructor(
         val selectedPhotoIds: Set<String>,
         val sortOrder: PhotoSortOrder,
         val gridColumns: Int,
+        val gridMode: PhotoGridMode,
         val albumState: AlbumModeState
     )
     
@@ -863,8 +884,8 @@ class FlowSorterViewModel @Inject constructor(
         _lastAction,
         combine(_error, _counters, _combo) { e, c, co -> Triple(e, c, co) },
         _viewMode,
-        combine(_selectedPhotoIds, _sortOrder, _gridColumns, albumStateFlow) { ids, order, cols, album -> 
-            SelectionAndAlbumState(ids, order, cols, album) 
+        combine(_selectedPhotoIds, _sortOrder, _gridColumns, _gridMode, albumStateFlow) { ids, order, cols, mode, album ->
+            SelectionAndAlbumState(ids, order, cols, mode, album)
         },
         combine(
             preferencesRepository.getPhotoFilterMode(), 
@@ -900,6 +921,7 @@ class FlowSorterViewModel @Inject constructor(
         val selectedIds = selectionAndAlbum.selectedPhotoIds
         val sortOrder = selectionAndAlbum.sortOrder
         val gridColumns = selectionAndAlbum.gridColumns
+        val gridMode = selectionAndAlbum.gridMode
         val albumState = selectionAndAlbum.albumState
         val filterMode = prefsState.first.first
         val cameraLoaded = prefsState.first.second
@@ -966,6 +988,7 @@ class FlowSorterViewModel @Inject constructor(
             selectedPhotoIds = selectedIds,
             sortOrder = sortOrder,
             gridColumns = gridColumns,
+            gridMode = gridMode,
             filterMode = filterMode,
             cameraAlbumsLoaded = cameraLoaded,
             isDailyTask = isDailyTask,
@@ -1084,6 +1107,8 @@ class FlowSorterViewModel @Inject constructor(
         try {
             val albums = mediaStoreDataSource.getAllAlbums()
             _cameraAlbumIds.value = albums.filter { it.isCamera }.map { it.id }
+            // Cache all album names for filter panel
+            _systemAlbumsCache.value = albums.associate { it.id to it.name }
         } catch (e: Exception) {
             // Ignore errors, just use empty list
         } finally {
@@ -1568,7 +1593,21 @@ class FlowSorterViewModel @Inject constructor(
         _pendingPhotoId = null
         _pendingAlbumBucketId.value = null
     }
-    
+
+    /**
+     * Called when a photo has been permanently deleted from the device.
+     * Removes the photo from our local database.
+     */
+    fun onPhotoDeletedFromDevice(photoId: String) {
+        viewModelScope.launch {
+            try {
+                manageTrashUseCase.deletePhotos(listOf(photoId))
+            } catch (e: Exception) {
+                _error.value = "更新数据库失败: ${e.message}"
+            }
+        }
+    }
+
     /**
      * Load all system albums for the album picker.
      */
@@ -1727,7 +1766,15 @@ class FlowSorterViewModel @Inject constructor(
             _gridColumns.value = validColumns
         }
     }
-    
+
+    /**
+     * Set grid mode (SQUARE or WATERFALL).
+     * Used by ViewModeDropdownButton to switch between grid and waterfall layouts.
+     */
+    fun setGridMode(mode: PhotoGridMode) {
+        _gridMode.value = mode
+    }
+
     /**
      * Update selected photo IDs.
      */

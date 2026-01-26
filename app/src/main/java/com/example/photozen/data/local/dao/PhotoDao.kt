@@ -776,6 +776,17 @@ interface PhotoDao {
      */
     @Query("SELECT system_uri FROM photos WHERE is_virtual_copy = 0")
     suspend fun getAllSystemUris(): List<String>
+
+    /**
+     * Get distinct bucket IDs that contain unsorted photos.
+     * Used for the filter panel to show only relevant albums.
+     */
+    @Query("""
+        SELECT DISTINCT bucket_id
+        FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IS NOT NULL
+    """)
+    fun getBucketIdsWithUnsortedPhotos(): Flow<List<String>>
     
     /**
      * Get all photo IDs that are not virtual copies.

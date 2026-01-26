@@ -118,6 +118,15 @@ import com.example.photozen.ui.components.shareImage
 import com.example.photozen.domain.model.FilterType
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.boundsInWindow
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import com.example.photozen.ui.components.ConfirmDeleteSheet
+import com.example.photozen.ui.components.DeleteType
 import androidx.compose.ui.layout.onGloballyPositioned
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
@@ -172,9 +181,6 @@ fun FlowSorterScreen(
     val albumNames by viewModel.albumNames.collectAsState()
     val albumsForFilter by viewModel.albumBubblesForFilter.collectAsState()
     var showFilterSheet by remember { mutableStateOf(false) }
-
-    // 列表模式的网格/瀑布流视图状态
-    var gridMode by remember { mutableStateOf(PhotoGridMode.WATERFALL) }
 
     // Fullscreen viewer state - 使用索引而非单个照片对象
     var fullscreenPhotoIndex by remember { mutableIntStateOf(-1) }
@@ -276,9 +282,9 @@ fun FlowSorterScreen(
                             // 3. 视图模式下拉按钮（仅列表模式显示）
                             if (uiState.viewMode == FlowSorterViewMode.LIST) {
                                 ViewModeDropdownButton(
-                                    currentMode = gridMode,
+                                    currentMode = uiState.gridMode,
                                     currentColumns = uiState.gridColumns,
-                                    onModeChanged = { gridMode = it },
+                                    onModeChanged = { viewModel.setGridMode(it) },
                                     onColumnsChanged = { viewModel.setGridColumns(it) }
                                 )
                             }
@@ -291,7 +297,7 @@ fun FlowSorterScreen(
                                     viewModel.setViewMode(newMode)
                                 },
                                 modifier = Modifier.onGloballyPositioned { coordinates ->
-                                    viewToggleBounds = coordinates.boundsInRoot()
+                                    viewToggleBounds = coordinates.boundsInWindow()
                                 }
                             ) {
                                 Icon(
@@ -416,6 +422,26 @@ fun FlowSorterContent(
     val availableAlbums by viewModel.availableAlbums.collectAsState()
     var selectedAlbumIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
+    // 全屏预览永久删除状态
+    var showDeleteConfirmSheet by remember { mutableStateOf(false) }
+    var pendingDeletePhoto by remember { mutableStateOf<PhotoEntity?>(null) }
+
+    // 永久删除 Activity Result Launcher
+    val deleteResultLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            pendingDeletePhoto?.let { photo ->
+                viewModel.onPhotoDeletedFromDevice(photo.id)
+            }
+            scope.launch {
+                snackbarHostState.showSnackbar("已永久删除")
+            }
+        }
+        pendingDeletePhoto = null
+        fullscreenPhotoIndex = -1  // 删除后关闭全屏预览
+    }
+
     // REQ-067: 滑动筛选全屏新手引导（替代分步引导）
     val swipeSortFullscreenGuide = rememberGuideState(
         guideKey = GuideKey.SWIPE_SORT_FULLSCREEN_GUIDE,
@@ -425,9 +451,6 @@ fun FlowSorterContent(
     // Local view mode state for workflow mode (since we don't have TopAppBar)
     var localViewMode by remember { mutableStateOf(FlowSorterViewMode.CARD) }
     val effectiveViewMode = if (isWorkflowMode) localViewMode else uiState.viewMode
-
-    // Local grid mode state for list view (SQUARE = grid, WATERFALL = staggered)
-    var gridMode by remember { mutableStateOf(PhotoGridMode.WATERFALL) }
 
     // 筛选相关状态（深度整理模式下使用）
     val filterConfig by viewModel.filterConfig.collectAsState()
@@ -553,7 +576,7 @@ fun FlowSorterContent(
                                 }
                             },
                             columns = uiState.gridColumns,
-                            gridMode = gridMode,
+                            gridMode = uiState.gridMode,
                             enableDragSelect = false  // Disable drag select, use simple long press
                         )
                     }
@@ -775,9 +798,9 @@ fun FlowSorterContent(
                                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
                             ) {
                                 ViewModeDropdownButton(
-                                    currentMode = gridMode,
+                                    currentMode = uiState.gridMode,
                                     currentColumns = uiState.gridColumns,
-                                    onModeChanged = { gridMode = it },
+                                    onModeChanged = { viewModel.setGridMode(it) },
                                     onColumnsChanged = { viewModel.setGridColumns(it) }
                                 )
                             }
@@ -837,7 +860,9 @@ fun FlowSorterContent(
                             shareImage(context, android.net.Uri.parse(photo.systemUri))
                         }
                         FullscreenActionType.DELETE -> {
-                            // 筛选页面不支持删除，可以提示用户
+                            // 全屏预览永久删除 - 显示确认弹窗
+                            pendingDeletePhoto = photo
+                            showDeleteConfirmSheet = true
                         }
                     }
                 }
@@ -901,6 +926,48 @@ fun FlowSorterContent(
             onApplyPreset = { viewModel.applyFilter(it.config) },
             onDeletePreset = viewModel::deleteFilterPreset,
             onDismiss = { showFilterSheet = false }
+        )
+    }
+
+    // 全屏预览永久删除确认弹窗
+    if (showDeleteConfirmSheet && pendingDeletePhoto != null) {
+        ConfirmDeleteSheet(
+            photos = listOf(pendingDeletePhoto!!),
+            deleteType = DeleteType.PERMANENT_DELETE,
+            onConfirm = {
+                showDeleteConfirmSheet = false
+                pendingDeletePhoto?.let { photo ->
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        try {
+                            val uri = Uri.parse(photo.systemUri)
+                            val deleteRequest = MediaStore.createDeleteRequest(
+                                context.contentResolver,
+                                listOf(uri)
+                            )
+                            deleteResultLauncher.launch(
+                                IntentSenderRequest.Builder(deleteRequest.intentSender).build()
+                            )
+                        } catch (e: Exception) {
+                            scope.launch {
+                                snackbarHostState.showSnackbar("删除失败: ${e.message}")
+                            }
+                            pendingDeletePhoto = null
+                        }
+                    } else {
+                        // Android 10 及以下版本直接从数据库删除
+                        viewModel.onPhotoDeletedFromDevice(photo.id)
+                        scope.launch {
+                            snackbarHostState.showSnackbar("已删除")
+                        }
+                        pendingDeletePhoto = null
+                        fullscreenPhotoIndex = -1
+                    }
+                }
+            },
+            onDismiss = {
+                showDeleteConfirmSheet = false
+                pendingDeletePhoto = null
+            }
         )
     }
 }

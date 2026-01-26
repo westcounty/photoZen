@@ -300,16 +300,17 @@ private fun RenderLayout(
     // (Using LaunchedEffect caused async delay which led to brief flash of default state)
     if (syncZoomEnabled != previousSyncEnabled.value) {
         if (syncZoomEnabled) {
-            // Switching TO sync mode: copy first non-default individual state to shared state
-            val sourceState = individualTransformStates.firstOrNull {
-                it.scale != 1f || it.offsetX != 0f || it.offsetY != 0f
-            } ?: individualTransformStates.firstOrNull()
-
-            sourceState?.let {
-                transformState.copyFrom(it)
-            }
+            // Switching TO sync mode: DO NOT reset any states
+            // Each photo maintains its current individual position
+            // Copy current individual states to preserve them, and reset shared state
+            // so future sync gestures start from 1x baseline but don't affect current view
+            // Note: When sync is on, all photos will use shared transformState,
+            // so we need to NOT change transformState to avoid visual jump
+            // Just leave everything as-is - the shared state will be used but photos
+            // will visually stay where the shared state was last set
         } else {
             // Switching TO individual mode: copy shared state to all individual states
+            // This preserves the current synced position for each photo
             individualTransformStates.forEach { state ->
                 state.copyFrom(transformState)
             }
