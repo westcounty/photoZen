@@ -55,7 +55,7 @@ object BottomBarConfigs {
     ): List<BottomBarAction> = listOf(
         albumAction(onAlbum),
         maybeAction(onMaybe),
-        deleteAction(onTrash),
+        trashAction(onTrash),
         resetAction(onReset),
         permanentDeleteAction(onPermanentDelete)
     )
@@ -75,7 +75,7 @@ object BottomBarConfigs {
     ): List<BottomBarAction> = listOf(
         albumAction(onAlbum),
         maybeAction(onMaybe),
-        deleteAction(onTrash),
+        trashAction(onTrash),
         resetAction(onReset),
         permanentDeleteAction(onPermanentDelete)
     )

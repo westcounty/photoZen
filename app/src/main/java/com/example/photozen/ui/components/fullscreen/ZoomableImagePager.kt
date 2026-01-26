@@ -362,4 +362,4 @@ private const val MIN_SCALE = 1f
 private const val MAX_SCALE = 10f
 private const val DOUBLE_TAP_SCALE = 2.5f
 private const val EDGE_THRESHOLD = 100f  // 边缘穿透阈值
-private const val DISMISS_THRESHOLD = 300f  // 垂直滑动退出阈值
+private const val DISMISS_THRESHOLD = 450f  // 垂直滑动退出阈值

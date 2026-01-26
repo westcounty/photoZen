@@ -8,6 +8,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -23,7 +24,6 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
@@ -424,27 +424,18 @@ fun MiniStatsCard(
         label = "miniStatsScale"
     )
 
-    // 阴影动态变化
-    val elevation by animateDpAsState(
-        targetValue = if (isPressed) PicZenTokens.Elevation.Level1 else PicZenTokens.Elevation.Level2,
-        animationSpec = PicZenMotion.Springs.snappy(),
-        label = "miniStatsElevation"
-    )
-
     Card(
         modifier = modifier
             .fillMaxWidth()
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .shadow(
-                elevation = elevation,
-                shape = RoundedCornerShape(12.dp)
-            ),
+            },
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
         ),
+        shape = RoundedCornerShape(12.dp),
         onClick = onClick,
         interactionSource = interactionSource
     ) {
@@ -475,6 +466,7 @@ fun MiniStatsCard(
                     .width(1.dp)
                     .height(32.dp)
                     .padding(vertical = 4.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             )
 
             // 本周整理
@@ -498,6 +490,7 @@ fun MiniStatsCard(
                         .width(1.dp)
                         .height(32.dp)
                         .padding(vertical = 4.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 )
 
                 Row(

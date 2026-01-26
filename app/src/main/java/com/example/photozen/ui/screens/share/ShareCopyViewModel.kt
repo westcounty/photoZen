@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.dao.AlbumBubbleDao
 import com.example.photozen.data.local.entity.AlbumBubbleEntity
+import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.domain.usecase.AlbumOperationsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,7 +54,8 @@ private data class CopyInternalState(
 @HiltViewModel
 class ShareCopyViewModel @Inject constructor(
     private val albumOperationsUseCase: AlbumOperationsUseCase,
-    private val albumBubbleDao: AlbumBubbleDao
+    private val albumBubbleDao: AlbumBubbleDao,
+    private val preferencesRepository: PreferencesRepository
 ) : ViewModel() {
     
     private val _internalState = MutableStateFlow(CopyInternalState())
@@ -146,13 +148,18 @@ class ShareCopyViewModel @Inject constructor(
                 }
             }
             
-            _internalState.update { 
+            // Trigger album refresh if any photos were copied successfully
+            if (successCount > 0) {
+                preferencesRepository.triggerAlbumRefresh()
+            }
+
+            _internalState.update {
                 it.copy(
                     isCopying = false,
                     copySuccess = successCount > 0,
                     copiedCount = successCount,
                     error = if (successCount == 0) "复制失败" else null
-                ) 
+                )
             }
         }
     }

@@ -108,6 +108,7 @@ import com.example.photozen.ui.components.ViewModeDropdownButton
 import com.example.photozen.ui.components.fullscreen.UnifiedFullscreenViewer
 import com.example.photozen.ui.components.fullscreen.FullscreenActionType
 import com.example.photozen.ui.components.shareImage
+import com.example.photozen.ui.components.openImageWithChooser
 import com.example.photozen.ui.theme.KeepGreen
 import com.example.photozen.ui.theme.MaybeAmber
 import com.example.photozen.ui.theme.TrashRed
@@ -172,7 +173,15 @@ fun LightTableScreen(
             viewModel.clearError()
         }
     }
-    
+
+    // Show messages
+    LaunchedEffect(uiState.message) {
+        uiState.message?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearMessage()
+        }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         // Different layouts for SELECTION vs COMPARISON mode
         when (uiState.mode) {
@@ -291,25 +300,21 @@ fun LightTableScreen(
                                             }
                                         }
                                     },
-                                    onPhotoClick = { photoId, index ->
-                                        if (uiState.selectedForComparison.isEmpty()) {
-                                            // 非选择模式 - 进入全屏预览
-                                            fullscreenStartIndex = index
-                                            showFullscreen = true
-                                        } else {
-                                            // 选择模式 - 切换选中状态
-                                            viewModel.toggleSelection(photoId)
-                                        }
+                                    onPhotoClick = { _, _ ->
+                                        // 对比台：点击由 onSelectionToggle 处理
                                     },
-                                    onPhotoLongPress = { photoId, _ ->
-                                        // 长按进入选择模式
-                                        if (photoId !in uiState.selectedForComparison) {
-                                            viewModel.toggleSelection(photoId)
-                                        }
+                                    clickAlwaysTogglesSelection = true,
+                                    onPhotoLongPress = { _, _ ->
+                                        // 长按选择已在 DragSelectPhotoGrid.onLongPress 中处理
+                                        // 此回调仅用于额外操作（如显示操作菜单），目前无需额外处理
                                     },
                                     columns = uiState.gridColumns,
                                     gridMode = uiState.gridMode,
-                                    selectionColor = MaybeAmber
+                                    selectionColor = MaybeAmber,
+                                    onSelectionToggle = { photoId ->
+                                        // Toggle selection using ViewModel to ensure fresh state
+                                        viewModel.toggleSelection(photoId)
+                                    }
                                 )
                             }
                         }
@@ -504,8 +509,12 @@ fun LightTableScreen(
                     onAction = { action, photo ->
                         // 处理全屏预览中的操作
                         when (action) {
-                            FullscreenActionType.COPY -> { /* 复制功能 */ }
-                            FullscreenActionType.OPEN_WITH -> { /* 用其他app打开 */ }
+                            FullscreenActionType.COPY -> {
+                                viewModel.copyPhoto(photo.id)
+                            }
+                            FullscreenActionType.OPEN_WITH -> {
+                                openImageWithChooser(context, android.net.Uri.parse(photo.systemUri))
+                            }
                             FullscreenActionType.EDIT -> { /* 编辑功能 */ }
                             FullscreenActionType.SHARE -> {
                                 shareImage(context, android.net.Uri.parse(photo.systemUri))

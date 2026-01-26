@@ -20,6 +20,7 @@ import com.example.photozen.domain.usecase.MovePhotoResult
 import com.example.photozen.ui.components.PhotoGridMode
 import com.example.photozen.ui.screens.photolist.PhotoListSortOrder
 import com.example.photozen.ui.state.PhotoSelectionStateHolder
+import com.example.photozen.util.StoragePermissionHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -79,7 +80,10 @@ data class AlbumPhotoListUiState(
     val isSquareMode: Boolean = true,  // true=网格, false=瀑布流
     val columnCount: Int = 3,  // 列数
     // REQ-038: 排序
-    val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC
+    val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC,
+    // Permission dialog for move operations
+    val showPermissionDialog: Boolean = false,
+    val permissionRetryError: Boolean = false
 ) {
     val selectedCount: Int get() = selectedIds.size
     val unsortedCount: Int get() = totalCount - sortedCount
@@ -101,7 +105,8 @@ class AlbumPhotoListViewModel @Inject constructor(
     private val albumOperationsUseCase: AlbumOperationsUseCase,
     private val preferencesRepository: PreferencesRepository,
     // Phase 4: 共享选择状态
-    private val selectionStateHolder: PhotoSelectionStateHolder
+    private val selectionStateHolder: PhotoSelectionStateHolder,
+    private val storagePermissionHelper: StoragePermissionHelper
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(AlbumPhotoListUiState())
@@ -325,18 +330,27 @@ class AlbumPhotoListViewModel @Inject constructor(
 
     /**
      * Apply sort order to photos list (REQ-038)
+     * Uses effective time: prefers dateTaken (EXIF), falls back to dateAdded * 1000
      */
     private fun applySortOrder(
         photos: List<PhotoEntity>,
         sortOrder: PhotoListSortOrder
     ): List<PhotoEntity> {
         return when (sortOrder) {
-            PhotoListSortOrder.DATE_DESC -> photos.sortedByDescending { it.dateTaken }
-            PhotoListSortOrder.DATE_ASC -> photos.sortedBy { it.dateTaken }
+            PhotoListSortOrder.DATE_DESC -> photos.sortedByDescending { it.getEffectiveTime() }
+            PhotoListSortOrder.DATE_ASC -> photos.sortedBy { it.getEffectiveTime() }
             PhotoListSortOrder.ADDED_DESC -> photos.sortedByDescending { it.updatedAt }
             PhotoListSortOrder.ADDED_ASC -> photos.sortedBy { it.updatedAt }
             PhotoListSortOrder.RANDOM -> photos.shuffled(kotlin.random.Random(randomSeed))
         }
+    }
+
+    /**
+     * Get effective time for sorting: prefers dateTaken, falls back to dateAdded * 1000
+     * Matches the database COALESCE logic in PhotoDao
+     */
+    private fun PhotoEntity.getEffectiveTime(): Long {
+        return if (dateTaken > 0) dateTaken else dateAdded * 1000
     }
 
     /**
@@ -386,27 +400,51 @@ class AlbumPhotoListViewModel @Inject constructor(
         selectionStateHolder.setSelection(newSelection)
     }
     
+    // Pending move operation for permission flow
+    private var pendingMoveTargetBucketId: String? = null
+
     /**
      * Move selected photos to another album.
      * Phase 4: 使用 selectionStateHolder
      */
     fun moveSelectedToAlbum(targetBucketId: String) {
+        // Check permission for move operation
+        if (storagePermissionHelper.isManageStoragePermissionApplicable() &&
+            !storagePermissionHelper.hasManageStoragePermission()) {
+            // Save pending operation and show permission dialog
+            pendingMoveTargetBucketId = targetBucketId
+            _uiState.update {
+                it.copy(
+                    showPermissionDialog = true,
+                    permissionRetryError = false
+                )
+            }
+            return
+        }
+
+        executeMoveSelectedToAlbum(targetBucketId)
+    }
+
+    /**
+     * Execute the move operation after permission check.
+     */
+    private fun executeMoveSelectedToAlbum(targetBucketId: String) {
         viewModelScope.launch {
             val selectedIds = selectionStateHolder.getSelectedList().toSet()
             val selectedPhotos = _uiState.value.photos.filter { it.id in selectedIds }
             var successCount = 0
             var needsConfirmation = false
             val movedPhotoIds = mutableListOf<String>()
-            
+
             // Get target album path once before loop
             val targetAlbum = _uiState.value.albumBubbleList.find { it.bucketId == targetBucketId }
             // Use getAlbumPath to get the actual album path (e.g., "DCIM/Camera" for system Camera album)
             val targetPath = mediaStoreDataSource.getAlbumPath(targetBucketId)
                 ?: "Pictures/${targetAlbum?.displayName ?: "PhotoZen"}"
-            
+
             for (photo in selectedPhotos) {
                 val photoUri = Uri.parse(photo.systemUri)
-                
+
                 when (val result = albumOperationsUseCase.movePhotoToAlbum(photoUri, targetPath)) {
                     is MovePhotoResult.Success -> {
                         successCount++
@@ -431,19 +469,61 @@ class AlbumPhotoListViewModel @Inject constructor(
                     }
                 }
             }
-            
+
             if (successCount > 0) {
                 // Sync Room database: update bucket_id for moved photos
                 // This ensures the photo list updates immediately without needing app restart
                 for (photoId in movedPhotoIds) {
                     photoDao.updateBucketId(photoId, targetBucketId)
                 }
-                
+
                 _uiState.update { it.copy(message = "已移动 $successCount 张照片") }
                 clearSelection()
                 // Note: Room Flow will automatically update UI since we updated the database
             }
         }
+    }
+
+    // ==================== Permission Dialog ====================
+
+    /**
+     * Called when user returns from settings after granting permission.
+     */
+    fun onPermissionGranted() {
+        if (storagePermissionHelper.hasManageStoragePermission()) {
+            // Permission granted, execute pending operation
+            val targetBucketId = pendingMoveTargetBucketId
+
+            // Close dialog and clear pending state
+            _uiState.update {
+                it.copy(
+                    showPermissionDialog = false,
+                    permissionRetryError = false
+                )
+            }
+            pendingMoveTargetBucketId = null
+
+            // Execute the pending operation
+            if (targetBucketId != null) {
+                executeMoveSelectedToAlbum(targetBucketId)
+            }
+        } else {
+            // Permission still not granted, show error
+            _uiState.update { it.copy(permissionRetryError = true) }
+        }
+    }
+
+    /**
+     * Dismiss permission dialog without granting permission.
+     */
+    fun dismissPermissionDialog() {
+        _uiState.update {
+            it.copy(
+                showPermissionDialog = false,
+                permissionRetryError = false
+            )
+        }
+        pendingMoveTargetBucketId = null
     }
     
     /**
@@ -618,6 +698,11 @@ class AlbumPhotoListViewModel @Inject constructor(
 
                 val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
                 if (result.isSuccess) {
+                    // 将新照片插入 Room 数据库，保留原照片的筛选状态
+                    result.getOrNull()?.let { newPhoto ->
+                        val photoWithStatus = newPhoto.copy(status = photo.status)
+                        photoDao.insert(photoWithStatus)
+                    }
                     successCount++
                 }
             }
@@ -631,6 +716,7 @@ class AlbumPhotoListViewModel @Inject constructor(
 
     /**
      * 复制指定照片 (全屏预览中使用)
+     * 复制后将新照片插入 Room 数据库，保留原照片的筛选状态
      */
     fun copyPhotos(photoIds: List<String>) {
         viewModelScope.launch {
@@ -646,6 +732,11 @@ class AlbumPhotoListViewModel @Inject constructor(
 
                 val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
                 if (result.isSuccess) {
+                    // 将新照片插入 Room 数据库，保留原照片的筛选状态
+                    result.getOrNull()?.let { newPhoto ->
+                        val photoWithStatus = newPhoto.copy(status = photo.status)
+                        photoDao.insert(photoWithStatus)
+                    }
                     successCount++
                 }
             }

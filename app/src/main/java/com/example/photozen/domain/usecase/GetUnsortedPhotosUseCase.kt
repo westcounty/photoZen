@@ -125,9 +125,13 @@ class GetUnsortedPhotosUseCase @Inject constructor(
             val startDateMs = sessionFilter.startDate
             val endDateMs = sessionFilter.endDate
             val bucketIds = sessionFilter.albumIds
-            val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
-            
-            val ids = photoDao.getUnsortedPhotoIdsFiltered(safeBucketIds, startDateMs, endDateMs)
+
+            // 修复 Room bug：避免使用 (:bucketIds IS NULL OR bucket_id IN (:bucketIds)) 模式
+            val ids = if (bucketIds.isNullOrEmpty()) {
+                photoDao.getUnsortedPhotoIdsAll(startDateMs, endDateMs)
+            } else {
+                photoDao.getUnsortedPhotoIdsByBuckets(bucketIds, startDateMs, endDateMs)
+            }
             return if (sortOrder == PhotoSortOrder.DATE_ASC) {
                 ids.asReversed()
             } else {
@@ -176,9 +180,13 @@ class GetUnsortedPhotosUseCase @Inject constructor(
                     photoDao.getUnsortedPhotoIdsExcludingBucketsFiltered(excludeBucketIds, startDateMs, endDateMs)
                 } else {
                     // Include mode: use IN (or null for all)
+                    // 修复 Room bug：避免使用 (:bucketIds IS NULL OR bucket_id IN (:bucketIds)) 模式
                     val bucketIds = sessionFilter?.albumIds
-                    val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
-                    photoDao.getUnsortedPhotoIdsFiltered(safeBucketIds, startDateMs, endDateMs)
+                    if (bucketIds.isNullOrEmpty()) {
+                        photoDao.getUnsortedPhotoIdsAll(startDateMs, endDateMs)
+                    } else {
+                        photoDao.getUnsortedPhotoIdsByBuckets(bucketIds, startDateMs, endDateMs)
+                    }
                 }
             }
         }
@@ -288,13 +296,23 @@ class GetUnsortedPhotosUseCase @Inject constructor(
         offsetAdjustment: Int = 0
     ): List<PhotoEntity> {
         val offset = (page * PAGE_SIZE + offsetAdjustment).coerceAtLeast(0)
-        // Room workaround: pass null for empty list to avoid SQL errors or ignoring the filter logic if intended
-        val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
-        
-        return when (sortOrder) {
-            PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosFilteredPagedDesc(safeBucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
-            PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosFilteredPagedAsc(safeBucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
-            PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosFilteredPagedRandom(safeBucketIds, startDateMs, endDateMs, randomSeed, PAGE_SIZE, offset)
+
+        // 修复 Room bug：避免使用 (:bucketIds IS NULL OR bucket_id IN (:bucketIds)) 模式
+        // 当 bucketIds 有多个元素时，Room 无法正确处理该 SQL 会导致 crash
+        return if (bucketIds.isNullOrEmpty()) {
+            // 无相册筛选，仅日期筛选
+            when (sortOrder) {
+                PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosAllDateFilteredPagedDesc(startDateMs, endDateMs, PAGE_SIZE, offset)
+                PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosAllDateFilteredPagedAsc(startDateMs, endDateMs, PAGE_SIZE, offset)
+                PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosAllDateFilteredPagedRandom(startDateMs, endDateMs, randomSeed, PAGE_SIZE, offset)
+            }
+        } else {
+            // 有相册筛选
+            when (sortOrder) {
+                PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosByBucketsDateFilteredPagedDesc(bucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
+                PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosByBucketsDateFilteredPagedAsc(bucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
+                PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosByBucketsDateFilteredPagedRandom(bucketIds, startDateMs, endDateMs, randomSeed, PAGE_SIZE, offset)
+            }
         }
     }
     
@@ -309,8 +327,12 @@ class GetUnsortedPhotosUseCase @Inject constructor(
         startDateMs: Long?,
         endDateMs: Long?
     ): Flow<Int> {
-        val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
-        return photoDao.getUnsortedCountFiltered(safeBucketIds, startDateMs, endDateMs)
+        // 修复 Room bug：避免使用 (:bucketIds IS NULL OR bucket_id IN (:bucketIds)) 模式
+        return if (bucketIds.isNullOrEmpty()) {
+            photoDao.getUnsortedCountAllFlow(startDateMs, endDateMs)
+        } else {
+            photoDao.getUnsortedCountByBucketsFlow(bucketIds, startDateMs, endDateMs)
+        }
     }
 
     /**
@@ -325,8 +347,13 @@ class GetUnsortedPhotosUseCase @Inject constructor(
         startDateMs: Long?,
         endDateMs: Long?
     ): Int {
-        val safeBucketIds = if (bucketIds.isNullOrEmpty()) null else bucketIds
-        return photoDao.getUnsortedCountFilteredSync(safeBucketIds, startDateMs, endDateMs)
+        // 修复 Room bug：避免使用 (:bucketIds IS NULL OR bucket_id IN (:bucketIds)) 模式
+        // 当 bucketIds 有多个元素时，Room 无法正确处理该 SQL 会导致 crash
+        return if (bucketIds.isNullOrEmpty()) {
+            photoDao.getUnsortedCountAllSync(startDateMs, endDateMs)
+        } else {
+            photoDao.getUnsortedCountByBucketsSync(bucketIds, startDateMs, endDateMs)
+        }
     }
 
     /**

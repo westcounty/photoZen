@@ -100,6 +100,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
+import androidx.compose.runtime.rememberUpdatedState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -226,7 +227,9 @@ fun DragSelectPhotoGrid(
     staggeredGridState: LazyStaggeredGridState = rememberLazyStaggeredGridState(),
     squareGridState: LazyGridState = rememberLazyGridState(),
     config: DragSelectConfig = DragSelectPhotoGridDefaults.StandardConfig,
-    showStatusBadge: Boolean = false
+    showStatusBadge: Boolean = false,
+    clickAlwaysTogglesSelection: Boolean = false,
+    onSelectionToggle: ((String) -> Unit)? = null
 ) {
     // Note: Drag select functionality has been removed (Phase 3-10)
     // Long press is now handled by individual items only
@@ -249,14 +252,19 @@ fun DragSelectPhotoGrid(
                 hapticEnabled = config.hapticEnabled,
                 forceSquare = forceSquare,
                 onClick = {
-                    if (selectedIds.isNotEmpty()) {
-                        // Toggle selection
-                        val newSelection = if (isSelected) {
-                            selectedIds - photo.id
+                    if (clickAlwaysTogglesSelection || selectedIds.isNotEmpty()) {
+                        // Use onSelectionToggle if provided to avoid closure capture issues
+                        if (onSelectionToggle != null) {
+                            onSelectionToggle(photo.id)
                         } else {
-                            selectedIds + photo.id
+                            // Fallback to computing newSelection locally
+                            val newSelection = if (isSelected) {
+                                selectedIds - photo.id
+                            } else {
+                                selectedIds + photo.id
+                            }
+                            onSelectionChanged(newSelection)
                         }
-                        onSelectionChanged(newSelection)
                     } else {
                         onPhotoClick(photo.id, index)
                     }
@@ -334,9 +342,10 @@ private fun DragSelectPhotoItem(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
-    // Track if a long press just happened to prevent click from firing on release
-    // This fixes the issue where releasing after long press would toggle selection off
-    var longPressJustHappened by remember { mutableStateOf(false) }
+    // 使用 rememberUpdatedState 确保 pointerInput 中总是使用最新的回调
+    // 这解决了闭包捕获旧值导致选择状态不更新的问题
+    val currentOnClick by rememberUpdatedState(onClick)
+    val currentOnLongPress by rememberUpdatedState(onLongPress)
 
     // DES-036: 按压状态追踪，用于缩放动画
     var isPressed by remember { mutableStateOf(false) }
@@ -381,7 +390,6 @@ private fun DragSelectPhotoItem(
                 } else Modifier
             )
             // Unified gesture handling: use pointerInput to handle both tap and long press
-            // This prevents the issue where releasing after long press triggers a click
             .pointerInput(enableLongPressOnItem, hapticEnabled) {
                 detectTapGestures(
                     onPress = {
@@ -393,21 +401,13 @@ private fun DragSelectPhotoItem(
                             isPressed = false
                         }
                     },
-                    onTap = {
-                        // Skip this tap if it's the release after a long press
-                        if (longPressJustHappened) {
-                            longPressJustHappened = false
-                            return@detectTapGestures
-                        }
-                        onClick()
-                    },
+                    onTap = { currentOnClick() },
                     onLongPress = if (enableLongPressOnItem) {
                         {
-                            longPressJustHappened = true
                             if (hapticEnabled) {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
-                            onLongPress()
+                            currentOnLongPress()
                         }
                     } else null
                 )

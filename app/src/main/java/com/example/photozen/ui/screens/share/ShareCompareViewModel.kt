@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.dao.AlbumBubbleDao
 import com.example.photozen.data.local.entity.AlbumBubbleEntity
+import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.domain.usecase.AlbumOperationsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -97,7 +98,8 @@ private data class CompareInternalState(
 class ShareCompareViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val albumOperationsUseCase: AlbumOperationsUseCase,
-    private val albumBubbleDao: AlbumBubbleDao
+    private val albumBubbleDao: AlbumBubbleDao,
+    private val preferencesRepository: PreferencesRepository
 ) : ViewModel() {
     
     companion object {
@@ -279,7 +281,12 @@ class ShareCompareViewModel @Inject constructor(
                 }
             }
             
-            _internalState.update { 
+            // Trigger album refresh if any photos were copied successfully
+            if (successCount > 0) {
+                preferencesRepository.triggerAlbumRefresh()
+            }
+
+            _internalState.update {
                 it.copy(
                     isCopying = false,
                     selectedUris = emptySet(),
@@ -288,11 +295,11 @@ class ShareCompareViewModel @Inject constructor(
                     } else {
                         "复制失败"
                     }
-                ) 
+                )
             }
         }
     }
-    
+
     /**
      * Remove photos from the list after successful deletion.
      * Called after system delete confirmation.

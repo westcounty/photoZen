@@ -142,11 +142,11 @@ class AlbumOperationsUseCase @Inject constructor(
     
     /**
      * Create a new album.
-     * 
+     *
      * @param name Name of the new album
-     * @return Pair of (bucketId, albumPath), or null if failed
+     * @return CreateAlbumResult containing placeholderBucketId, relativePath, and displayName, or null if failed
      */
-    suspend fun createAlbum(name: String): Pair<String, String>? {
+    suspend fun createAlbum(name: String): MediaStoreDataSource.CreateAlbumResult? {
         return mediaStoreDataSource.createAlbum(name)
     }
     

@@ -70,6 +70,9 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.asPaddingValues
 import com.example.photozen.ui.theme.PicZenMotion
 
 /**
@@ -142,8 +145,24 @@ fun GuideTooltip(
     val screenWidthDp = configuration.screenWidthDp.dp
     val screenHeightDp = configuration.screenHeightDp.dp
 
+    // 获取状态栏高度
+    // boundsInWindow() 返回的坐标包含状态栏，但 Popup 内部坐标系不包含状态栏
+    val density = LocalDensity.current
+    val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val statusBarHeightPx = with(density) { statusBarHeight.toPx() }
+
+    // 调整 targetBounds，减去状态栏高度
+    val adjustedBounds = targetBounds?.let {
+        Rect(
+            left = it.left,
+            top = it.top - statusBarHeightPx,
+            right = it.right,
+            bottom = it.bottom - statusBarHeightPx
+        )
+    }
+
     // 使用 Popup 确保遮罩覆盖整个屏幕
-    if (visible && targetBounds != null) {
+    if (visible && adjustedBounds != null) {
         Popup(
             onDismissRequest = onDismiss,
             properties = PopupProperties(
@@ -163,14 +182,14 @@ fun GuideTooltip(
             ) {
                 // 遮罩层（带挖空效果）
                 GuideOverlay(
-                    targetBounds = targetBounds,
+                    targetBounds = adjustedBounds,
                     padding = highlightPadding
                 )
 
                 // 气泡
                 GuideTooltipBubble(
                     message = message,
-                    targetBounds = targetBounds,
+                    targetBounds = adjustedBounds,
                     arrowDirection = arrowDirection,
                     stepInfo = stepInfo,
                     onDismiss = onDismiss,
@@ -247,10 +266,12 @@ private fun GuideTooltipBubble(
     val screenWidth = with(density) { configuration.screenWidthDp.dp.toPx() }
     val screenHeight = with(density) { configuration.screenHeightDp.dp.toPx() }
 
-    // 计算气泡位置
-    val tooltipOffset = remember(targetBounds, arrowDirection, screenWidth, screenHeight) {
+    // 计算气泡位置和箭头偏移
+    val positionResult = remember(targetBounds, arrowDirection, screenWidth, screenHeight) {
         calculateTooltipOffset(targetBounds, arrowDirection, density, screenWidth, screenHeight)
     }
+    val tooltipOffset = positionResult.tooltipOffset
+    val arrowHorizontalOffsetPx = positionResult.arrowHorizontalOffset
 
     // 入场动画
     var isVisible by remember { mutableStateOf(false) }
@@ -337,7 +358,10 @@ private fun GuideTooltipBubble(
                     tint = MaterialTheme.colorScheme.primaryContainer,
                     modifier = Modifier
                         .size(32.dp)
-                        .offset(y = arrowOffset.dp)
+                        .offset(
+                            x = with(density) { arrowHorizontalOffsetPx.toDp() },
+                            y = arrowOffset.dp
+                        )
                 )
             }
 
@@ -454,12 +478,26 @@ private fun GuideTooltipBubble(
                     tint = MaterialTheme.colorScheme.primaryContainer,
                     modifier = Modifier
                         .size(32.dp)
-                        .offset(y = (-arrowOffset).dp)
+                        .offset(
+                            x = with(density) { arrowHorizontalOffsetPx.toDp() },
+                            y = (-arrowOffset).dp
+                        )
                 )
             }
         }
     }
 }
+
+/**
+ * 气泡定位结果
+ *
+ * @param tooltipOffset 气泡的位置偏移
+ * @param arrowHorizontalOffset 箭头的水平偏移（用于在气泡被 clamp 时仍指向目标）
+ */
+private data class TooltipPositionResult(
+    val tooltipOffset: Offset,
+    val arrowHorizontalOffset: Float
+)
 
 /**
  * 计算气泡偏移量
@@ -470,40 +508,56 @@ private fun calculateTooltipOffset(
     density: androidx.compose.ui.unit.Density,
     screenWidth: Float,
     screenHeight: Float
-): Offset {
+): TooltipPositionResult {
     val spacing = with(density) { 16.dp.toPx() }
     val tooltipWidth = with(density) { 280.dp.toPx() }
     val tooltipHeight = with(density) { 120.dp.toPx() }
     val padding = with(density) { 16.dp.toPx() }
-    
+
     return when (arrowDirection) {
         ArrowDirection.UP -> {
             // 气泡在目标下方
-            val x = (targetBounds.center.x - tooltipWidth / 2)
-                .coerceIn(padding, screenWidth - tooltipWidth - padding)
+            val idealX = targetBounds.center.x - tooltipWidth / 2
+            val clampedX = idealX.coerceIn(padding, screenWidth - tooltipWidth - padding)
             val y = targetBounds.bottom + spacing
-            Offset(x - padding, y - padding)
+            // 计算箭头偏移：目标中心相对于气泡中心的偏移
+            val arrowOffset = targetBounds.center.x - (clampedX + tooltipWidth / 2)
+            TooltipPositionResult(
+                tooltipOffset = Offset(clampedX - padding, y - padding),
+                arrowHorizontalOffset = arrowOffset
+            )
         }
         ArrowDirection.DOWN -> {
             // 气泡在目标上方
-            val x = (targetBounds.center.x - tooltipWidth / 2)
-                .coerceIn(padding, screenWidth - tooltipWidth - padding)
+            val idealX = targetBounds.center.x - tooltipWidth / 2
+            val clampedX = idealX.coerceIn(padding, screenWidth - tooltipWidth - padding)
             val y = (targetBounds.top - spacing - tooltipHeight).coerceAtLeast(padding)
-            Offset(x - padding, y - padding)
+            // 计算箭头偏移
+            val arrowOffset = targetBounds.center.x - (clampedX + tooltipWidth / 2)
+            TooltipPositionResult(
+                tooltipOffset = Offset(clampedX - padding, y - padding),
+                arrowHorizontalOffset = arrowOffset
+            )
         }
         ArrowDirection.LEFT -> {
             // 气泡在目标右侧
             val x = targetBounds.right + spacing
             val y = (targetBounds.center.y - tooltipHeight / 2)
                 .coerceIn(padding, screenHeight - tooltipHeight - padding)
-            Offset(x - padding, y - padding)
+            TooltipPositionResult(
+                tooltipOffset = Offset(x - padding, y - padding),
+                arrowHorizontalOffset = 0f
+            )
         }
         ArrowDirection.RIGHT -> {
             // 气泡在目标左侧
             val x = (targetBounds.left - spacing - tooltipWidth).coerceAtLeast(padding)
             val y = (targetBounds.center.y - tooltipHeight / 2)
                 .coerceIn(padding, screenHeight - tooltipHeight - padding)
-            Offset(x - padding, y - padding)
+            TooltipPositionResult(
+                tooltipOffset = Offset(x - padding, y - padding),
+                arrowHorizontalOffset = 0f
+            )
         }
     }
 }

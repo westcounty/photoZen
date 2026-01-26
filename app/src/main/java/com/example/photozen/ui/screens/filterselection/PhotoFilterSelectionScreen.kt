@@ -96,13 +96,6 @@ fun PhotoFilterSelectionScreen(
     val uiState by viewModel.uiState.collectAsState()
     var showDatePicker by remember { mutableStateOf(false) }
 
-    // 筛选面板引导状态
-    val filterGuide = rememberGuideState(
-        guideKey = GuideKey.FILTER_PANEL,
-        guideRepository = viewModel.guideRepository
-    )
-    var albumSectionBounds by remember { mutableStateOf<Rect?>(null) }
-
     Scaffold(
         modifier = modifier,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -163,10 +156,7 @@ fun PhotoFilterSelectionScreen(
                 albums = uiState.albums,
                 selectedIds = uiState.selectedAlbumIds,
                 isLoading = uiState.isLoading,
-                onAlbumToggle = { viewModel.toggleAlbum(it) },
-                modifier = Modifier.onGloballyPositioned { coordinates ->
-                    albumSectionBounds = coordinates.boundsInRoot()
-                }
+                onAlbumToggle = { viewModel.toggleAlbum(it) }
             )
         }
     }
@@ -181,17 +171,6 @@ fun PhotoFilterSelectionScreen(
                 viewModel.setDateRange(start, end)
                 showDatePicker = false
             }
-        )
-    }
-
-    // 筛选面板引导提示
-    if (filterGuide.shouldShow && uiState.albums.isNotEmpty()) {
-        GuideTooltip(
-            visible = true,
-            message = "📁 选择相册\n点击选择要整理的相册\n可多选或使用全选按钮",
-            targetBounds = albumSectionBounds,
-            arrowDirection = ArrowDirection.DOWN,
-            onDismiss = filterGuide.dismiss
         )
     }
 }

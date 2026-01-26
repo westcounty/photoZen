@@ -1,5 +1,35 @@
 # PhotoZen 项目规则
 
+## 沟通语言
+
+**始终使用中文与用户沟通。** 包括代码注释、提交信息、文档说明等都使用中文。
+
+---
+
+## ⚠️ 关键操作检查清单
+
+### 当用户要求「打包」「构建 release」「assembleRelease」时，必须执行：
+
+1. **构建 APK**
+   ```bash
+   cd "D:/work/photoZen" && ./gradlew.bat assembleRelease
+   ```
+
+2. **读取版本号**
+   ```bash
+   cat D:/work/photoZen/build_version.properties
+   ```
+
+3. **重命名 APK**（必须执行！）
+   ```bash
+   cp app/build/outputs/apk/release/app-release.apk \
+      app/build/outputs/apk/release/PhotoZen-release-v{major}.{minor}.{patch}.{build}.apk
+   ```
+
+4. **告知用户 APK 位置和完整文件名**
+
+---
+
 ## 版本号规则
 
 ### 格式: `w.x.y.z`
@@ -21,8 +51,8 @@
 ### 版本更新规则
 
 #### 每次编译/构建/打包时 (包括 debug 和 release)
-1. 将 `build_version.properties` 中的 `build` 值 +1
-2. 无需更新其他文件
+- **Build 号自动递增**：`app/build.gradle.kts` 中的 `incrementBuildNumber` 任务会在每次 `assemble*` 时自动将 build 号 +1
+- 无需手动更新 build 号
 
 #### y (patch) 或 z (build) 更新时
 - 只更新版本号，不更新 changelog
@@ -98,11 +128,9 @@ PhotoZen-{性质}-v{版本号}.apk
 
 ---
 
-## 自动化提醒
+## 自动化说明
 
-每次执行以下操作时，自动将 build 号 +1:
-- `gradlew assembleDebug`
-- `gradlew assembleRelease`
-- `gradlew compileDebugKotlin`
-- `gradlew compileReleaseKotlin`
-- 任何形式的编译或构建命令
+### Build 号自动递增（已实现）
+- `app/build.gradle.kts` 中的 `incrementBuildNumber` 任务
+- 触发条件：任何 `assemble*` 任务（assembleDebug、assembleRelease 等）
+- 无需手动更新，Gradle 会自动处理

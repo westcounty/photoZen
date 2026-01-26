@@ -57,6 +57,7 @@ import com.example.photozen.ui.components.DragSelectPhotoGridDefaults
 import com.example.photozen.ui.components.EmptyStates
 import com.example.photozen.ui.components.PhotoStatusBadge
 import com.example.photozen.ui.components.shareImage
+import com.example.photozen.ui.components.openImageWithChooser
 import com.example.photozen.ui.components.SelectionTopBar
 import com.example.photozen.ui.components.SelectionBottomBar
 import com.example.photozen.ui.components.BottomBarConfigs
@@ -73,6 +74,7 @@ import com.example.photozen.ui.components.PhotoGridMode
 import com.example.photozen.ui.components.SortDropdownButton
 import com.example.photozen.ui.components.SortOption
 import com.example.photozen.ui.components.SortOptions
+import com.example.photozen.ui.components.StoragePermissionDialog
 import com.example.photozen.ui.components.ViewModeDropdownButton
 
 /**
@@ -321,27 +323,26 @@ fun AlbumPhotoListScreen(
                                 viewModel.updateSelection(newSelection)
                             },
                             onPhotoClick = { photoId, index ->
-                                if (uiState.isSelectionMode) {
-                                    viewModel.togglePhotoSelection(photoId)
-                                } else {
+                                if (!uiState.isSelectionMode) {
                                     fullscreenStartIndex = index
                                     showFullscreen = true
                                 }
+                                // 选择模式由 onSelectionToggle 处理
                             },
-                            onPhotoLongPress = { photoId, photoUri ->
-                                // 长按不动时进入选择模式
-                                // 注意：onDragStart 已经选中该照片，此处仅在未选中时才添加
-                                // 避免 toggle 导致选中又取消的问题
-                                if (photoId !in uiState.selectedIds) {
-                                    viewModel.togglePhotoSelection(photoId)
-                                }
+                            onPhotoLongPress = { _, _ ->
+                                // 长按选择已在 DragSelectPhotoGrid.onLongPress 中处理
+                                // 此回调仅用于额外操作（如显示操作菜单），目前无需额外处理
                             },
                             columns = uiState.columnCount,
                             gridMode = uiState.gridMode,
                             selectionColor = MaterialTheme.colorScheme.primary,
                             enableDragSelect = true,
                             config = DragSelectPhotoGridDefaults.AlbumConfig,
-                            showStatusBadge = true
+                            showStatusBadge = true,
+                            onSelectionToggle = { photoId ->
+                                // Toggle selection using ViewModel to ensure fresh state
+                                viewModel.togglePhotoSelection(photoId)
+                            }
                         )
                     }
                 }
@@ -358,13 +359,45 @@ fun AlbumPhotoListScreen(
             onAction = { actionType, photo ->
                 when (actionType) {
                     FullscreenActionType.COPY -> viewModel.copyPhotos(listOf(photo.id))
-                    FullscreenActionType.OPEN_WITH -> { /* 外部app打开 */ }
+                    FullscreenActionType.OPEN_WITH -> {
+                        openImageWithChooser(context, Uri.parse(photo.systemUri))
+                    }
                     FullscreenActionType.EDIT -> onNavigateToEditor(photo.id)
                     FullscreenActionType.SHARE -> shareImage(context, Uri.parse(photo.systemUri))
                     FullscreenActionType.DELETE -> {
                         viewModel.enterSelectionMode(photo.id)
                         showDeleteConfirmSheet = true
                     }
+                }
+            },
+            overlayContent = {
+                // 全屏预览删除确认面板
+                if (showDeleteConfirmSheet) {
+                    val selectedPhotos = uiState.photos.filter { it.id in uiState.selectedIds }
+                    ConfirmDeleteSheet(
+                        photos = selectedPhotos,
+                        deleteType = DeleteType.PERMANENT_DELETE,
+                        onConfirm = {
+                            showDeleteConfirmSheet = false
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                val uris = viewModel.getSelectedPhotoUris()
+                                if (uris.isNotEmpty()) {
+                                    try {
+                                        val deleteRequest = MediaStore.createDeleteRequest(
+                                            context.contentResolver,
+                                            uris
+                                        )
+                                        deleteResultLauncher.launch(
+                                            IntentSenderRequest.Builder(deleteRequest.intentSender).build()
+                                        )
+                                    } catch (e: Exception) {
+                                        // Handle error
+                                    }
+                                }
+                            }
+                        },
+                        onDismiss = { showDeleteConfirmSheet = false }
+                    )
                 }
             }
         )
@@ -387,8 +420,9 @@ fun AlbumPhotoListScreen(
         )
     }
     
-    // Phase 3-9: 永久删除确认弹窗
-    if (showDeleteConfirmSheet) {
+    // Phase 3-9: 永久删除确认弹窗 (非全屏预览场景，如选择模式下的删除)
+    // 注：全屏预览场景由 overlayContent 处理
+    if (!showFullscreen && showDeleteConfirmSheet) {
         val selectedPhotos = uiState.photos.filter { it.id in uiState.selectedIds }
         ConfirmDeleteSheet(
             photos = selectedPhotos,
@@ -427,6 +461,16 @@ fun AlbumPhotoListScreen(
                 viewModel.clearSelection()
             },
             onDismiss = { showBatchChangeStatusDialog = false }
+        )
+    }
+
+    // Permission dialog for move operations
+    if (uiState.showPermissionDialog) {
+        StoragePermissionDialog(
+            onOpenSettings = { /* no-op, dialog handles it */ },
+            onPermissionGranted = { viewModel.onPermissionGranted() },
+            onDismiss = { viewModel.dismissPermissionDialog() },
+            showRetryError = uiState.permissionRetryError
         )
     }
 }

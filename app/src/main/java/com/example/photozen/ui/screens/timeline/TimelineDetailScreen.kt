@@ -239,7 +239,16 @@ fun TimelineDetailScreen(
                 StatsCard(
                     totalCount = uiState.totalCount,
                     sortedCount = uiState.sortedCount,
-                    onStartSort = onNavigateToFlowSorter,
+                    onStartSort = {
+                        // 设置当前事件的所有照片为筛选范围，然后导航
+                        val photoIds = uiState.photos.map { it.id }
+                        if (photoIds.isNotEmpty()) {
+                            scope.launch {
+                                viewModel.setFilterSessionAndNavigate(photoIds)
+                                onNavigateToFlowSorter()
+                            }
+                        }
+                    },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
@@ -275,12 +284,11 @@ fun TimelineDetailScreen(
                         viewModel.updateSelection(newSelection)
                     },
                     onPhotoClick = { photoId, index ->
-                        if (uiState.isSelectionMode) {
-                            viewModel.togglePhotoSelection(photoId)
-                        } else {
+                        if (!uiState.isSelectionMode) {
                             fullscreenStartIndex = index
                             showFullscreen = true
                         }
+                        // 选择模式由 onSelectionToggle 处理
                     },
                     onPhotoLongPress = { photoId, _ ->
                         viewModel.enterSelectionMode(photoId)
@@ -288,7 +296,11 @@ fun TimelineDetailScreen(
                     columns = uiState.columnCount,
                     gridMode = uiState.gridMode,
                     showStatusBadge = true,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    onSelectionToggle = { photoId ->
+                        // Toggle selection using ViewModel to ensure fresh state
+                        viewModel.togglePhotoSelection(photoId)
+                    }
                 )
             }
         }
@@ -302,14 +314,46 @@ fun TimelineDetailScreen(
             onExit = { showFullscreen = false },
             onAction = { actionType, photo ->
                 when (actionType) {
-                    FullscreenActionType.COPY -> viewModel.copySelectedPhotos()
-                    FullscreenActionType.OPEN_WITH -> { /* 外部app打开 */ }
+                    FullscreenActionType.COPY -> viewModel.copyPhoto(photo.id)
+                    FullscreenActionType.OPEN_WITH -> {
+                        openImageWithChooser(context, Uri.parse(photo.systemUri))
+                    }
                     FullscreenActionType.EDIT -> { /* 编辑 */ }
                     FullscreenActionType.SHARE -> shareImage(context, Uri.parse(photo.systemUri))
                     FullscreenActionType.DELETE -> {
                         viewModel.enterSelectionMode(photo.id)
                         showDeleteConfirmSheet = true
                     }
+                }
+            },
+            overlayContent = {
+                // 全屏预览删除确认面板
+                if (showDeleteConfirmSheet) {
+                    val selectedPhotos = uiState.photos.filter { it.id in uiState.selectedIds }
+                    ConfirmDeleteSheet(
+                        photos = selectedPhotos,
+                        deleteType = DeleteType.PERMANENT_DELETE,
+                        onConfirm = {
+                            val uris = viewModel.getSelectedPhotoUris()
+                            if (uris.isNotEmpty()) {
+                                scope.launch {
+                                    try {
+                                        val intentSender = android.provider.MediaStore.createDeleteRequest(
+                                            context.contentResolver,
+                                            uris
+                                        ).intentSender
+                                        deleteResultLauncher.launch(
+                                            IntentSenderRequest.Builder(intentSender).build()
+                                        )
+                                    } catch (e: Exception) {
+                                        snackbarHostState.showSnackbar("删除失败: ${e.message}")
+                                    }
+                                }
+                            }
+                            showDeleteConfirmSheet = false
+                        },
+                        onDismiss = { showDeleteConfirmSheet = false }
+                    )
                 }
             }
         )
@@ -327,8 +371,8 @@ fun TimelineDetailScreen(
         )
     }
 
-    // Delete confirmation sheet
-    if (showDeleteConfirmSheet) {
+    // Delete confirmation sheet (非全屏预览场景，如选择模式下的删除)
+    if (!showFullscreen && showDeleteConfirmSheet) {
         val selectedPhotos = uiState.photos.filter { it.id in uiState.selectedIds }
         ConfirmDeleteSheet(
             photos = selectedPhotos,

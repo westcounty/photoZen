@@ -2,8 +2,12 @@ package com.example.photozen.ui.screens.albums
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -56,6 +60,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -91,11 +98,26 @@ fun AlbumBubbleScreen(
     val uiState by viewModel.uiState.collectAsState()
     val haptic = LocalHapticFeedback.current
     val snackbarHostState = remember { SnackbarHostState() }
-    
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Refresh album stats when screen becomes visible (e.g., returning from album detail)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshAlbumStats()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     // Context menu state
     var selectedAlbumForMenu by remember { mutableStateOf<AlbumBubbleData?>(null) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
-    
+
     // Show error/message
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
@@ -103,7 +125,7 @@ fun AlbumBubbleScreen(
             viewModel.clearError()
         }
     }
-    
+
     // Show undo snackbar for remove operation
     LaunchedEffect(uiState.showUndoSnackbar) {
         val removedAlbum = uiState.lastRemovedAlbum
@@ -120,12 +142,17 @@ fun AlbumBubbleScreen(
             }
         }
     }
-    
+
     LaunchedEffect(uiState.message) {
         // Skip if we're showing the undo snackbar
         if (!uiState.showUndoSnackbar) {
             uiState.message?.let { message ->
-                snackbarHostState.showSnackbar(message)
+                // Use Toast when dialog is open (Snackbar may be hidden behind dialog)
+                if (uiState.showAlbumPicker) {
+                    android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    snackbarHostState.showSnackbar(message)
+                }
                 viewModel.clearMessage()
             }
         }
@@ -154,6 +181,30 @@ fun AlbumBubbleScreen(
                     // 底部导航模式不显示返回按钮
                 },
                 actions = {
+                    // Refresh button with rotation animation
+                    val infiniteTransition = rememberInfiniteTransition(label = "refresh")
+                    val rotation by infiniteTransition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 360f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(1000, easing = LinearEasing)
+                        ),
+                        label = "refreshRotation"
+                    )
+                    IconButton(
+                        onClick = { viewModel.refreshAlbumStats() },
+                        enabled = !uiState.isRefreshing
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "刷新",
+                            modifier = if (uiState.isRefreshing) {
+                                Modifier.graphicsLayer { rotationZ = rotation }
+                            } else {
+                                Modifier
+                            }
+                        )
+                    }
                     // View mode toggle
                     IconButton(onClick = { viewModel.toggleViewMode() }) {
                         Icon(
@@ -164,14 +215,8 @@ fun AlbumBubbleScreen(
                     }
                 }
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { viewModel.showAlbumPicker() }
-            ) {
-                Icon(Icons.Default.Edit, contentDescription = "编辑相册列表")
-            }
         }
+        // FAB 放在 Box 中手动定位，避免被底部导航栏遮挡
     ) { paddingValues ->
         Box(
             modifier = Modifier
@@ -225,6 +270,18 @@ fun AlbumBubbleScreen(
                         }
                     }
                 }
+            }
+
+            // FAB 手动放置，避免被底部导航栏遮挡
+            // 底部导航栏高度约 80dp，加上 FAB 自身间距
+            FloatingActionButton(
+                onClick = { viewModel.showAlbumPicker() },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 80.dp)  // 80dp 避开底部导航栏
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+            ) {
+                Icon(Icons.Default.Edit, contentDescription = "编辑相册列表")
             }
         }
     }
@@ -383,14 +440,14 @@ private fun AlbumListView(
     // Sync from external albums when they change (but not during drag)
     LaunchedEffect(albums, isDraggingAny) {
         if (isDraggingAny) return@LaunchedEffect  // Don't sync during drag
-        
+
         // Filter and deduplicate
         val seen = mutableSetOf<String>()
         val filtered = albums.filter { album ->
             album.bucketId.isNotBlank() && seen.add(album.bucketId)
         }
-        // Only update if content actually changed
-        if (localAlbums.map { it.bucketId } != filtered.map { it.bucketId }) {
+        // Update if content actually changed (compare full data, not just IDs)
+        if (localAlbums != filtered) {
             localAlbums.clear()
             localAlbums.addAll(filtered)
         }

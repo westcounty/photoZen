@@ -110,6 +110,7 @@ class TrashViewModel @Inject constructor(
 
     /**
      * Apply sort order to photos list (REQ-033)
+     * Uses effective time: prefers dateTaken, falls back to dateAdded * 1000
      */
     private fun applySortOrder(
         photos: List<PhotoEntity>,
@@ -117,9 +118,9 @@ class TrashViewModel @Inject constructor(
     ): List<PhotoEntity> {
         return when (sortOrder) {
             com.example.photozen.ui.screens.photolist.PhotoListSortOrder.DATE_DESC ->
-                photos.sortedByDescending { it.dateTaken }
+                photos.sortedByDescending { it.getEffectiveTime() }
             com.example.photozen.ui.screens.photolist.PhotoListSortOrder.DATE_ASC ->
-                photos.sortedBy { it.dateTaken }
+                photos.sortedBy { it.getEffectiveTime() }
             com.example.photozen.ui.screens.photolist.PhotoListSortOrder.ADDED_DESC ->
                 photos.sortedByDescending { it.updatedAt }
             com.example.photozen.ui.screens.photolist.PhotoListSortOrder.ADDED_ASC ->
@@ -128,6 +129,10 @@ class TrashViewModel @Inject constructor(
                 photos.shuffled(kotlin.random.Random(randomSeed))
         }
     }
+
+    /** Get effective time: prefers dateTaken, falls back to dateAdded * 1000 */
+    private fun PhotoEntity.getEffectiveTime(): Long =
+        if (dateTaken > 0) dateTaken else dateAdded * 1000
 
     /**
      * Set sort order (REQ-033)

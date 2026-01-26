@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.FilterChip
@@ -279,7 +280,7 @@ fun FilterButton(
             }
         ) {
             Icon(
-                imageVector = Icons.Default.FilterList,
+                imageVector = Icons.Default.Tune,
                 contentDescription = "筛选"
             )
         }

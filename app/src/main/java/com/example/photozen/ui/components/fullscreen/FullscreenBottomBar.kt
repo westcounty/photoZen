@@ -17,16 +17,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,8 +66,6 @@ fun FullscreenBottomBar(
     onAction: (FullscreenActionType) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showDeleteConfirm by remember { mutableStateOf(false) }
-
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -109,24 +101,12 @@ fun FullscreenBottomBar(
             onClick = { onAction(FullscreenActionType.SHARE) }
         )
 
-        // 5. 删除
+        // 5. 删除 - 直接触发，由外部处理确认逻辑
         ActionButton(
             icon = Icons.Default.Delete,
             label = "删除",
             tint = MaterialTheme.colorScheme.error,
-            onClick = { showDeleteConfirm = true }
-        )
-    }
-
-    // 删除确认弹窗
-    if (showDeleteConfirm) {
-        DeleteConfirmDialog(
-            photoName = photo.displayName,
-            onConfirm = {
-                showDeleteConfirm = false
-                onAction(FullscreenActionType.DELETE)
-            },
-            onDismiss = { showDeleteConfirm = false }
+            onClick = { onAction(FullscreenActionType.DELETE) }
         )
     }
 }
@@ -161,37 +141,4 @@ private fun ActionButton(
             color = tint
         )
     }
-}
-
-/**
- * 删除确认弹窗
- */
-@Composable
-private fun DeleteConfirmDialog(
-    photoName: String,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text("确认删除")
-        },
-        text = {
-            Text("此操作将永久删除照片「$photoName」，无法恢复。确定要删除吗？")
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(
-                    text = "删除",
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
-    )
 }

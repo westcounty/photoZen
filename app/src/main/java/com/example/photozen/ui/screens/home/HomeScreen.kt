@@ -12,6 +12,8 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.draw.shadow
@@ -103,6 +105,8 @@ import com.example.photozen.domain.usecase.DailyTaskStatus
 import com.example.photozen.ui.components.AchievementSummaryCard
 import com.example.photozen.ui.components.ChangelogDialog
 import com.example.photozen.ui.components.ShareFeatureTipCard
+import com.example.photozen.ui.components.HomeTipStrip
+import com.example.photozen.ui.components.HomeTipData
 import com.example.photozen.ui.components.MiniStatsCard
 import com.example.photozen.ui.components.DailyTaskDisplayStatus
 import com.example.photozen.ui.components.HomeDesignTokens
@@ -351,12 +355,6 @@ private fun NewHomeLayout(
     permissionLauncher: ManagedActivityResultLauncher<Array<String>, Map<String, Boolean>>,
     guideRepository: com.example.photozen.data.repository.GuideRepository
 ) {
-    // 开始按钮引导状态
-    val startButtonGuide = rememberGuideState(
-        guideKey = GuideKey.HOME_START_BUTTON,
-        guideRepository = guideRepository
-    )
-    var mainActionBounds by remember { mutableStateOf<Rect?>(null) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -391,26 +389,12 @@ private fun NewHomeLayout(
 
             // 2. 每日任务/整理入口（核心功能，突出显示）
             // 包含"继续任务"和"整理全部"两个操作
-            Box {
-                HomeDailyTaskWithSortAll(
-                    dailyTaskStatus = uiState.dailyTaskStatus,
-                    unsortedCount = uiState.unsortedCount,
-                    onStartDailyTask = onStartDailyTask,
-                    onStartSortAll = onStartSorting,
-                    modifier = Modifier.onGloballyPositioned { coordinates ->
-                        mainActionBounds = coordinates.boundsInWindow()
-                    }
-                )
-
-                // 开始按钮引导
-                GuideTooltip(
-                    visible = startButtonGuide.shouldShow && uiState.unsortedCount > 0,
-                    message = "🚀 点击开始\n从这里开始整理你的照片",
-                    targetBounds = mainActionBounds,
-                    arrowDirection = ArrowDirection.UP,
-                    onDismiss = startButtonGuide.dismiss
-                )
-            }
+            HomeDailyTaskWithSortAll(
+                dailyTaskStatus = uiState.dailyTaskStatus,
+                unsortedCount = uiState.unsortedCount,
+                onStartDailyTask = onStartDailyTask,
+                onStartSortAll = onStartSorting
+            )
 
             // 3. 快捷入口（已保留、对比、回收站）
             HomeQuickActions(
@@ -422,14 +406,61 @@ private fun NewHomeLayout(
                 trashCount = uiState.trashCount
             )
 
-            // 4. 分享功能提示（成就区域上方）
-            val shareFeatureTip = rememberGuideState(
-                guideKey = GuideKey.SHARE_FEATURE_TIP,
+            // 4. 渐进式引导提示（成就区域上方）
+            // 提示1：对比功能
+            val compareTip = rememberGuideState(
+                guideKey = GuideKey.HOME_TIP_COMPARE,
                 guideRepository = guideRepository
             )
-            if (shareFeatureTip.shouldShow) {
-                ShareFeatureTipCard(
-                    onDismiss = { shareFeatureTip.dismiss() }
+            AnimatedVisibility(
+                visible = compareTip.shouldShow,
+                enter = fadeIn() + slideInHorizontally(initialOffsetX = { it }),
+                exit = fadeOut() + slideOutHorizontally(targetOffsetX = { it })
+            ) {
+                HomeTipStrip(
+                    icon = HomeTipData.compareTip.icon,
+                    title = HomeTipData.compareTip.title,
+                    description = HomeTipData.compareTip.description,
+                    accentColor = HomeTipData.compareTip.accentColor(),
+                    onDismiss = { compareTip.dismiss() }
+                )
+            }
+
+            // 提示2：复制功能
+            val copyTip = rememberGuideState(
+                guideKey = GuideKey.HOME_TIP_COPY,
+                guideRepository = guideRepository
+            )
+            AnimatedVisibility(
+                visible = copyTip.shouldShow,
+                enter = fadeIn() + slideInHorizontally(initialOffsetX = { it }),
+                exit = fadeOut() + slideOutHorizontally(targetOffsetX = { it })
+            ) {
+                HomeTipStrip(
+                    icon = HomeTipData.copyTip.icon,
+                    title = HomeTipData.copyTip.title,
+                    description = HomeTipData.copyTip.description,
+                    accentColor = HomeTipData.copyTip.accentColor(),
+                    onDismiss = { copyTip.dismiss() }
+                )
+            }
+
+            // 提示3：桌面小部件
+            val widgetTip = rememberGuideState(
+                guideKey = GuideKey.HOME_TIP_WIDGET,
+                guideRepository = guideRepository
+            )
+            AnimatedVisibility(
+                visible = widgetTip.shouldShow,
+                enter = fadeIn() + slideInHorizontally(initialOffsetX = { it }),
+                exit = fadeOut() + slideOutHorizontally(targetOffsetX = { it })
+            ) {
+                HomeTipStrip(
+                    icon = HomeTipData.widgetTip.icon,
+                    title = HomeTipData.widgetTip.title,
+                    description = HomeTipData.widgetTip.description,
+                    accentColor = HomeTipData.widgetTip.accentColor(),
+                    onDismiss = { widgetTip.dismiss() }
                 )
             }
 

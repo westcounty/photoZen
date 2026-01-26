@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -129,7 +130,7 @@ fun StatsScreen(
                     selectedDateCount = uiState.selectedDateCount,
                     onDayClick = viewModel::onDayClicked,
                     modifier = Modifier.onGloballyPositioned { coordinates ->
-                        calendarBounds = coordinates.boundsInRoot()
+                        calendarBounds = coordinates.boundsInWindow()
                     }
                 )
                 

@@ -247,7 +247,10 @@ interface PhotoDao {
      * Get unsorted photo IDs filtered by buckets and date range.
      * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
      * startDateMs and endDateMs are in milliseconds.
+     *
+     * @deprecated Room 无法正确处理 (:bucketIds IS NULL OR bucket_id IN (:bucketIds)) 模式
      */
+    @Deprecated("Use getUnsortedPhotoIdsByBuckets or getUnsortedPhotoIdsAll instead")
     @Query("""
         SELECT id FROM photos
         WHERE status = 'UNSORTED'
@@ -259,6 +262,41 @@ interface PhotoDao {
     """)
     suspend fun getUnsortedPhotoIdsFiltered(
         bucketIds: List<String>?,
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): List<String>
+
+    /**
+     * Get unsorted photo IDs filtered by specific buckets and date range.
+     * bucketIds 必须非空
+     */
+    @Query("""
+        SELECT id FROM photos
+        WHERE status = 'UNSORTED'
+        AND is_virtual_copy = 0
+        AND bucket_id IN (:bucketIds)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
+    """)
+    suspend fun getUnsortedPhotoIdsByBuckets(
+        bucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): List<String>
+
+    /**
+     * Get all unsorted photo IDs with date range filter (no bucket filter).
+     */
+    @Query("""
+        SELECT id FROM photos
+        WHERE status = 'UNSORTED'
+        AND is_virtual_copy = 0
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
+    """)
+    suspend fun getUnsortedPhotoIdsAll(
         startDateMs: Long?,
         endDateMs: Long?
     ): List<String>
@@ -403,54 +441,51 @@ interface PhotoDao {
     suspend fun getUnsortedPhotosExcludingBucketsPagedRandom(bucketIds: List<String>, seed: Long, limit: Int, offset: Int): List<PhotoEntity>
     
     /**
-     * Get unsorted photos filtered by bucket IDs (optional) and date range (optional) with pagination - Date Descending.
-     * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
-     * startDateMs and endDateMs are in milliseconds.
+     * @deprecated Room 无法正确处理 (:bucketIds IS NULL OR bucket_id IN (:bucketIds)) 模式
      */
+    @Deprecated("Use getUnsortedPhotosByBucketsDateFilteredPagedDesc or getUnsortedPhotosAllDateFilteredPagedDesc")
     @Query("""
-        SELECT * FROM photos 
-        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
         AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
         AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
-        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC 
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosFilteredPagedDesc(
         bucketIds: List<String>?,
         startDateMs: Long?,
         endDateMs: Long?,
-        limit: Int, 
+        limit: Int,
         offset: Int
     ): List<PhotoEntity>
-    
+
     /**
-     * Get unsorted photos filtered by bucket IDs (optional) and date range (optional) with pagination - Date Ascending.
-     * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
-     * startDateMs and endDateMs are in milliseconds.
+     * @deprecated Room 无法正确处理 (:bucketIds IS NULL OR bucket_id IN (:bucketIds)) 模式
      */
+    @Deprecated("Use getUnsortedPhotosByBucketsDateFilteredPagedAsc or getUnsortedPhotosAllDateFilteredPagedAsc")
     @Query("""
-        SELECT * FROM photos 
-        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
         AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
         AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
-        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) ASC 
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) ASC
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosFilteredPagedAsc(
         bucketIds: List<String>?,
         startDateMs: Long?,
         endDateMs: Long?,
-        limit: Int, 
+        limit: Int,
         offset: Int
     ): List<PhotoEntity>
-    
+
     /**
-     * Get unsorted photos filtered by bucket IDs (optional) and date range (optional) with pagination - Random order.
-     * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
-     * startDateMs and endDateMs are in milliseconds.
+     * @deprecated Room 无法正确处理 (:bucketIds IS NULL OR bucket_id IN (:bucketIds)) 模式
      */
+    @Deprecated("Use getUnsortedPhotosByBucketsDateFilteredPagedRandom or getUnsortedPhotosAllDateFilteredPagedRandom")
     @Query("""
         SELECT * FROM photos
         WHERE status = 'UNSORTED' AND is_virtual_copy = 0
@@ -462,6 +497,126 @@ interface PhotoDao {
     """)
     suspend fun getUnsortedPhotosFilteredPagedRandom(
         bucketIds: List<String>?,
+        startDateMs: Long?,
+        endDateMs: Long?,
+        seed: Long,
+        limit: Int,
+        offset: Int
+    ): List<PhotoEntity>
+
+    // ==================== 修复版分页查询：有 bucketIds 筛选 ====================
+
+    /**
+     * 按指定相册和日期范围筛选 - DESC
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND bucket_id IN (:bucketIds)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosByBucketsDateFilteredPagedDesc(
+        bucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?,
+        limit: Int,
+        offset: Int
+    ): List<PhotoEntity>
+
+    /**
+     * 按指定相册和日期范围筛选 - ASC
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND bucket_id IN (:bucketIds)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) ASC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosByBucketsDateFilteredPagedAsc(
+        bucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?,
+        limit: Int,
+        offset: Int
+    ): List<PhotoEntity>
+
+    /**
+     * 按指定相册和日期范围筛选 - Random
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND bucket_id IN (:bucketIds)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY (ABS(CAST(SUBSTR(id, 1, 8) AS INTEGER)) * :seed) % 2147483647
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosByBucketsDateFilteredPagedRandom(
+        bucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?,
+        seed: Long,
+        limit: Int,
+        offset: Int
+    ): List<PhotoEntity>
+
+    // ==================== 修复版分页查询：无 bucketIds 筛选（仅日期） ====================
+
+    /**
+     * 仅按日期范围筛选（全部相册）- DESC
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosAllDateFilteredPagedDesc(
+        startDateMs: Long?,
+        endDateMs: Long?,
+        limit: Int,
+        offset: Int
+    ): List<PhotoEntity>
+
+    /**
+     * 仅按日期范围筛选（全部相册）- ASC
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) ASC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosAllDateFilteredPagedAsc(
+        startDateMs: Long?,
+        endDateMs: Long?,
+        limit: Int,
+        offset: Int
+    ): List<PhotoEntity>
+
+    /**
+     * 仅按日期范围筛选（全部相册）- Random
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY (ABS(CAST(SUBSTR(id, 1, 8) AS INTEGER)) * :seed) % 2147483647
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosAllDateFilteredPagedRandom(
         startDateMs: Long?,
         endDateMs: Long?,
         seed: Long,
@@ -540,10 +695,14 @@ interface PhotoDao {
      * Get count of unsorted photos filtered by bucket IDs (optional) and date range (optional).
      * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
      * startDateMs and endDateMs are in milliseconds.
+     *
+     * @deprecated Room 无法正确处理 (:bucketIds IS NULL OR bucket_id IN (:bucketIds)) 模式
+     * 请改用 getUnsortedCountByBucketsFlow 或 getUnsortedCountAllFlow
      */
+    @Deprecated("Use getUnsortedCountByBucketsFlow or getUnsortedCountAllFlow instead")
     @Query("""
-        SELECT COUNT(*) FROM photos 
-        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        SELECT COUNT(*) FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
         AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
         AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
@@ -553,13 +712,50 @@ interface PhotoDao {
         startDateMs: Long?,
         endDateMs: Long?
     ): Flow<Int>
+
+    /**
+     * Get count of unsorted photos filtered by specific bucket IDs and date range.
+     * Flow version for reactive updates.
+     * 注意：bucketIds 必须非空
+     */
+    @Query("""
+        SELECT COUNT(*) FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND bucket_id IN (:bucketIds)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+    """)
+    fun getUnsortedCountByBucketsFlow(
+        bucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): Flow<Int>
+
+    /**
+     * Get count of all unsorted photos with date range filter (no bucket filter).
+     * Flow version for reactive updates.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+    """)
+    fun getUnsortedCountAllFlow(
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): Flow<Int>
     
     /**
      * Get count of unsorted photos filtered by bucket IDs (optional) and date range (optional).
      * Suspend version for one-time queries.
      * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
      * startDateMs and endDateMs are in milliseconds.
+     *
+     * @deprecated Room 无法正确处理 (:bucketIds IS NULL OR bucket_id IN (:bucketIds)) 模式
+     * 当 bucketIds 有多个元素时会 crash。请改用 getUnsortedCountByBucketsSync 或 getUnsortedCountAllSync
      */
+    @Deprecated("Use getUnsortedCountByBucketsSync or getUnsortedCountAllSync instead")
     @Query("""
         SELECT COUNT(*) FROM photos
         WHERE status = 'UNSORTED' AND is_virtual_copy = 0
@@ -569,6 +765,42 @@ interface PhotoDao {
     """)
     suspend fun getUnsortedCountFilteredSync(
         bucketIds: List<String>?,
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): Int
+
+    /**
+     * Get count of unsorted photos filtered by specific bucket IDs and date range.
+     * Suspend version for one-time queries.
+     * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
+     *
+     * 注意：bucketIds 必须非空，用于筛选特定相册
+     */
+    @Query("""
+        SELECT COUNT(*) FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND bucket_id IN (:bucketIds)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+    """)
+    suspend fun getUnsortedCountByBucketsSync(
+        bucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): Int
+
+    /**
+     * Get count of all unsorted photos with date range filter (no bucket filter).
+     * Suspend version for one-time queries.
+     * Uses effective time (prefers date_taken, falls back to date_added * 1000) for filtering.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+    """)
+    suspend fun getUnsortedCountAllSync(
         startDateMs: Long?,
         endDateMs: Long?
     ): Int
@@ -787,6 +1019,46 @@ interface PhotoDao {
         WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IS NOT NULL
     """)
     fun getBucketIdsWithUnsortedPhotos(): Flow<List<String>>
+
+    /**
+     * Get distinct bucket IDs from a list of photo IDs.
+     * Used when filtering from a specific photo list (e.g., timeline selection).
+     */
+    @Query("""
+        SELECT DISTINCT bucket_id
+        FROM photos
+        WHERE id IN (:photoIds) AND status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IS NOT NULL
+    """)
+    suspend fun getBucketIdsByPhotoIds(photoIds: List<String>): List<String>
+
+    /**
+     * Get distinct bucket IDs with unsorted photos in a date range.
+     */
+    @Query("""
+        SELECT DISTINCT bucket_id
+        FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IS NOT NULL
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+    """)
+    suspend fun getBucketIdsWithUnsortedPhotosInDateRange(startDateMs: Long?, endDateMs: Long?): List<String>
+
+    /**
+     * Get distinct bucket IDs with unsorted photos, filtered by album list and date range.
+     */
+    @Query("""
+        SELECT DISTINCT bucket_id
+        FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IS NOT NULL
+        AND bucket_id IN (:albumIds)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+    """)
+    suspend fun getBucketIdsWithUnsortedPhotosInAlbumsAndDateRange(
+        albumIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): List<String>
     
     /**
      * Get all photo IDs that are not virtual copies.

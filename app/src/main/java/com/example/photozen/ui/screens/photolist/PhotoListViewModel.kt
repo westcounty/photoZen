@@ -25,6 +25,7 @@ import com.example.photozen.ui.components.PhotoGridMode
 import com.example.photozen.ui.state.UiEvent
 import com.example.photozen.ui.state.PhotoSelectionStateHolder
 import com.example.photozen.domain.usecase.PhotoBatchOperationUseCase
+import com.example.photozen.util.StoragePermissionHelper
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -152,7 +153,10 @@ data class PhotoListUiState(
     val selectionLimit: Int? = null,
     // Permanent delete support
     val deleteIntentSender: IntentSender? = null,
-    val pendingDeletePhotoId: String? = null
+    val pendingDeletePhotoId: String? = null,
+    // Permission dialog for move operations
+    val showPermissionDialog: Boolean = false,
+    val permissionRetryError: Boolean = false
 ) {
     val selectedCount: Int get() = selectedPhotoIds.size
     val allSelected: Boolean get() = photos.isNotEmpty() && selectedPhotoIds.size == photos.size
@@ -180,9 +184,18 @@ private data class InternalState(
     // Album classify mode
     val isClassifyMode: Boolean = false,
     val classifyModeIndex: Int = 0,
+    val classifyModePhotosSnapshot: List<PhotoEntity> = emptyList(),  // 快照，进入分类模式时固定
     // Permanent delete support
     val deleteIntentSender: IntentSender? = null,
-    val pendingDeletePhotoId: String? = null
+    val pendingDeletePhotoId: String? = null,
+    val pendingDeletePhotoIds: List<String> = emptyList(),
+    // Permission dialog for move operations
+    val showPermissionDialog: Boolean = false,
+    val permissionRetryError: Boolean = false,
+    val pendingMoveAlbumBucketId: String? = null,
+    val pendingMovePhotoIds: List<String> = emptyList(),
+    // Permission dialog for classify mode
+    val pendingClassifyAlbumBucketId: String? = null
 )
 
 private data class AlbumState(
@@ -205,7 +218,8 @@ class PhotoListViewModel @Inject constructor(
     val guideRepository: GuideRepository,
     // Phase 4: 共享状态和批量操作
     private val selectionStateHolder: PhotoSelectionStateHolder,
-    private val batchOperationUseCase: PhotoBatchOperationUseCase
+    private val batchOperationUseCase: PhotoBatchOperationUseCase,
+    private val storagePermissionHelper: StoragePermissionHelper
 ) : ViewModel() {
     
     // UI 事件流
@@ -279,13 +293,21 @@ class PhotoListViewModel @Inject constructor(
             notInAlbumCount = notInAlbumCount,
             myAlbumBucketIds = myAlbumBucketIds,
             isClassifyMode = internal.isClassifyMode,
-            classifyModePhotos = photosNotInAlbum,
+            // 使用快照列表，避免分类过程中列表动态变化导致跳过照片
+            classifyModePhotos = if (internal.isClassifyMode && internal.classifyModePhotosSnapshot.isNotEmpty()) {
+                internal.classifyModePhotosSnapshot
+            } else {
+                photosNotInAlbum
+            },
             classifyModeIndex = internal.classifyModeIndex,
             // REQ-029, REQ-030: 待定列表选择限制
             selectionLimit = if (status == PhotoStatus.MAYBE) MAYBE_LIST_SELECTION_LIMIT else null,
             // Permanent delete
             deleteIntentSender = internal.deleteIntentSender,
-            pendingDeletePhotoId = internal.pendingDeletePhotoId
+            pendingDeletePhotoId = internal.pendingDeletePhotoId,
+            // Permission dialog
+            showPermissionDialog = internal.showPermissionDialog,
+            permissionRetryError = internal.permissionRetryError
         )
     }.stateIn(
         scope = viewModelScope,
@@ -345,19 +367,27 @@ class PhotoListViewModel @Inject constructor(
     
     /**
      * Apply sort order to photos list.
-     * - DATE_*: Uses dateTaken (actual photo taken time from EXIF)
+     * - DATE_*: Uses effective time (dateTaken if available, else dateAdded * 1000)
      * - ADDED_*: Uses updatedAt (when status was changed / added to this list)
      */
     private fun applySortOrder(photos: List<PhotoEntity>, sortOrder: PhotoListSortOrder): List<PhotoEntity> {
         return when (sortOrder) {
-            // Sort by dateTaken (actual photo taken time)
-            PhotoListSortOrder.DATE_DESC -> photos.sortedByDescending { it.dateTaken }
-            PhotoListSortOrder.DATE_ASC -> photos.sortedBy { it.dateTaken }
+            // Sort by effective time: prefers dateTaken, falls back to dateAdded * 1000
+            PhotoListSortOrder.DATE_DESC -> photos.sortedByDescending { it.getEffectiveTime() }
+            PhotoListSortOrder.DATE_ASC -> photos.sortedBy { it.getEffectiveTime() }
             // Sort by updatedAt (when added to current status/list) - REQ-028, REQ-033
             PhotoListSortOrder.ADDED_DESC -> photos.sortedByDescending { it.updatedAt }
             PhotoListSortOrder.ADDED_ASC -> photos.sortedBy { it.updatedAt }
             PhotoListSortOrder.RANDOM -> photos.shuffled(kotlin.random.Random(randomSeed))
         }
+    }
+
+    /**
+     * Get effective time for sorting: prefers dateTaken, falls back to dateAdded * 1000
+     * Matches the database COALESCE logic in PhotoDao
+     */
+    private fun PhotoEntity.getEffectiveTime(): Long {
+        return if (dateTaken > 0) dateTaken else dateAdded * 1000
     }
     
     /**
@@ -462,22 +492,41 @@ class PhotoListViewModel @Inject constructor(
      */
     fun onDeleteComplete(success: Boolean) {
         viewModelScope.launch {
-            val pendingId = uiState.value.pendingDeletePhotoId
-            if (success && pendingId != null) {
-                // Remove from our database after system confirms deletion
-                photoDao.deleteById(pendingId)
-                _internalState.update {
-                    it.copy(
-                        deleteIntentSender = null,
-                        pendingDeletePhotoId = null,
-                        message = "已永久删除"
-                    )
+            val pendingId = _internalState.value.pendingDeletePhotoId
+            val pendingIds = _internalState.value.pendingDeletePhotoIds
+
+            if (success) {
+                // Handle single photo deletion
+                if (pendingId != null) {
+                    photoDao.deleteById(pendingId)
+                    _internalState.update {
+                        it.copy(
+                            deleteIntentSender = null,
+                            pendingDeletePhotoId = null,
+                            pendingDeletePhotoIds = emptyList(),
+                            message = "已永久删除"
+                        )
+                    }
+                }
+                // Handle multiple photo deletion
+                else if (pendingIds.isNotEmpty()) {
+                    pendingIds.forEach { photoDao.deleteById(it) }
+                    selectionStateHolder.clear()
+                    _internalState.update {
+                        it.copy(
+                            deleteIntentSender = null,
+                            pendingDeletePhotoId = null,
+                            pendingDeletePhotoIds = emptyList(),
+                            message = "已永久删除 ${pendingIds.size} 张照片"
+                        )
+                    }
                 }
             } else {
                 _internalState.update {
                     it.copy(
                         deleteIntentSender = null,
-                        pendingDeletePhotoId = null
+                        pendingDeletePhotoId = null,
+                        pendingDeletePhotoIds = emptyList()
                     )
                 }
             }
@@ -491,8 +540,57 @@ class PhotoListViewModel @Inject constructor(
         _internalState.update {
             it.copy(
                 deleteIntentSender = null,
-                pendingDeletePhotoId = null
+                pendingDeletePhotoId = null,
+                pendingDeletePhotoIds = emptyList()
             )
+        }
+    }
+
+    /**
+     * Request permanent deletion of selected photos via system API.
+     * For Android 11+, this creates an IntentSender for user confirmation.
+     */
+    fun requestPermanentDeleteSelected() {
+        val selectedIds = uiState.value.selectedPhotoIds.toList()
+        if (selectedIds.isEmpty()) return
+
+        val selectedPhotos = uiState.value.photos.filter { it.id in selectedIds }
+        if (selectedPhotos.isEmpty()) return
+
+        viewModelScope.launch {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // Android 11+: Use MediaStore.createDeleteRequest
+                    val uris = selectedPhotos.mapNotNull { photo ->
+                        try {
+                            Uri.parse(photo.systemUri)
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+
+                    if (uris.isNotEmpty()) {
+                        val intentSender = MediaStore.createDeleteRequest(
+                            context.contentResolver,
+                            uris
+                        ).intentSender
+
+                        _internalState.update {
+                            it.copy(
+                                deleteIntentSender = intentSender,
+                                pendingDeletePhotoIds = selectedIds
+                            )
+                        }
+                    }
+                } else {
+                    // Older versions: Just remove from database
+                    selectedIds.forEach { photoDao.deleteById(it) }
+                    selectionStateHolder.clear()
+                    _internalState.update { it.copy(message = "已删除 ${selectedIds.size} 张照片") }
+                }
+            } catch (e: Exception) {
+                _internalState.update { it.copy(message = "删除失败: ${e.message}") }
+            }
         }
     }
 
@@ -742,7 +840,29 @@ class PhotoListViewModel @Inject constructor(
     fun moveSelectedToAlbum(bucketId: String) {
         val selectedIds = selectionStateHolder.getSelectedList()
         if (selectedIds.isEmpty()) return
-        
+
+        // Check permission for move operation
+        if (storagePermissionHelper.isManageStoragePermissionApplicable() &&
+            !storagePermissionHelper.hasManageStoragePermission()) {
+            // Save pending operation and show permission dialog
+            _internalState.update {
+                it.copy(
+                    pendingMoveAlbumBucketId = bucketId,
+                    pendingMovePhotoIds = selectedIds,
+                    permissionRetryError = false,
+                    showPermissionDialog = true
+                )
+            }
+            return
+        }
+
+        executeMoveSelectedToAlbum(bucketId, selectedIds)
+    }
+
+    /**
+     * Execute the move operation after permission check.
+     */
+    private fun executeMoveSelectedToAlbum(bucketId: String, photoIds: List<String>) {
         viewModelScope.launch {
             try {
                 val album = _albumState.value.albumBubbleList.find { it.bucketId == bucketId }
@@ -750,11 +870,11 @@ class PhotoListViewModel @Inject constructor(
                 val targetPath = mediaStoreDataSource.getAlbumPath(bucketId)
                     ?: "Pictures/${album?.displayName ?: "PhotoZen"}"
                 var successCount = 0
-                
-                for (photoId in selectedIds) {
+
+                for (photoId in photoIds) {
                     val photo = uiState.value.photos.find { it.id == photoId } ?: continue
                     val photoUri = Uri.parse(photo.systemUri)
-                    
+
                     when (val result = albumOperationsUseCase.movePhotoToAlbum(photoUri, targetPath)) {
                         is MovePhotoResult.Success -> successCount++
                         is MovePhotoResult.NeedsConfirmation -> {
@@ -765,8 +885,8 @@ class PhotoListViewModel @Inject constructor(
                         }
                     }
                 }
-                
-                _internalState.update { 
+
+                _internalState.update {
                     it.copy(
                         showAlbumDialog = false,
                         message = "已移动 $successCount 张照片到「${album?.displayName}」"
@@ -956,10 +1076,13 @@ class PhotoListViewModel @Inject constructor(
      */
     fun enterClassifyMode() {
         if (status != PhotoStatus.KEEP) return
-        _internalState.update { 
+        // 保存当前待分类照片的快照，避免分类过程中列表动态变化
+        val currentPhotosNotInAlbum = uiState.value.classifyModePhotos
+        _internalState.update {
             it.copy(
                 isClassifyMode = true,
-                classifyModeIndex = 0
+                classifyModeIndex = 0,
+                classifyModePhotosSnapshot = currentPhotosNotInAlbum
             )
         }
     }
@@ -968,10 +1091,11 @@ class PhotoListViewModel @Inject constructor(
      * Exit album classify mode.
      */
     fun exitClassifyMode() {
-        _internalState.update { 
+        _internalState.update {
             it.copy(
                 isClassifyMode = false,
-                classifyModeIndex = 0
+                classifyModeIndex = 0,
+                classifyModePhotosSnapshot = emptyList()  // 清除快照
             )
         }
     }
@@ -981,14 +1105,35 @@ class PhotoListViewModel @Inject constructor(
      */
     fun classifyPhotoToAlbum(bucketId: String) {
         val currentPhoto = uiState.value.currentClassifyPhoto ?: return
-        
+
+        // Check permission for copy/move operation
+        if (storagePermissionHelper.isManageStoragePermissionApplicable() &&
+            !storagePermissionHelper.hasManageStoragePermission()) {
+            // Save pending operation and show permission dialog
+            _internalState.update {
+                it.copy(
+                    pendingClassifyAlbumBucketId = bucketId,
+                    permissionRetryError = false,
+                    showPermissionDialog = true
+                )
+            }
+            return
+        }
+
+        executeClassifyPhotoToAlbum(bucketId, currentPhoto)
+    }
+
+    /**
+     * Execute the actual classify photo operation (after permission check).
+     */
+    private fun executeClassifyPhotoToAlbum(bucketId: String, currentPhoto: PhotoEntity) {
         viewModelScope.launch {
             try {
                 val album = _albumState.value.albumBubbleList.find { it.bucketId == bucketId }
                 val targetPath = mediaStoreDataSource.getAlbumPath(bucketId)
                     ?: "Pictures/${album?.displayName ?: "PhotoZen"}"
                 val photoUri = Uri.parse(currentPhoto.systemUri)
-                
+
                 // Copy photo to album (don't move, keep original location)
                 val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
                 if (result.isSuccess) {
@@ -996,7 +1141,7 @@ class PhotoListViewModel @Inject constructor(
                     photoDao.updateBucketId(currentPhoto.id, bucketId)
                     _internalState.update { it.copy(message = "已添加到「${album?.displayName}」") }
                 }
-                
+
                 // Advance to next photo
                 advanceClassifyMode()
             } catch (e: Exception) {
@@ -1018,13 +1163,14 @@ class PhotoListViewModel @Inject constructor(
     private fun advanceClassifyMode() {
         val currentIndex = _internalState.value.classifyModeIndex
         val totalCount = uiState.value.classifyModePhotos.size
-        
+
         if (currentIndex + 1 >= totalCount) {
             // All photos processed, exit classify mode
-            _internalState.update { 
+            _internalState.update {
                 it.copy(
                     isClassifyMode = false,
                     classifyModeIndex = 0,
+                    classifyModePhotosSnapshot = emptyList(),  // 清除快照
                     message = "全部照片已分类完成"
                 )
             }
@@ -1034,6 +1180,60 @@ class PhotoListViewModel @Inject constructor(
         }
     }
     
+    // ==================== Permission Dialog ====================
+
+    /**
+     * Called when user returns from settings after granting permission.
+     */
+    fun onPermissionGranted() {
+        if (storagePermissionHelper.hasManageStoragePermission()) {
+            // Permission granted, execute pending operation
+            val moveBucketId = _internalState.value.pendingMoveAlbumBucketId
+            val movePhotoIds = _internalState.value.pendingMovePhotoIds
+            val classifyBucketId = _internalState.value.pendingClassifyAlbumBucketId
+            val currentClassifyPhoto = uiState.value.currentClassifyPhoto
+
+            // Close dialog and clear pending state
+            _internalState.update {
+                it.copy(
+                    showPermissionDialog = false,
+                    permissionRetryError = false,
+                    pendingMoveAlbumBucketId = null,
+                    pendingMovePhotoIds = emptyList(),
+                    pendingClassifyAlbumBucketId = null
+                )
+            }
+
+            // Execute the pending move operation
+            if (moveBucketId != null && movePhotoIds.isNotEmpty()) {
+                executeMoveSelectedToAlbum(moveBucketId, movePhotoIds)
+            }
+
+            // Execute the pending classify operation
+            if (classifyBucketId != null && currentClassifyPhoto != null) {
+                executeClassifyPhotoToAlbum(classifyBucketId, currentClassifyPhoto)
+            }
+        } else {
+            // Permission still not granted, show error
+            _internalState.update { it.copy(permissionRetryError = true) }
+        }
+    }
+
+    /**
+     * Dismiss permission dialog without granting permission.
+     */
+    fun dismissPermissionDialog() {
+        _internalState.update {
+            it.copy(
+                showPermissionDialog = false,
+                permissionRetryError = false,
+                pendingMoveAlbumBucketId = null,
+                pendingMovePhotoIds = emptyList(),
+                pendingClassifyAlbumBucketId = null
+            )
+        }
+    }
+
     /**
      * Phase 4: 页面销毁时清理选择状态
      */

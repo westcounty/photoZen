@@ -45,9 +45,13 @@ import com.example.photozen.ui.theme.KeepGreen
  * Zoomable/pannable image that syncs with a shared TransformState.
  * Multiple instances of this component will zoom/pan together when
  * sharing the same TransformState.
- * 
+ *
+ * 支持基准偏移模式：当提供 baseSnapshot 时，最终变换 = base * delta
+ * 这允许在同步模式下，每张照片从各自的基准位置开始，然后应用相同的增量变换
+ *
  * @param photo The photo to display
- * @param transformState Shared state for synchronized transformations
+ * @param transformState Shared state for synchronized transformations (作为增量使用)
+ * @param baseSnapshot 基准状态快照，如果为null则不使用基准模式
  * @param isSelected Whether this photo is selected as "best"
  * @param onSelect Callback when photo is tapped to select
  * @param onFullscreenClick Callback when fullscreen button is clicked
@@ -59,6 +63,7 @@ import com.example.photozen.ui.theme.KeepGreen
 fun SyncZoomImage(
     photo: PhotoEntity,
     transformState: TransformState,
+    baseSnapshot: TransformSnapshot? = null,
     isSelected: Boolean = false,
     onSelect: () -> Unit = {},
     onFullscreenClick: (() -> Unit)? = null,
@@ -130,6 +135,24 @@ fun SyncZoomImage(
             }
     ) {
         // Image with synchronized transformation
+        // 计算最终变换值：如果有基准快照，则 最终值 = 基准 * 增量
+        val effectiveScale = if (baseSnapshot != null) {
+            baseSnapshot.scale * transformState.scale
+        } else {
+            transformState.scale
+        }
+        val effectiveOffsetX = if (baseSnapshot != null) {
+            // 基准偏移 + 增量偏移（增量偏移需要按基准缩放比例调整）
+            baseSnapshot.offsetX + transformState.offsetX * baseSnapshot.scale
+        } else {
+            transformState.offsetX
+        }
+        val effectiveOffsetY = if (baseSnapshot != null) {
+            baseSnapshot.offsetY + transformState.offsetY * baseSnapshot.scale
+        } else {
+            transformState.offsetY
+        }
+
         AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
                 .data(Uri.parse(photo.systemUri))
@@ -140,10 +163,10 @@ fun SyncZoomImage(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    scaleX = transformState.scale
-                    scaleY = transformState.scale
-                    translationX = transformState.offsetX
-                    translationY = transformState.offsetY
+                    scaleX = effectiveScale
+                    scaleY = effectiveScale
+                    translationX = effectiveOffsetX
+                    translationY = effectiveOffsetY
                 }
         )
         

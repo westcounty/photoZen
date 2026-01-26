@@ -1,10 +1,14 @@
 package com.example.photozen.ui.screens.lighttable
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.PreferencesRepository
+import com.example.photozen.data.source.MediaStoreDataSource
+import com.example.photozen.domain.usecase.AlbumOperationsUseCase
 import com.example.photozen.domain.usecase.GetMaybePhotosUseCase
 import com.example.photozen.domain.usecase.PhotoBatchOperationUseCase
 import com.example.photozen.domain.usecase.SortPhotoUseCase
@@ -48,6 +52,7 @@ data class LightTableUiState(
     val mode: LightTableMode = LightTableMode.SELECTION,
     val isLoading: Boolean = true,
     val error: String? = null,
+    val message: String? = null, // 操作成功提示
     // 新增：排序和视图模式
     val sortOrder: LightTableSortOrder = LightTableSortOrder.PHOTO_DATE_DESC,
     val gridMode: PhotoGridMode = PhotoGridMode.WATERFALL,
@@ -83,6 +88,7 @@ private data class InternalState(
     val mode: LightTableMode = LightTableMode.SELECTION,
     val isLoading: Boolean = true,
     val error: String? = null,
+    val message: String? = null, // 操作成功提示
     /** When set, only show photos with these IDs (for workflow session mode) */
     val sessionPhotoIds: Set<String>? = null,
     // 新增：排序和视图模式
@@ -100,7 +106,11 @@ class LightTableViewModel @Inject constructor(
     private val sortPhotoUseCase: SortPhotoUseCase,
     private val preferencesRepository: PreferencesRepository,
     // Phase 4: 批量操作 UseCase
-    private val batchOperationUseCase: PhotoBatchOperationUseCase
+    private val batchOperationUseCase: PhotoBatchOperationUseCase,
+    // 复制功能依赖
+    private val photoDao: PhotoDao,
+    private val mediaStoreDataSource: MediaStoreDataSource,
+    private val albumOperationsUseCase: AlbumOperationsUseCase
 ) : ViewModel() {
 
     private val _internalState = MutableStateFlow(InternalState())
@@ -117,9 +127,14 @@ class LightTableViewModel @Inject constructor(
         }
 
         // Sort photos based on current sort order
+        // Uses effective time: prefers dateTaken, falls back to dateAdded * 1000
         val sortedPhotos = when (internal.sortOrder) {
-            LightTableSortOrder.PHOTO_DATE_DESC -> filteredPhotos.sortedByDescending { it.dateTaken }
-            LightTableSortOrder.PHOTO_DATE_ASC -> filteredPhotos.sortedBy { it.dateTaken }
+            LightTableSortOrder.PHOTO_DATE_DESC -> filteredPhotos.sortedByDescending {
+                if (it.dateTaken > 0) it.dateTaken else it.dateAdded * 1000
+            }
+            LightTableSortOrder.PHOTO_DATE_ASC -> filteredPhotos.sortedBy {
+                if (it.dateTaken > 0) it.dateTaken else it.dateAdded * 1000
+            }
             LightTableSortOrder.ADDED_DATE_DESC -> filteredPhotos.sortedByDescending { it.dateAdded }
             LightTableSortOrder.ADDED_DATE_ASC -> filteredPhotos.sortedBy { it.dateAdded }
         }
@@ -131,6 +146,7 @@ class LightTableViewModel @Inject constructor(
             mode = internal.mode,
             isLoading = internal.isLoading && sortedPhotos.isEmpty(),
             error = internal.error,
+            message = internal.message,
             sortOrder = internal.sortOrder,
             gridMode = internal.gridMode,
             gridColumns = internal.gridColumns
@@ -307,5 +323,41 @@ class LightTableViewModel @Inject constructor(
         viewModelScope.launch {
             preferencesRepository.setGridColumns(PreferencesRepository.GridScreen.MAYBE, newColumns)
         }
+    }
+
+    /**
+     * 复制照片到原相册位置
+     * 复制后将新照片插入 Room 数据库，保留原照片的筛选状态
+     */
+    fun copyPhoto(photoId: String) {
+        val photo = uiState.value.allMaybePhotos.find { it.id == photoId } ?: return
+        viewModelScope.launch {
+            try {
+                val photoUri = Uri.parse(photo.systemUri)
+                val bucketId = photo.bucketId ?: return@launch
+                val targetPath = mediaStoreDataSource.getAlbumPath(bucketId) ?: "Pictures/PhotoZen"
+
+                val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
+                if (result.isSuccess) {
+                    // 将新照片插入 Room 数据库，保留原照片的筛选状态
+                    result.getOrNull()?.let { newPhoto ->
+                        val photoWithStatus = newPhoto.copy(status = photo.status)
+                        photoDao.insert(photoWithStatus)
+                    }
+                    _internalState.update { it.copy(message = "已复制照片") }
+                } else {
+                    _internalState.update { it.copy(error = "复制失败: ${result.exceptionOrNull()?.message}") }
+                }
+            } catch (e: Exception) {
+                _internalState.update { it.copy(error = "复制失败: ${e.message}") }
+            }
+        }
+    }
+
+    /**
+     * 清除消息
+     */
+    fun clearMessage() {
+        _internalState.update { it.copy(message = null) }
     }
 }

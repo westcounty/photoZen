@@ -165,8 +165,9 @@ class StatsRepository @Inject constructor(
         return combine(
             sortingRecordDao.observeTotalStats(),
             sortingRecordDao.observeStatsFromDate(weekStart),
-            sortingRecordDao.observeMonthStats(monthPrefix)
-        ) { totalStats, weekStats, monthStats ->
+            sortingRecordDao.observeMonthStats(monthPrefix),
+            observeConsecutiveDays()
+        ) { totalStats, weekStats, monthStats, consecutiveDays ->
             StatsSummary(
                 totalSorted = totalStats?.safeTotal ?: 0,
                 weekSorted = weekStats?.safeTotal ?: 0,
@@ -174,9 +175,53 @@ class StatsRepository @Inject constructor(
                 weekKept = weekStats?.safeKept ?: 0,
                 weekTrashed = weekStats?.safeTrashed ?: 0,
                 weekMaybe = weekStats?.safeMaybe ?: 0,
-                consecutiveDays = 0 // Consecutive days calculation is expensive, use cached value
+                consecutiveDays = consecutiveDays
             )
         }
+    }
+
+    /**
+     * 观察连续整理天数（响应式版本）
+     * 监听最近365天的记录变化，自动重新计算
+     */
+    private fun observeConsecutiveDays(): Flow<Int> {
+        // 监听最近365天的记录，当有变化时重新计算连续天数
+        return sortingRecordDao.getRecentRecords(365).map { records ->
+            calculateConsecutiveDaysFromRecords(records)
+        }
+    }
+
+    /**
+     * 从记录列表计算连续整理天数
+     */
+    private fun calculateConsecutiveDaysFromRecords(records: List<SortingRecordEntity>): Int {
+        if (records.isEmpty()) return 0
+
+        val recordDates = records
+            .filter { it.sortedCount > 0 }
+            .map { it.date }
+            .toSet()
+
+        val calendar = Calendar.getInstance()
+        var consecutiveDays = 0
+
+        // 从今天开始往前数
+        for (i in 0..365) {
+            val date = dateFormat.format(calendar.time)
+
+            if (date in recordDates) {
+                consecutiveDays++
+                calendar.add(Calendar.DAY_OF_YEAR, -1)
+            } else if (i == 0) {
+                // 今天还没整理，不算断，继续检查昨天
+                calendar.add(Calendar.DAY_OF_YEAR, -1)
+            } else {
+                // 之前某天没有整理，连续中断
+                break
+            }
+        }
+
+        return consecutiveDays
     }
 
     /**

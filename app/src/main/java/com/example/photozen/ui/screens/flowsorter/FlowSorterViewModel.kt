@@ -244,17 +244,86 @@ class FlowSorterViewModel @Inject constructor(
     /** 系统相册列表缓存（用于获取相册名称） */
     private val _systemAlbumsCache = MutableStateFlow<Map<String, String>>(emptyMap())
 
-    /** 可选相册列表（用于 FilterBottomSheet）- 仅显示有待筛选照片的相册 */
-    val albumBubblesForFilter: StateFlow<List<AlbumBubbleEntity>> = photoDao
-        .getBucketIdsWithUnsortedPhotos()
-        .combine(_systemAlbumsCache) { bucketIds, albumNamesMap ->
-            // Map bucket IDs to AlbumBubbleEntity, using cached album names
-            bucketIds.mapNotNull { bucketId ->
-                val displayName = albumNamesMap[bucketId] ?: return@mapNotNull null
-                AlbumBubbleEntity(bucketId, displayName, 0)
-            }.sortedBy { it.displayName }
+    // Camera album IDs - 需要在 albumBubblesForFilter 之前定义
+    private val _cameraAlbumIds = MutableStateFlow<List<String>>(emptyList())
+    private val _cameraAlbumsLoaded = MutableStateFlow(false)
+
+    /** 可选相册列表（用于 FilterBottomSheet）- 基于当前实际待筛选照片所属的相册 */
+    private val _albumBubblesForFilter = MutableStateFlow<List<AlbumBubbleEntity>>(emptyList())
+    val albumBubblesForFilter: StateFlow<List<AlbumBubbleEntity>> = _albumBubblesForFilter.asStateFlow()
+
+    // 监听相关状态变化，更新筛选面板的相册列表
+    init {
+        viewModelScope.launch {
+            combine(
+                photoDao.getBucketIdsWithUnsortedPhotos(),
+                _systemAlbumsCache,
+                preferencesRepository.getPhotoFilterMode(),
+                _cameraAlbumIds,
+                preferencesRepository.getSessionCustomFilterFlow()
+            ) { allBucketIds, albumNamesMap, filterMode, cameraIds, sessionFilter ->
+                AlbumFilterParams(allBucketIds, albumNamesMap, filterMode, cameraIds, sessionFilter)
+            }.collect { params ->
+                updateAlbumBubblesForFilter(params)
+            }
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+
+    private data class AlbumFilterParams(
+        val allBucketIds: List<String>,
+        val albumNamesMap: Map<String, String>,
+        val filterMode: PhotoFilterMode,
+        val cameraIds: List<String>,
+        val sessionFilter: CustomFilterSession?
+    )
+
+    private suspend fun updateAlbumBubblesForFilter(params: AlbumFilterParams) {
+        val bucketIds = try {
+            // 优先级 1：如果 sessionFilter 有 photoIds，从这些照片获取相册
+            if (!params.sessionFilter?.photoIds.isNullOrEmpty()) {
+                photoDao.getBucketIdsByPhotoIds(params.sessionFilter!!.photoIds!!)
+            }
+            // 优先级 2：如果 sessionFilter 有 preciseMode 或 albumIds/日期范围
+            else if (params.sessionFilter?.preciseMode == true ||
+                     params.filterMode == PhotoFilterMode.CUSTOM && params.sessionFilter != null) {
+                val session = params.sessionFilter!!
+                when {
+                    !session.albumIds.isNullOrEmpty() -> {
+                        val endDateMs = if (session.preciseMode) session.endDate
+                                         else session.endDate?.let { it + 86400L * 1000 - 1 }
+                        photoDao.getBucketIdsWithUnsortedPhotosInAlbumsAndDateRange(
+                            session.albumIds!!,
+                            session.startDate,
+                            endDateMs
+                        )
+                    }
+                    session.startDate != null || session.endDate != null -> {
+                        val endDateMs = if (session.preciseMode) session.endDate
+                                         else session.endDate?.let { it + 86400L * 1000 - 1 }
+                        photoDao.getBucketIdsWithUnsortedPhotosInDateRange(session.startDate, endDateMs)
+                    }
+                    else -> params.allBucketIds
+                }
+            }
+            // 优先级 3：根据全局筛选模式过滤
+            else {
+                when (params.filterMode) {
+                    PhotoFilterMode.ALL -> params.allBucketIds
+                    PhotoFilterMode.CAMERA_ONLY -> params.allBucketIds.filter { it in params.cameraIds }
+                    PhotoFilterMode.EXCLUDE_CAMERA -> params.allBucketIds.filter { it !in params.cameraIds }
+                    PhotoFilterMode.CUSTOM -> params.allBucketIds
+                }
+            }
+        } catch (e: Exception) {
+            params.allBucketIds // 出错时返回所有相册
+        }
+
+        // 将 bucket IDs 转换为 AlbumBubbleEntity
+        _albumBubblesForFilter.value = bucketIds.mapNotNull { bucketId ->
+            val displayName = params.albumNamesMap[bucketId] ?: return@mapNotNull null
+            AlbumBubbleEntity(bucketId, displayName, 0)
+        }.sortedBy { it.displayName }
+    }
     
     // Initialize view mode based on navigation parameter
     private val _viewMode = MutableStateFlow(
@@ -290,11 +359,7 @@ class FlowSorterViewModel @Inject constructor(
     
     // Random seed for consistent random sorting until changed
     private var randomSeed = System.currentTimeMillis()
-    
-    // Camera album IDs as StateFlow for reactive updates
-    private val _cameraAlbumIds = MutableStateFlow<List<String>>(emptyList())
-    private val _cameraAlbumsLoaded = MutableStateFlow(false)
-    
+
     // Job for auto-hiding combo after timeout
     private var comboTimeoutJob: Job? = null
     
@@ -449,26 +514,28 @@ class FlowSorterViewModel @Inject constructor(
 
                 // Calculate effective filter parameters for pagination
                 // Support both include mode (bucketIds) and exclude mode (excludeBucketIds)
+                // IMPORTANT: sessionFilter with preciseMode=true takes priority (used by timeline group sorting)
+                val useSessionFilter = sessionFilter?.preciseMode == true || filterMode == PhotoFilterMode.CUSTOM
                 val effectiveBucketIds: List<String>? = when {
                     albumBucketId != null -> listOf(albumBucketId)
                     !currentFilterConfig.isEmpty -> currentFilterConfig.albumIds
-                    filterMode == PhotoFilterMode.CUSTOM -> sessionFilter?.albumIds
+                    useSessionFilter -> sessionFilter?.albumIds
                     filterMode == PhotoFilterMode.CAMERA_ONLY -> cameraIds.takeIf { it.isNotEmpty() }
                     else -> null
                 }
                 val effectiveExcludeBucketIds: List<String>? = when {
-                    filterMode == PhotoFilterMode.CUSTOM -> sessionFilter?.excludeAlbumIds
+                    useSessionFilter -> sessionFilter?.excludeAlbumIds
                     else -> null
                 }
                 val effectiveStartDateMs: Long? = when {
                     !currentFilterConfig.isEmpty -> currentFilterConfig.startDate
-                    filterMode == PhotoFilterMode.CUSTOM -> sessionFilter?.startDate
+                    useSessionFilter -> sessionFilter?.startDate
                     else -> null
                 }
                 val effectiveEndDateMs: Long? = when {
                     !currentFilterConfig.isEmpty -> currentFilterConfig.endDate?.let { it + 86400L * 1000 - 1 }
-                    filterMode == PhotoFilterMode.CUSTOM -> sessionFilter?.endDate?.let {
-                        if (sessionFilter.preciseMode) it else it + 86400L * 1000 - 1
+                    useSessionFilter -> sessionFilter?.endDate?.let {
+                        if (sessionFilter?.preciseMode == true) it else it + 86400L * 1000 - 1
                     }
                     else -> null
                 }
@@ -1035,6 +1102,11 @@ class FlowSorterViewModel @Inject constructor(
         viewModelScope.launch {
             loadCameraAlbumIds()
             syncPhotos()
+            // Check if sessionFilter has a default sort order (e.g., from timeline group)
+            val sessionFilter = preferencesRepository.getSessionCustomFilter()
+            sessionFilter?.defaultSortOrder?.let { defaultOrder ->
+                _sortOrder.value = defaultOrder
+            }
             // Load initial batch of photos after sync
             loadInitialPhotos()
         }
@@ -1122,16 +1194,25 @@ class FlowSorterViewModel @Inject constructor(
      * 应用筛选配置
      */
     fun applyFilter(config: FilterConfig) {
+        // 安全处理：确保空列表转为 null，避免数据库查询问题
+        val safeConfig = if (config.albumIds?.isEmpty() == true) {
+            config.copy(albumIds = null)
+        } else {
+            config
+        }
+
+        Log.d(TAG, "applyFilter: albumIds=${safeConfig.albumIds?.size}, hasDateFilter=${safeConfig.hasDateFilter}")
+
         // CRITICAL: Reset initial total count BEFORE setting filter config
         // This ensures the combine flow uses the new count instead of cached old value
         // Without this, the first filter apply shows stale count (requires two applies to update)
         _initialTotalCount.value = -1
 
-        _filterConfig.value = config
+        _filterConfig.value = safeConfig
 
         // 保存为最近使用
         viewModelScope.launch {
-            filterPresetRepository.saveLastFilterConfig(config)
+            filterPresetRepository.saveLastFilterConfig(safeConfig)
         }
         // 重新加载照片
         loadInitialPhotos()
@@ -1516,11 +1597,13 @@ class FlowSorterViewModel @Inject constructor(
                 val photoUri = Uri.parse(photo.systemUri)
                 
                 // Perform album operation based on setting
+                var operationSuccess = false
                 when (_albumAddAction.value) {
                     AlbumAddAction.COPY -> {
                         val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
                         if (result.isSuccess) {
                             _albumMessage.value = "已保留并复制到 ${album?.displayName}"
+                            operationSuccess = true
                         } else {
                             _error.value = "复制失败: ${result.exceptionOrNull()?.message}"
                         }
@@ -1529,6 +1612,7 @@ class FlowSorterViewModel @Inject constructor(
                         when (val result = albumOperationsUseCase.movePhotoToAlbum(photoUri, targetPath)) {
                             is MovePhotoResult.Success -> {
                                 _albumMessage.value = "已保留并移动到 ${album?.displayName}"
+                                operationSuccess = true
                             }
                             is MovePhotoResult.NeedsConfirmation -> {
                                 // This shouldn't happen after permission check, but handle it
@@ -1540,7 +1624,12 @@ class FlowSorterViewModel @Inject constructor(
                         }
                     }
                 }
-                
+
+                // Trigger album list refresh so AlbumBubbleScreen updates when user switches tabs
+                if (operationSuccess) {
+                    preferencesRepository.triggerAlbumRefresh()
+                }
+
                 // Update widget
                 widgetUpdater.updateDailyProgressWidgets()
                 
@@ -1609,6 +1698,37 @@ class FlowSorterViewModel @Inject constructor(
     }
 
     /**
+     * 复制照片到同一相册
+     * 复制后将新照片插入 Room 数据库，保留原照片的筛选状态
+     */
+    fun copyPhoto(photoId: String) {
+        val photo = uiState.value.photos.find { it.id == photoId } ?: return
+
+        viewModelScope.launch {
+            try {
+                val photoUri = Uri.parse(photo.systemUri)
+                val bucketId = photo.bucketId ?: return@launch
+                val targetPath = mediaStoreDataSource.getAlbumPath(bucketId)
+                    ?: "Pictures/PhotoZen"
+
+                val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
+                if (result.isSuccess) {
+                    // 将新照片插入 Room 数据库，保留原照片的筛选状态
+                    result.getOrNull()?.let { newPhoto ->
+                        val photoWithStatus = newPhoto.copy(status = photo.status)
+                        photoDao.insert(photoWithStatus)
+                    }
+                    _albumMessage.value = "已复制照片"
+                } else {
+                    _error.value = "复制失败: ${result.exceptionOrNull()?.message}"
+                }
+            } catch (e: Exception) {
+                _error.value = "复制失败: ${e.message}"
+            }
+        }
+    }
+
+    /**
      * Load all system albums for the album picker.
      */
     fun loadSystemAlbums() {
@@ -1668,32 +1788,46 @@ class FlowSorterViewModel @Inject constructor(
     /**
      * Create a new album in the system and add it to the quick album list.
      * The newly created album will be selected.
+     * If an album with the same name already exists, shows a message instead.
      */
     fun createAlbumAndAdd(albumName: String) {
         viewModelScope.launch {
             try {
+                // First check if an album with this name already exists
+                val allAlbums = mediaStoreDataSource.getAllAlbums()
+                val existingAlbum = allAlbums.find { it.name == albumName }
+
+                if (existingAlbum != null) {
+                    // Album already exists - show message
+                    _albumMessage.value = "相册「$albumName」已存在"
+                    _availableAlbums.value = allAlbums
+                    return@launch
+                }
+
                 // Create album in system storage
                 val result = mediaStoreDataSource.createAlbum(albumName)
-                
+
                 if (result != null) {
-                    val (bucketId, displayName) = result
-                    
-                    // Add to bubble list
+                    val displayName = result.displayName
+                    val relativePath = result.relativePath
+
+                    // Add to bubble list using relativePath as temporary bucketId
+                    // It will be updated to real bucketId when photos are added
                     val newAlbum = AlbumBubbleEntity(
-                        bucketId = bucketId,
+                        bucketId = relativePath,
                         displayName = displayName,
                         sortOrder = 0
                     )
-                    
+
                     // Shift existing albums down
-                    val existingAlbums = albumBubbleDao.getAllSync()
-                    existingAlbums.forEachIndexed { index, album ->
+                    val existingBubbleAlbums = albumBubbleDao.getAllSync()
+                    existingBubbleAlbums.forEachIndexed { index, album ->
                         albumBubbleDao.updateSortOrder(album.bucketId, index + 1)
                     }
-                    
+
                     albumBubbleDao.insert(newAlbum)
                     _albumMessage.value = "已创建相册「$displayName」"
-                    
+
                     // Refresh the available albums list
                     _availableAlbums.value = mediaStoreDataSource.getAllAlbums()
                 } else {
@@ -1788,7 +1922,20 @@ class FlowSorterViewModel @Inject constructor(
     fun clearSelection() {
         _selectedPhotoIds.value = emptySet()
     }
-    
+
+    /**
+     * Toggle selection for a specific photo.
+     * Uses current state to ensure fresh data.
+     */
+    fun toggleSelection(photoId: String) {
+        val currentSelection = _selectedPhotoIds.value
+        _selectedPhotoIds.value = if (currentSelection.contains(photoId)) {
+            currentSelection - photoId
+        } else {
+            currentSelection + photoId
+        }
+    }
+
     /**
      * Select all photos.
      */

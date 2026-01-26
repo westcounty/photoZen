@@ -28,14 +28,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -952,4 +956,154 @@ fun ShareFeatureTipCard(
             }
         }
     }
+}
+
+// ==================== 首页渐进式引导 ====================
+
+/**
+ * 首页提示条 - 轻量化的渐进式引导
+ *
+ * 用于显示单条提示信息，支持关闭。
+ * 设计为轻量提示条，不抢占视觉焦点。
+ *
+ * ## 视觉设计
+ * - surfaceVariant 背景
+ * - 左侧彩色竖条作为视觉标识
+ * - 微妙的入场动画（从右滑入 + 淡入）
+ * - 关闭时淡出 + 向右滑出
+ *
+ * @param icon 提示图标
+ * @param title 提示标题
+ * @param description 提示描述
+ * @param accentColor 左侧竖条颜色
+ * @param onDismiss 关闭回调
+ * @param modifier Modifier
+ */
+@Composable
+fun HomeTipStrip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    description: String,
+    accentColor: Color,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // 关闭按钮交互状态
+    val closeInteractionSource = remember { MutableInteractionSource() }
+    val isClosePressed by closeInteractionSource.collectIsPressedAsState()
+
+    // 关闭按钮缩放动画
+    val closeScale by animateFloatAsState(
+        targetValue = if (isClosePressed) 0.85f else 1f,
+        animationSpec = PicZenMotion.Springs.snappy(),
+        label = "tipCloseScale"
+    )
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 左侧彩色竖条
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(56.dp)
+                    .background(accentColor)
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // 图标
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = accentColor,
+                modifier = Modifier.size(24.dp)
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // 文案区域
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 12.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
+            }
+
+            // 关闭按钮
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .size(32.dp)
+                    .graphicsLayer {
+                        scaleX = closeScale
+                        scaleY = closeScale
+                    },
+                interactionSource = closeInteractionSource
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "关闭提示",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+    }
+}
+
+/**
+ * 首页提示数据
+ *
+ * 定义首页渐进式引导的3条提示内容。
+ */
+object HomeTipData {
+    data class TipContent(
+        val icon: androidx.compose.ui.graphics.vector.ImageVector,
+        val title: String,
+        val description: String,
+        val accentColor: @Composable () -> Color
+    )
+
+    val compareTip = TipContent(
+        icon = Icons.AutoMirrored.Filled.CompareArrows,
+        title = "在相册中调用图禅便捷对比图片",
+        description = "选择多张照片 → 分享 → PhotoZen 对比",
+        accentColor = { MaybeAmber }
+    )
+
+    val copyTip = TipContent(
+        icon = Icons.Default.ContentCopy,
+        title = "在相册中调用图禅进行照片复制",
+        description = "一些手机相册没有复制功能，可点击分享 → PhotoZen 复制",
+        accentColor = { KeepGreen }
+    )
+
+    val widgetTip = TipContent(
+        icon = Icons.Default.Widgets,
+        title = "添加桌面小部件，每日任务不错过",
+        description = "把图禅小部件放在桌面上，随时查看任务进度",
+        accentColor = { MaterialTheme.colorScheme.primary }
+    )
 }

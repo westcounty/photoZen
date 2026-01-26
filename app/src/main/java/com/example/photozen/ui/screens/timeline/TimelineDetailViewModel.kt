@@ -186,19 +186,24 @@ class TimelineDetailViewModel @Inject constructor(
 
     /**
      * Apply sort order to photos list.
+     * Uses effective time: prefers dateTaken, falls back to dateAdded * 1000
      */
     private fun applySortOrder(
         photos: List<PhotoEntity>,
         sortOrder: PhotoListSortOrder
     ): List<PhotoEntity> {
         return when (sortOrder) {
-            PhotoListSortOrder.DATE_DESC -> photos.sortedByDescending { it.dateTaken }
-            PhotoListSortOrder.DATE_ASC -> photos.sortedBy { it.dateTaken }
+            PhotoListSortOrder.DATE_DESC -> photos.sortedByDescending { it.getEffectiveTime() }
+            PhotoListSortOrder.DATE_ASC -> photos.sortedBy { it.getEffectiveTime() }
             PhotoListSortOrder.ADDED_DESC -> photos.sortedByDescending { it.updatedAt }
             PhotoListSortOrder.ADDED_ASC -> photos.sortedBy { it.updatedAt }
             PhotoListSortOrder.RANDOM -> photos.shuffled(kotlin.random.Random(randomSeed))
         }
     }
+
+    /** Get effective time: prefers dateTaken, falls back to dateAdded * 1000 */
+    private fun PhotoEntity.getEffectiveTime(): Long =
+        if (dateTaken > 0) dateTaken else dateAdded * 1000
 
     // ==================== Sort & View Mode ====================
 
@@ -357,6 +362,7 @@ class TimelineDetailViewModel @Inject constructor(
 
     /**
      * Copy selected photos to the same location.
+     * 复制后将新照片插入 Room 数据库，保留原照片的筛选状态
      */
     fun copySelectedPhotos() {
         viewModelScope.launch {
@@ -373,6 +379,11 @@ class TimelineDetailViewModel @Inject constructor(
 
                 val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
                 if (result.isSuccess) {
+                    // 将新照片插入 Room 数据库，保留原照片的筛选状态
+                    result.getOrNull()?.let { newPhoto ->
+                        val photoWithStatus = newPhoto.copy(status = photo.status)
+                        photoDao.insert(photoWithStatus)
+                    }
                     successCount++
                 }
             }
@@ -380,6 +391,37 @@ class TimelineDetailViewModel @Inject constructor(
             if (successCount > 0) {
                 _uiState.update { it.copy(message = "已复制 $successCount 张照片") }
                 clearSelection()
+            }
+        }
+    }
+
+    /**
+     * 复制单张照片到原相册位置（全屏预览中使用）
+     * 复制后将新照片插入 Room 数据库，保留原照片的筛选状态
+     */
+    fun copyPhoto(photoId: String) {
+        val photo = _uiState.value.photos.find { it.id == photoId } ?: return
+        viewModelScope.launch {
+            try {
+                val photoUri = Uri.parse(photo.systemUri)
+                val bucketId = photo.bucketId ?: return@launch
+                val targetAlbum = _uiState.value.albumBubbleList.find { it.bucketId == bucketId }
+                val targetPath = mediaStoreDataSource.getAlbumPath(bucketId)
+                    ?: "Pictures/${targetAlbum?.displayName ?: "PhotoZen"}"
+
+                val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
+                if (result.isSuccess) {
+                    // 将新照片插入 Room 数据库，保留原照片的筛选状态
+                    result.getOrNull()?.let { newPhoto ->
+                        val photoWithStatus = newPhoto.copy(status = photo.status)
+                        photoDao.insert(photoWithStatus)
+                    }
+                    _uiState.update { it.copy(message = "已复制照片") }
+                } else {
+                    _uiState.update { it.copy(error = "复制失败: ${result.exceptionOrNull()?.message}") }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "复制失败: ${e.message}") }
             }
         }
     }

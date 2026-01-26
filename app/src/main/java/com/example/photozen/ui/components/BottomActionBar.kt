@@ -39,6 +39,7 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Clear
@@ -278,7 +279,21 @@ fun maybeAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
 )
 
 /**
+ * Create a "Move to Trash" (移到回收站) action.
+ * Uses outlined icon and default color to differentiate from permanent delete.
+ */
+@Composable
+fun trashAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
+    icon = Icons.Outlined.Delete,
+    label = "移到回收站",
+    color = MaterialTheme.colorScheme.onSurface,
+    onClick = onClick,
+    enabled = enabled
+)
+
+/**
  * Create a "Delete" (删除) action - move to trash.
+ * @deprecated Use trashAction for clearer naming
  */
 fun deleteAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
     icon = Icons.Default.Delete,
@@ -289,11 +304,12 @@ fun deleteAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction
 )
 
 /**
- * Create a "Permanent Delete" (彻删) action.
+ * Create a "Permanent Delete" (彻底删除) action.
+ * Uses filled DeleteForever icon and red color for emphasis.
  */
 fun permanentDeleteAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
     icon = Icons.Default.DeleteForever,
-    label = "彻删",
+    label = "彻底删除",
     color = TrashRed,
     onClick = onClick,
     enabled = enabled

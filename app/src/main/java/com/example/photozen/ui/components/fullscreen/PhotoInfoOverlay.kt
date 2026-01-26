@@ -18,13 +18,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.photozen.data.local.entity.PhotoEntity
+import com.example.photozen.util.OfflineGeocoder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -50,6 +57,28 @@ fun PhotoInfoOverlay(
     photo: PhotoEntity,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val offlineGeocoder = remember { OfflineGeocoder(context) }
+    var locationText by remember { mutableStateOf<String?>(null) }
+
+    // Load location text asynchronously
+    // If photo has GPS coordinates, use them directly
+    // Otherwise, if GPS hasn't been scanned yet, try to read from EXIF lazily
+    LaunchedEffect(photo.id, photo.latitude, photo.longitude, photo.gpsScanned) {
+        locationText = when {
+            // Photo already has GPS coordinates
+            photo.latitude != null && photo.longitude != null -> {
+                offlineGeocoder.getLocationText(photo.latitude, photo.longitude)
+            }
+            // GPS not yet scanned - try to read from EXIF lazily
+            !photo.gpsScanned -> {
+                offlineGeocoder.getLocationTextFromUri(photo.systemUri)
+            }
+            // GPS was scanned but no data found
+            else -> null
+        }
+    }
+
     Column(
         modifier = modifier
             .background(
@@ -68,21 +97,24 @@ fun PhotoInfoOverlay(
             overflow = TextOverflow.Ellipsis
         )
 
-        // 2. 拍摄时间
-        val dateTime = photo.dateTaken ?: photo.dateAdded * 1000 // dateAdded is in seconds
+        // 2. 拍摄时间 (优先 EXIF 时间，回退到文件添加时间)
+        val dateTime = when {
+            photo.dateTaken > 0 -> photo.dateTaken
+            photo.dateAdded > 0 -> photo.dateAdded * 1000  // dateAdded is in seconds
+            else -> System.currentTimeMillis()
+        }
         InfoRow(
             icon = Icons.Default.Schedule,
             text = formatDateTime(dateTime)
         )
 
         // 3. 地理位置 (如果有)
-        // PhotoEntity 中可能没有 location 字段，这里预留
-        // photo.location?.let { location ->
-        //     InfoRow(
-        //         icon = Icons.Default.LocationOn,
-        //         text = "${location.province} ${location.city}"
-        //     )
-        // }
+        locationText?.let { location ->
+            InfoRow(
+                icon = Icons.Default.LocationOn,
+                text = location
+            )
+        }
 
         // 4. 分辨率
         if (photo.width > 0 && photo.height > 0) {

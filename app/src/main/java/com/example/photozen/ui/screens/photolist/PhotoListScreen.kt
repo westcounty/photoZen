@@ -64,6 +64,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import com.example.photozen.ui.components.shareImage
 import com.example.photozen.ui.components.PhotoGridMode
+import com.example.photozen.ui.components.StoragePermissionDialog
 import com.example.photozen.ui.components.ViewModeDropdownButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -123,6 +124,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import com.example.photozen.ui.components.openImageWithApp
+import com.example.photozen.ui.components.openImageWithChooser
 import com.example.photozen.ui.components.SelectionTopBar
 import com.example.photozen.ui.components.SelectionBottomBar
 import com.example.photozen.ui.components.BottomBarConfigs
@@ -156,17 +158,12 @@ fun PhotoListScreen(
     
     // Phase 3-9: 删除确认弹窗状态
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
+    var pendingDeletePhoto by remember { mutableStateOf<PhotoEntity?>(null) }
 
     // REQ-032, REQ-034: 全屏预览状态
     var showFullscreenViewer by remember { mutableStateOf(false) }
     var fullscreenInitialIndex by remember { mutableStateOf(0) }
     
-    // 长按引导状态
-    val longPressGuide = rememberGuideState(
-        guideKey = GuideKey.PHOTO_LIST_LONG_PRESS,
-        guideRepository = viewModel.guideRepository
-    )
-    var gridBounds by remember { mutableStateOf<Rect?>(null) }
 
     // 处理 UI 事件（撤销等）
     LaunchedEffect(Unit) {
@@ -236,13 +233,34 @@ fun PhotoListScreen(
                 when (actionType) {
                     FullscreenActionType.COPY -> viewModel.duplicatePhoto(photo.id)
                     FullscreenActionType.OPEN_WITH -> {
-                        uiState.defaultExternalApp?.let { pkg ->
-                            openImageWithApp(context, Uri.parse(photo.systemUri), pkg)
-                        }
+                        openImageWithChooser(context, Uri.parse(photo.systemUri))
                     }
                     FullscreenActionType.EDIT -> onNavigateToEditor(photo.id)
                     FullscreenActionType.SHARE -> shareImage(context, Uri.parse(photo.systemUri))
-                    FullscreenActionType.DELETE -> viewModel.requestPermanentDelete(photo.id)
+                    FullscreenActionType.DELETE -> {
+                        pendingDeletePhoto = photo
+                        showDeleteConfirmSheet = true
+                    }
+                }
+            },
+            overlayContent = {
+                // 全屏预览删除确认面板
+                if (showDeleteConfirmSheet && pendingDeletePhoto != null) {
+                    ConfirmDeleteSheet(
+                        photos = listOf(pendingDeletePhoto!!),
+                        deleteType = DeleteType.PERMANENT_DELETE,
+                        onConfirm = {
+                            showDeleteConfirmSheet = false
+                            pendingDeletePhoto?.let { photo ->
+                                viewModel.requestPermanentDelete(photo.id)
+                            }
+                            pendingDeletePhoto = null
+                        },
+                        onDismiss = {
+                            showDeleteConfirmSheet = false
+                            pendingDeletePhoto = null
+                        }
+                    )
                 }
             }
         )
@@ -371,9 +389,9 @@ fun PhotoListScreen(
                     PhotoStatus.KEEP -> BottomBarConfigs.keepListMultiSelect(
                         onAlbum = { viewModel.showAlbumDialog() },
                         onMaybe = { viewModel.moveSelectedToMaybe() },
-                        onTrash = { showDeleteConfirmSheet = true },
+                        onTrash = { viewModel.moveSelectedToTrash() },  // 直接移到回收站，无需确认
                         onReset = { viewModel.resetSelectedToUnsorted() },
-                        onPermanentDelete = { showDeleteConfirmSheet = true }
+                        onPermanentDelete = { viewModel.requestPermanentDeleteSelected() }  // 系统确认弹窗
                     )
                     PhotoStatus.MAYBE -> {
                         // REQ-031: 待定列表使用清除+对比按钮
@@ -487,18 +505,9 @@ fun PhotoListScreen(
                                     }
                                 },
                                 onPhotoClick = { photoId, index ->
-                                    // 待定列表：点击始终切换选中状态
-                                    // 其他列表：根据 isSelectionMode 判断
-                                    if (uiState.status == PhotoStatus.MAYBE || uiState.isSelectionMode) {
-                                        // 切换选中状态
-                                        val success = viewModel.togglePhotoSelectionWithLimit(photoId)
-                                        if (!success) {
-                                            scope.launch {
-                                                snackbarHostState.showSnackbar("最多可对比${MAYBE_LIST_SELECTION_LIMIT}张照片")
-                                            }
-                                        }
-                                    } else {
-                                        // 非选择模式 - 进入全屏预览 (REQ-032)
+                                    // 非选择模式 - 进入全屏预览 (REQ-032)
+                                    // 选择模式由 onSelectionToggle 处理
+                                    if (uiState.status != PhotoStatus.MAYBE && !uiState.isSelectionMode) {
                                         fullscreenInitialIndex = index
                                         showFullscreenViewer = true
                                     }
@@ -510,31 +519,17 @@ fun PhotoListScreen(
                                 columns = uiState.gridColumns,
                                 gridMode = uiState.gridMode,
                                 selectionColor = color,
-                                modifier = Modifier.onGloballyPositioned { coordinates ->
-                                    if (gridBounds == null && coordinates.size.width > 0) {
-                                        gridBounds = coordinates.boundsInRoot()
+                                clickAlwaysTogglesSelection = uiState.status == PhotoStatus.MAYBE,
+                                onSelectionToggle = { photoId ->
+                                    // Toggle selection using ViewModel to ensure fresh state
+                                    val success = viewModel.togglePhotoSelectionWithLimit(photoId)
+                                    if (!success) {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("最多可对比${MAYBE_LIST_SELECTION_LIMIT}张照片")
+                                        }
                                     }
                                 }
                             )
-                            
-                            // 长按引导（仅在非选择模式下且有照片时显示）
-                            if (!uiState.isSelectionMode && uiState.photos.isNotEmpty()) {
-                                GuideTooltip(
-                                    visible = longPressGuide.shouldShow,
-                                    message = "📱 长按选择\n长按照片进入多选模式\n可拖动批量选择",
-                                    targetBounds = gridBounds?.let { bounds ->
-                                        // 指向网格第一张照片的位置
-                                        Rect(
-                                            left = bounds.left + 16f,
-                                            top = bounds.top + 16f,
-                                            right = bounds.left + 116f,
-                                            bottom = bounds.top + 116f
-                                        )
-                                    },
-                                    arrowDirection = ArrowDirection.UP,
-                                    onDismiss = longPressGuide.dismiss
-                                )
-                            }
                         }
                     }
                 }
@@ -554,18 +549,14 @@ fun PhotoListScreen(
             onDismiss = { viewModel.hideAlbumDialog() }
         )
     }
-    
-    // Phase 3-9: 移入回收站确认弹窗
-    if (showDeleteConfirmSheet) {
-        val selectedPhotos = uiState.photos.filter { it.id in uiState.selectedPhotoIds }
-        ConfirmDeleteSheet(
-            photos = selectedPhotos,
-            deleteType = DeleteType.MOVE_TO_TRASH,
-            onConfirm = {
-                showDeleteConfirmSheet = false
-                viewModel.moveSelectedToTrash()
-            },
-            onDismiss = { showDeleteConfirmSheet = false }
+
+    // Permission dialog for move operations
+    if (uiState.showPermissionDialog) {
+        StoragePermissionDialog(
+            onOpenSettings = { /* no-op, dialog handles it */ },
+            onPermissionGranted = { viewModel.onPermissionGranted() },
+            onDismiss = { viewModel.dismissPermissionDialog() },
+            showRetryError = uiState.permissionRetryError
         )
     }
 }

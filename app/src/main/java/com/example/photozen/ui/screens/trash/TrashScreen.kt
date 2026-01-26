@@ -167,6 +167,22 @@ fun TrashScreen(
                         // 回收站照片其他操作暂不支持
                     }
                 }
+            },
+            overlayContent = {
+                // 全屏预览删除确认面板
+                if (showDeleteConfirmSheet) {
+                    val selectedPhotos = uiState.photos.filter { it.id in uiState.selectedIds }
+                    ConfirmDeleteSheet(
+                        photos = selectedPhotos,
+                        deleteType = DeleteType.PERMANENT_DELETE,
+                        onConfirm = {
+                            showDeleteConfirmSheet = false
+                            viewModel.requestPermanentDelete()
+                        },
+                        onDismiss = { showDeleteConfirmSheet = false },
+                        isLoading = uiState.isDeleting
+                    )
+                }
             }
         )
         return
@@ -304,10 +320,8 @@ fun TrashScreen(
                                 // REQ-034: 非选择模式点击进入全屏预览
                                 fullscreenInitialIndex = index
                                 showFullscreenViewer = true
-                            } else {
-                                // 选择模式下切换选中
-                                viewModel.toggleSelection(photoId)
                             }
+                            // 选择模式由 onSelectionToggle 处理
                         },
                         onPhotoLongPress = { _, _ ->
                             // 长按选择已在 DragSelectPhotoGrid.onLongPress 中处理
@@ -315,15 +329,20 @@ fun TrashScreen(
                         },
                         columns = uiState.gridColumns,
                         gridMode = uiState.gridMode,
-                        selectionColor = TrashRed
+                        selectionColor = TrashRed,
+                        onSelectionToggle = { photoId ->
+                            // Toggle selection using ViewModel to ensure fresh state
+                            viewModel.toggleSelection(photoId)
+                        }
                     )
                 }
             }
         }
     }
     
-    // Phase 3-9: 永久删除确认弹窗
-    if (showDeleteConfirmSheet) {
+    // Phase 3-9: 永久删除确认弹窗 (非全屏预览场景)
+    // 注：全屏预览场景由 overlayContent 处理
+    if (!showFullscreenViewer && showDeleteConfirmSheet) {
         val selectedPhotos = uiState.photos.filter { it.id in uiState.selectedIds }
         ConfirmDeleteSheet(
             photos = selectedPhotos,

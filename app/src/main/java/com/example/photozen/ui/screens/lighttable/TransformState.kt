@@ -7,9 +7,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 
 /**
+ * 保存变换状态的快照，用于记录基准状态
+ */
+data class TransformSnapshot(
+    val scale: Float = 1f,
+    val offsetX: Float = 0f,
+    val offsetY: Float = 0f
+)
+
+/**
  * Holds the transformation state (scale, offset) for synchronized zoom/pan.
  * This state is shared across all images in comparison mode.
- * 
+ *
  * Design: State Hoisting pattern - parent holds state, children observe.
  */
 @Stable
@@ -87,6 +96,31 @@ class TransformState {
         scale = other.scale
         offsetX = other.offsetX
         offsetY = other.offsetY
+    }
+
+    /**
+     * 获取当前状态的快照
+     */
+    fun toSnapshot(): TransformSnapshot {
+        return TransformSnapshot(scale, offsetX, offsetY)
+    }
+
+    /**
+     * 从快照恢复状态
+     */
+    fun fromSnapshot(snapshot: TransformSnapshot) {
+        scale = snapshot.scale
+        offsetX = snapshot.offsetX
+        offsetY = snapshot.offsetY
+    }
+
+    /**
+     * 直接设置所有值（绕过私有setter限制）
+     */
+    fun setAll(newScale: Float, newOffsetX: Float, newOffsetY: Float) {
+        scale = newScale.coerceIn(minScale, maxScale)
+        offsetX = newOffsetX
+        offsetY = newOffsetY
     }
     
     /**

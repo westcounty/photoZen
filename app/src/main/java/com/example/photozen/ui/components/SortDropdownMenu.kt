@@ -155,12 +155,8 @@ fun SortDropdownButton(
         ) {
             Icon(
                 imageVector = Icons.Default.Sort,
-                contentDescription = "排序: ${currentSort.displayName}",
-                tint = if (enabled) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                }
+                contentDescription = "排序: ${currentSort.displayName}"
+                // 不设置 tint，使用 IconButton 默认样式
             )
         }
 

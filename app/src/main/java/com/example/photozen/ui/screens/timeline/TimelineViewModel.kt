@@ -303,25 +303,27 @@ class TimelineViewModel @Inject constructor(
             // Set custom filter with precise mode
             // preciseMode=true signals to FlowSorterViewModel to use this filter
             // without requiring PhotoFilterMode.CUSTOM
+            // defaultSortOrder=DATE_ASC so first photo matches timeline group cover
             preferencesRepository.setSessionCustomFilter(
                 CustomFilterSession(
                     albumIds = null,
                     startDate = startTime,
                     endDate = endTime,
-                    preciseMode = true  // Use exact timestamps, no day extension
+                    preciseMode = true,  // Use exact timestamps, no day extension
+                    defaultSortOrder = com.example.photozen.data.model.PhotoSortOrder.DATE_ASC
                 )
             )
-            
+
             // NOTE: We intentionally do NOT set PhotoFilterMode to CUSTOM here
             // The session filter with preciseMode=true will be detected and used
             // by FlowSorterViewModel, preserving the user's original filter setting
-            
+
             // Trigger navigation
-            _uiState.update { 
+            _uiState.update {
                 it.copy(
                     navigateToSorter = !listMode,
                     navigateToSorterListMode = listMode
-                ) 
+                )
             }
         }
     }
@@ -548,18 +550,47 @@ class TimelineViewModel @Inject constructor(
         viewModelScope.launch {
             val photo = photoDao.getById(photoId) ?: return@launch
             val photoUri = Uri.parse(photo.systemUri)
-            
+
             // Get target album path
             val album = albumBubbleList.value.find { it.bucketId == albumBucketId }
             val targetPath = mediaStoreDataSource.getAlbumPath(albumBucketId)
                 ?: "Pictures/${album?.displayName ?: "PhotoZen"}"
-            
+
             // Copy photo to album
             val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
             if (result.isSuccess) {
                 _uiState.update { it.copy(error = null) }
             } else {
                 _uiState.update { it.copy(error = "添加到相册失败") }
+            }
+        }
+    }
+
+    /**
+     * 复制照片到原相册位置
+     * 复制后将新照片插入 Room 数据库，保留原照片的筛选状态
+     */
+    fun copyPhoto(photoId: String) {
+        viewModelScope.launch {
+            val photo = photoDao.getById(photoId) ?: return@launch
+            try {
+                val photoUri = Uri.parse(photo.systemUri)
+                val bucketId = photo.bucketId ?: return@launch
+                val targetPath = mediaStoreDataSource.getAlbumPath(bucketId) ?: "Pictures/PhotoZen"
+
+                val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
+                if (result.isSuccess) {
+                    // 将新照片插入 Room 数据库，保留原照片的筛选状态
+                    result.getOrNull()?.let { newPhoto ->
+                        val photoWithStatus = newPhoto.copy(status = photo.status)
+                        photoDao.insert(photoWithStatus)
+                    }
+                    _uiState.update { it.copy(message = "已复制照片") }
+                } else {
+                    _uiState.update { it.copy(error = "复制失败: ${result.exceptionOrNull()?.message}") }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "复制失败: ${e.message}") }
             }
         }
     }

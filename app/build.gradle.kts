@@ -1,4 +1,5 @@
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.util.Properties
 
 plugins {
@@ -149,4 +150,44 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+// ==================== 自动递增 Build 号 ====================
+
+/**
+ * 自动递增 build_version.properties 中的 build 号
+ * 每次执行 assembleDebug 或 assembleRelease 时自动 +1
+ * 保持文件格式整洁（不使用 Properties.store 以避免时间戳和乱序）
+ */
+tasks.register("incrementBuildNumber") {
+    doLast {
+        val versionPropsFile = rootProject.file("build_version.properties")
+        if (versionPropsFile.exists()) {
+            val versionProps = Properties()
+            FileInputStream(versionPropsFile).use { stream ->
+                versionProps.load(stream)
+            }
+
+            val major = versionProps["major"]?.toString() ?: "1"
+            val minor = versionProps["minor"]?.toString() ?: "0"
+            val patch = versionProps["patch"]?.toString() ?: "0"
+            val currentBuild = versionProps["build"]?.toString()?.toInt() ?: 0
+            val newBuild = currentBuild + 1
+
+            // 直接写入保持格式整洁
+            versionPropsFile.writeText("""
+                |major=$major
+                |minor=$minor
+                |patch=$patch
+                |build=${String.format("%03d", newBuild)}
+            """.trimMargin() + "\n")
+
+            println("Build 号已递增: $currentBuild -> $newBuild")
+        }
+    }
+}
+
+// 让 assemble 任务依赖 incrementBuildNumber
+tasks.matching { it.name.startsWith("assemble") }.configureEach {
+    dependsOn("incrementBuildNumber")
 }

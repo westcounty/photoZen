@@ -16,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -40,6 +41,7 @@ data class AlbumBubbleData(
  */
 data class AlbumBubbleUiState(
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,  // For refresh button animation
     val albums: List<AlbumBubbleData> = emptyList(),
     val bubbleNodes: List<BubbleNode> = emptyList(),
     val viewMode: AlbumViewMode = AlbumViewMode.GRID,
@@ -98,6 +100,14 @@ class AlbumBubbleViewModel @Inject constructor(
                 _uiState.update { it.copy(viewMode = mode) }
             }
         }
+        // Listen for album refresh trigger (from FlowSorter when photos are added/moved)
+        viewModelScope.launch {
+            preferencesRepository.albumRefreshTrigger
+                .drop(1)  // Skip initial value
+                .collect {
+                    refreshAlbumStats()
+                }
+        }
         loadAlbumBubbles()
     }
     
@@ -112,44 +122,83 @@ class AlbumBubbleViewModel @Inject constructor(
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
-            
+
             try {
                 // Get albums from bubble list
                 val bubbleAlbums = albumBubbleDao.getAllSync()
-                
-                // Get all system albums and create a lookup by bucketId
-                // IMPORTANT: Use bucketId as key, NOT name, because multiple albums 
-                // can have the same name (e.g., DCIM/Camera and Pictures/Camera)
+
+                // Get all system albums and create lookups
                 val allSystemAlbums = mediaStoreDataSource.getAllAlbums()
                 val systemAlbumsById = allSystemAlbums.associateBy { it.id }
-                
+                // Also create lookup by name for matching newly created albums
+                val systemAlbumsByName = allSystemAlbums.groupBy { it.name }
+
                 // Get stats and cover for each album
                 // Use MediaStore directly to get fresh photo counts (important after photo moves)
                 val albumsWithStats = bubbleAlbums.map { album ->
                     try {
-                        // The bucketId stored in database should already be correct
-                        // (it comes from Album.id when added via addAlbumsToBubbleList)
-                        val bucketId = album.bucketId
-                        
-                        // Verify the album still exists in system
-                        val systemAlbum = systemAlbumsById[bucketId]
-                        
-                        // Get photos directly from MediaStore for accurate count
-                        val photos = mediaStoreDataSource.getPhotosFromAlbum(bucketId)
-                        // Get sorted count from database using the photo IDs
-                        val photoIds = photos.map { it.id }
-                        val sortedCount = if (photoIds.isNotEmpty()) {
-                            val dbPhotos = photoDao.getPhotosByIds(photoIds)
-                            dbPhotos.count { it.status != PhotoStatus.UNSORTED }
-                        } else {
-                            0
+                        var bucketId = album.bucketId
+                        var systemAlbum = systemAlbumsById[bucketId]
+
+                        // Check if this is a newly created album with relativePath as bucketId
+                        // Format: "Pictures/AlbumName" or similar
+                        if (systemAlbum == null && bucketId.contains("/")) {
+                            // Extract the album name from relativePath
+                            val albumName = bucketId.substringAfterLast("/")
+                            // Try to find matching system album by name
+                            val matchingAlbums = systemAlbumsByName[albumName]
+                            if (!matchingAlbums.isNullOrEmpty()) {
+                                // Found a match - use the real bucketId
+                                systemAlbum = matchingAlbums.first()
+                                val realBucketId = systemAlbum.id
+
+                                // Update the database with the real bucketId
+                                albumBubbleDao.deleteByBucketId(album.bucketId)
+                                albumBubbleDao.insert(
+                                    AlbumBubbleEntity(
+                                        bucketId = realBucketId,
+                                        displayName = album.displayName,
+                                        sortOrder = album.sortOrder
+                                    )
+                                )
+                                bucketId = realBucketId
+                            }
                         }
-                        val coverUri = photos.maxByOrNull { it.dateAdded }?.systemUri
-                        
+
+                        // Get photos from MediaStore (真实的系统照片数量)
+                        val mediaStorePhotos = mediaStoreDataSource.getPhotosFromAlbum(bucketId)
+                        val mediaStoreIds = mediaStorePhotos.map { it.id }.toSet()
+
+                        // Get existing photos in Room for this album
+                        val roomPhotos = photoDao.getPhotosByBucketIdSync(bucketId)
+                        val roomIds = roomPhotos.map { it.id }.toSet()
+
+                        // Add missing photos to Room (MediaStore has, Room doesn't)
+                        val missingPhotos = mediaStorePhotos.filter { it.id !in roomIds }
+                        if (missingPhotos.isNotEmpty()) {
+                            photoDao.insertAll(missingPhotos)
+                        }
+
+                        // Remove orphaned photos from Room (Room has, MediaStore doesn't)
+                        // These are photos that were deleted or moved to other albums
+                        val orphanedIds = roomIds - mediaStoreIds
+                        if (orphanedIds.isNotEmpty()) {
+                            photoDao.deleteByIds(orphanedIds.toList())
+                        }
+
+                        // Calculate sorted count from synced data
+                        val syncedPhotos = if (missingPhotos.isNotEmpty() || orphanedIds.isNotEmpty()) {
+                            photoDao.getPhotosByBucketIdSync(bucketId)
+                        } else {
+                            roomPhotos.filter { it.id in mediaStoreIds }
+                        }
+                        val sortedCount = syncedPhotos.count { it.status != PhotoStatus.UNSORTED }
+                        val coverUri = mediaStorePhotos.maxByOrNull { it.dateAdded }?.systemUri
+
                         AlbumBubbleData(
                             bucketId = bucketId,
-                            displayName = systemAlbum?.name ?: album.displayName,  // Use system name if available
-                            totalCount = photos.size,
+                            displayName = systemAlbum?.name ?: album.displayName,
+                            totalCount = mediaStorePhotos.size,  // 使用 MediaStore 的真实数量
                             sortedCount = sortedCount,
                             coverUri = coverUri
                         )
@@ -164,7 +213,7 @@ class AlbumBubbleViewModel @Inject constructor(
                         )
                     }
                 }
-                
+
                 // Create bubble nodes
                 val bubbleNodes = createBubbleNodes(albumsWithStats)
                 
@@ -186,7 +235,116 @@ class AlbumBubbleViewModel @Inject constructor(
             }
         }
     }
-    
+
+    /**
+     * Refresh only the stats (photo count, sorted count, cover) for each album.
+     * This is more efficient than loadAlbumBubbles() as it doesn't reload the list structure.
+     * Use this when returning from other screens where photos may have been added/moved.
+     */
+    fun refreshAlbumStats() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true) }
+            try {
+                val currentAlbums = _uiState.value.albums
+                if (currentAlbums.isEmpty()) {
+                    // No albums loaded yet, do a full load instead
+                    loadAlbumBubbles()
+                    _uiState.update { it.copy(isRefreshing = false) }
+                    return@launch
+                }
+
+                // Get all system albums for name lookup
+                val allSystemAlbums = mediaStoreDataSource.getAllAlbums()
+                val systemAlbumsById = allSystemAlbums.associateBy { it.id }
+                val systemAlbumsByName = allSystemAlbums.groupBy { it.name }
+
+                // Update stats for each album without changing order
+                val updatedAlbums = currentAlbums.map { album ->
+                    try {
+                        var bucketId = album.bucketId
+                        var systemAlbum = systemAlbumsById[bucketId]
+
+                        // Handle newly created albums with relativePath as bucketId
+                        if (systemAlbum == null && bucketId.contains("/")) {
+                            val albumName = bucketId.substringAfterLast("/")
+                            val matchingAlbums = systemAlbumsByName[albumName]
+                            if (!matchingAlbums.isNullOrEmpty()) {
+                                systemAlbum = matchingAlbums.first()
+                                val realBucketId = systemAlbum.id
+
+                                // Update the database with the real bucketId
+                                albumBubbleDao.deleteByBucketId(bucketId)
+                                albumBubbleDao.insert(
+                                    AlbumBubbleEntity(
+                                        bucketId = realBucketId,
+                                        displayName = album.displayName,
+                                        sortOrder = currentAlbums.indexOf(album)
+                                    )
+                                )
+                                bucketId = realBucketId
+                            }
+                        }
+
+                        // Get photos from MediaStore (真实的系统照片数量)
+                        val mediaStorePhotos = mediaStoreDataSource.getPhotosFromAlbum(bucketId)
+                        val mediaStoreIds = mediaStorePhotos.map { it.id }.toSet()
+
+                        // Get existing photos in Room for this album
+                        val roomPhotos = photoDao.getPhotosByBucketIdSync(bucketId)
+                        val roomIds = roomPhotos.map { it.id }.toSet()
+
+                        // Add missing photos to Room (MediaStore has, Room doesn't)
+                        val missingPhotos = mediaStorePhotos.filter { it.id !in roomIds }
+                        if (missingPhotos.isNotEmpty()) {
+                            photoDao.insertAll(missingPhotos)
+                        }
+
+                        // Remove orphaned photos from Room (Room has, MediaStore doesn't)
+                        val orphanedIds = roomIds - mediaStoreIds
+                        if (orphanedIds.isNotEmpty()) {
+                            photoDao.deleteByIds(orphanedIds.toList())
+                        }
+
+                        // Calculate sorted count from synced data
+                        val syncedPhotos = if (missingPhotos.isNotEmpty() || orphanedIds.isNotEmpty()) {
+                            photoDao.getPhotosByBucketIdSync(bucketId)
+                        } else {
+                            roomPhotos.filter { it.id in mediaStoreIds }
+                        }
+                        val sortedCount = syncedPhotos.count { it.status != PhotoStatus.UNSORTED }
+                        val coverUri = mediaStorePhotos.maxByOrNull { it.dateAdded }?.systemUri
+
+                        // Return updated album data
+                        album.copy(
+                            bucketId = bucketId,
+                            displayName = systemAlbum?.name ?: album.displayName,
+                            totalCount = mediaStorePhotos.size,  // 使用 MediaStore 的真实数量
+                            sortedCount = sortedCount,
+                            coverUri = coverUri
+                        )
+                    } catch (e: Exception) {
+                        // Keep existing data on error
+                        album
+                    }
+                }
+
+                // Update bubble nodes with new stats
+                val bubbleNodes = createBubbleNodes(updatedAlbums)
+
+                _uiState.update {
+                    it.copy(
+                        albums = updatedAlbums,
+                        bubbleNodes = bubbleNodes,
+                        isRefreshing = false
+                    )
+                }
+            } catch (e: Exception) {
+                // Clear refreshing state on error
+                _uiState.update { it.copy(isRefreshing = false) }
+            }
+        }
+    }
+
     /**
      * Create bubble nodes from album data.
      */
@@ -463,63 +621,80 @@ class AlbumBubbleViewModel @Inject constructor(
     /**
      * Create a new album in the system and add it to the bubble list.
      * The newly created album will be selected and placed at the top of the list.
+     * If an album with the same name already exists, it will be selected instead.
      */
     fun createAlbum(albumName: String) {
         viewModelScope.launch {
             try {
+                // First check if an album with this name already exists
+                val allAlbums = mediaStoreDataSource.getAllAlbums()
+                val existingAlbum = allAlbums.find { it.name == albumName }
+
+                if (existingAlbum != null) {
+                    // Album already exists - select it instead of creating
+                    _uiState.update { state ->
+                        state.copy(
+                            selectedAlbumIds = state.selectedAlbumIds + existingAlbum.id,
+                            availableAlbums = allAlbums,
+                            message = "相册「$albumName」已存在，已为您选中"
+                        )
+                    }
+                    return@launch
+                }
+
                 // Create album in system storage
                 val result = mediaStoreDataSource.createAlbum(albumName)
-                
+
                 if (result != null) {
-                    val (bucketId, displayName) = result
-                    
+                    val displayName = result.displayName  // Clean name without "Pictures/" prefix
+                    val relativePath = result.relativePath  // For MediaStore operations
+
                     // Add to bubble list with sort order 0 (top of list)
+                    // Store relativePath in bucketId field temporarily - will be updated when photos are added
                     val newAlbum = AlbumBubbleEntity(
-                        bucketId = bucketId,
+                        bucketId = relativePath,  // Use relativePath as identifier for new empty albums
                         displayName = displayName,
                         sortOrder = 0
                     )
-                    
+
                     // Shift existing albums down
-                    val existingAlbums = albumBubbleDao.getAllSync()
-                    existingAlbums.forEachIndexed { index, album ->
+                    val existingBubbleAlbums = albumBubbleDao.getAllSync()
+                    existingBubbleAlbums.forEachIndexed { index, album ->
                         albumBubbleDao.updateSortOrder(album.bucketId, index + 1)
                     }
-                    
+
                     // Insert the new album
                     albumBubbleDao.insert(newAlbum)
-                    
+
                     // Add to selected IDs so it appears selected in the picker
                     _uiState.update { state ->
                         state.copy(
-                            selectedAlbumIds = state.selectedAlbumIds + bucketId,
+                            selectedAlbumIds = state.selectedAlbumIds + relativePath,
                             message = "已创建相册「$displayName」"
                         )
                     }
-                    
+
                     // Refresh the available albums list
-                    var allAlbums = mediaStoreDataSource.getAllAlbums()
-                    
+                    var updatedAlbums = mediaStoreDataSource.getAllAlbums()
+
                     // IMPORTANT: New empty albums may not appear in MediaStore query
                     // Manually add the new album to the front if not present
-                    if (allAlbums.none { it.id == bucketId }) {
+                    val foundAlbum = updatedAlbums.find { it.name == displayName || it.id == relativePath }
+                    if (foundAlbum == null) {
                         val newAlbumEntry = Album(
-                            id = bucketId,
+                            id = relativePath,
                             name = displayName,
                             photoCount = 0,
                             coverUri = null
                         )
-                        allAlbums = listOf(newAlbumEntry) + allAlbums
+                        updatedAlbums = listOf(newAlbumEntry) + updatedAlbums
                     } else {
-                        // Move the new album to the front of the list
-                        val albumToMove = allAlbums.find { it.id == bucketId }
-                        if (albumToMove != null) {
-                            allAlbums = listOf(albumToMove) + allAlbums.filter { it.id != bucketId }
-                        }
+                        // Move the existing album to the front of the list
+                        updatedAlbums = listOf(foundAlbum) + updatedAlbums.filter { it.id != foundAlbum.id }
                     }
-                    
-                    _uiState.update { it.copy(availableAlbums = allAlbums) }
-                    
+
+                    _uiState.update { it.copy(availableAlbums = updatedAlbums) }
+
                     // Reload bubble list
                     loadAlbumBubbles()
                 } else {

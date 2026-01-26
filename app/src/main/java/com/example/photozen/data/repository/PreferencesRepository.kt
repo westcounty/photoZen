@@ -217,7 +217,19 @@ class PreferencesRepository @Inject constructor(
     
     // Session-based custom filter (not persisted, cleared on app restart)
     private val _sessionCustomFilter = MutableStateFlow<CustomFilterSession?>(null)
-    
+
+    // Album refresh trigger - incremented when photos are added/moved to albums
+    // AlbumBubbleScreen observes this to refresh stats when switching tabs
+    private val _albumRefreshTrigger = MutableStateFlow(0L)
+    val albumRefreshTrigger: StateFlow<Long> = _albumRefreshTrigger.asStateFlow()
+
+    /**
+     * Trigger album list refresh. Call this after adding/moving photos to albums.
+     */
+    fun triggerAlbumRefresh() {
+        _albumRefreshTrigger.value = System.currentTimeMillis()
+    }
+
     /**
      * Get current session's custom filter settings as Flow.
      */
@@ -1327,7 +1339,9 @@ data class CustomFilterSession(
     val startDate: Long? = null,
     val endDate: Long? = null,
     val preciseMode: Boolean = false,
-    val photoIds: List<String>? = null
+    val photoIds: List<String>? = null,
+    /** Optional default sort order for this session. If set, FlowSorter will use this on initial load. */
+    val defaultSortOrder: com.example.photozen.data.model.PhotoSortOrder? = null
 ) {
     /**
      * Check if this filter uses exclude mode (NOT IN instead of IN).

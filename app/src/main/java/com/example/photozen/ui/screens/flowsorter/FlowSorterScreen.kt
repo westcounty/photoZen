@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.material.icons.filled.ViewColumn
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -115,6 +116,7 @@ import com.example.photozen.ui.components.FilterButton
 import com.example.photozen.ui.components.FilterChipRow
 import com.example.photozen.ui.components.FilterBottomSheet
 import com.example.photozen.ui.components.shareImage
+import com.example.photozen.ui.components.openImageWithChooser
 import com.example.photozen.domain.model.FilterType
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
@@ -168,7 +170,13 @@ fun FlowSorterScreen(
     // Phase 3-7: 使用设置中的震动反馈开关
     val hapticManager = rememberHapticFeedbackManager(uiState.hapticFeedbackEnabled)
 
-    // 视图切换引导状态
+    // 滑动整理全屏引导状态（用于判断是否已完成）
+    val swipeSortGuide = rememberGuideState(
+        guideKey = GuideKey.SWIPE_SORT_FULLSCREEN_GUIDE,
+        guideRepository = viewModel.guideRepository
+    )
+
+    // 视图切换引导状态（只在滑动整理引导完成后显示）
     val viewToggleGuide = rememberGuideState(
         guideKey = GuideKey.FLOW_SORTER_VIEW_TOGGLE,
         guideRepository = viewModel.guideRepository
@@ -302,7 +310,7 @@ fun FlowSorterScreen(
                             ) {
                                 Icon(
                                     imageVector = if (uiState.viewMode == FlowSorterViewMode.CARD)
-                                        Icons.Default.ViewCarousel else Icons.Default.GridView,
+                                        Icons.Default.ViewCarousel else Icons.Default.ViewList,
                                     contentDescription = if (uiState.viewMode == FlowSorterViewMode.CARD)
                                         "切换到列表模式" else "切换到卡片模式"
                                 )
@@ -375,8 +383,9 @@ fun FlowSorterScreen(
         )
     }
 
-    // 视图切换引导提示
+    // 视图切换引导提示（只在滑动整理引导完成后显示）
     if (viewToggleGuide.shouldShow &&
+        !swipeSortGuide.shouldShow &&  // 滑动整理引导已完成
         uiState.viewMode == FlowSorterViewMode.CARD && !uiState.isComplete) {
         GuideTooltip(
             visible = true,
@@ -561,23 +570,20 @@ fun FlowSorterContent(
                             selectedIds = uiState.selectedPhotoIds,
                             onSelectionChanged = { viewModel.updateSelection(it) },
                             onPhotoClick = { photoId, index ->
-                                // 点击直接选中/取消选中照片
-                                val newSelection = if (uiState.selectedPhotoIds.contains(photoId)) {
-                                    uiState.selectedPhotoIds - photoId
-                                } else {
-                                    uiState.selectedPhotoIds + photoId
-                                }
-                                viewModel.updateSelection(newSelection)
+                                // Non-selection mode: handled by onSelectionToggle
                             },
-                            onPhotoLongPress = { photoId, photoUri ->
-                                // Long press selects the photo and enters selection mode
-                                if (!uiState.selectedPhotoIds.contains(photoId)) {
-                                    viewModel.updateSelection(uiState.selectedPhotoIds + photoId)
-                                }
+                            onPhotoLongPress = { _, _ ->
+                                // 长按选择已在 DragSelectPhotoGrid.onLongPress 中处理
+                                // 此回调仅用于额外操作（如显示操作菜单），目前无需额外处理
                             },
                             columns = uiState.gridColumns,
                             gridMode = uiState.gridMode,
-                            enableDragSelect = false  // Disable drag select, use simple long press
+                            enableDragSelect = false,  // Disable drag select, use simple long press
+                            clickAlwaysTogglesSelection = true,
+                            onSelectionToggle = { photoId ->
+                                // Toggle selection using ViewModel to ensure fresh state
+                                viewModel.toggleSelection(photoId)
+                            }
                         )
                     }
                     else -> {
@@ -783,7 +789,7 @@ fun FlowSorterContent(
                         ) {
                             Icon(
                                 imageVector = if (effectiveViewMode == FlowSorterViewMode.CARD)
-                                    Icons.Default.ViewCarousel else Icons.Default.GridView,
+                                    Icons.Default.ViewCarousel else Icons.Default.ViewList,
                                 contentDescription = if (effectiveViewMode == FlowSorterViewMode.CARD)
                                     "切换到列表模式" else "切换到卡片模式",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -853,8 +859,12 @@ fun FlowSorterContent(
                 onExit = { fullscreenPhotoIndex = -1 },
                 onAction = { action, photo ->
                     when (action) {
-                        FullscreenActionType.COPY -> { /* 复制功能 */ }
-                        FullscreenActionType.OPEN_WITH -> { /* 用其他app打开 */ }
+                        FullscreenActionType.COPY -> {
+                            viewModel.copyPhoto(photo.id)
+                        }
+                        FullscreenActionType.OPEN_WITH -> {
+                            openImageWithChooser(context, android.net.Uri.parse(photo.systemUri))
+                        }
                         FullscreenActionType.EDIT -> { /* 编辑功能 */ }
                         FullscreenActionType.SHARE -> {
                             shareImage(context, android.net.Uri.parse(photo.systemUri))
@@ -864,6 +874,49 @@ fun FlowSorterContent(
                             pendingDeletePhoto = photo
                             showDeleteConfirmSheet = true
                         }
+                    }
+                },
+                overlayContent = {
+                    // 全屏预览永久删除确认面板
+                    if (showDeleteConfirmSheet && pendingDeletePhoto != null) {
+                        ConfirmDeleteSheet(
+                            photos = listOf(pendingDeletePhoto!!),
+                            deleteType = DeleteType.PERMANENT_DELETE,
+                            onConfirm = {
+                                showDeleteConfirmSheet = false
+                                pendingDeletePhoto?.let { photo ->
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                        try {
+                                            val uri = Uri.parse(photo.systemUri)
+                                            val deleteRequest = MediaStore.createDeleteRequest(
+                                                context.contentResolver,
+                                                listOf(uri)
+                                            )
+                                            deleteResultLauncher.launch(
+                                                IntentSenderRequest.Builder(deleteRequest.intentSender).build()
+                                            )
+                                        } catch (e: Exception) {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar("删除失败: ${e.message}")
+                                            }
+                                            pendingDeletePhoto = null
+                                        }
+                                    } else {
+                                        // Android 10 及以下版本直接从数据库删除
+                                        viewModel.onPhotoDeletedFromDevice(photo.id)
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("已删除")
+                                        }
+                                        pendingDeletePhoto = null
+                                        fullscreenPhotoIndex = -1
+                                    }
+                                }
+                            },
+                            onDismiss = {
+                                showDeleteConfirmSheet = false
+                                pendingDeletePhoto = null
+                            }
+                        )
                     }
                 }
             )
@@ -926,48 +979,6 @@ fun FlowSorterContent(
             onApplyPreset = { viewModel.applyFilter(it.config) },
             onDeletePreset = viewModel::deleteFilterPreset,
             onDismiss = { showFilterSheet = false }
-        )
-    }
-
-    // 全屏预览永久删除确认弹窗
-    if (showDeleteConfirmSheet && pendingDeletePhoto != null) {
-        ConfirmDeleteSheet(
-            photos = listOf(pendingDeletePhoto!!),
-            deleteType = DeleteType.PERMANENT_DELETE,
-            onConfirm = {
-                showDeleteConfirmSheet = false
-                pendingDeletePhoto?.let { photo ->
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        try {
-                            val uri = Uri.parse(photo.systemUri)
-                            val deleteRequest = MediaStore.createDeleteRequest(
-                                context.contentResolver,
-                                listOf(uri)
-                            )
-                            deleteResultLauncher.launch(
-                                IntentSenderRequest.Builder(deleteRequest.intentSender).build()
-                            )
-                        } catch (e: Exception) {
-                            scope.launch {
-                                snackbarHostState.showSnackbar("删除失败: ${e.message}")
-                            }
-                            pendingDeletePhoto = null
-                        }
-                    } else {
-                        // Android 10 及以下版本直接从数据库删除
-                        viewModel.onPhotoDeletedFromDevice(photo.id)
-                        scope.launch {
-                            snackbarHostState.showSnackbar("已删除")
-                        }
-                        pendingDeletePhoto = null
-                        fullscreenPhotoIndex = -1
-                    }
-                }
-            },
-            onDismiss = {
-                showDeleteConfirmSheet = false
-                pendingDeletePhoto = null
-            }
         )
     }
 }
@@ -1402,7 +1413,7 @@ private fun WorkflowViewModeDropdown(
         ) {
             Icon(
                 imageVector = if (viewMode == FlowSorterViewMode.CARD)
-                    Icons.Default.ViewCarousel else Icons.Default.GridView,
+                    Icons.Default.ViewCarousel else Icons.Default.ViewList,
                 contentDescription = "视图模式",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1504,7 +1515,7 @@ private fun FlowSorterViewModeDropdown(
         IconButton(onClick = { expanded = true }) {
             Icon(
                 imageVector = if (viewMode == FlowSorterViewMode.CARD)
-                    Icons.Default.ViewCarousel else Icons.Default.GridView,
+                    Icons.Default.ViewCarousel else Icons.Default.ViewList,
                 contentDescription = "视图模式"
             )
         }

@@ -295,31 +295,42 @@ private fun RenderLayout(
     // Track the previous sync mode to detect transitions
     val previousSyncEnabled = remember { mutableStateOf(syncZoomEnabled) }
 
+    // 保存每张照片在进入同步模式时的基准状态
+    // 同步模式下，最终变换 = 基准 * 共享增量，实现相对运动
+    val baseSnapshots = remember { mutableStateOf<List<TransformSnapshot>>(emptyList()) }
+
     // Handle state synchronization SYNCHRONOUSLY when switching between sync and individual modes
     // This prevents screen flashing by ensuring states are synchronized BEFORE rendering
-    // (Using LaunchedEffect caused async delay which led to brief flash of default state)
     if (syncZoomEnabled != previousSyncEnabled.value) {
         if (syncZoomEnabled) {
-            // Switching TO sync mode: DO NOT reset any states
-            // Each photo maintains its current individual position
-            // Copy current individual states to preserve them, and reset shared state
-            // so future sync gestures start from 1x baseline but don't affect current view
-            // Note: When sync is on, all photos will use shared transformState,
-            // so we need to NOT change transformState to avoid visual jump
-            // Just leave everything as-is - the shared state will be used but photos
-            // will visually stay where the shared state was last set
+            // 切换到同步模式：
+            // 1. 保存每张照片的当前状态作为基准
+            // 2. 重置共享状态为初始值（作为增量的起点）
+            // 这样每张照片保持当前位置不变，之后的操作是相对增量
+            baseSnapshots.value = individualTransformStates.map { it.toSnapshot() }
+            transformState.reset()  // 增量从 (1.0, 0, 0) 开始
         } else {
-            // Switching TO individual mode: copy shared state to all individual states
-            // This preserves the current synced position for each photo
-            individualTransformStates.forEach { state ->
-                state.copyFrom(transformState)
+            // 切换到独立模式：
+            // 将最终变换（基准 * 增量）合并回每张照片的独立状态
+            individualTransformStates.forEachIndexed { index, state ->
+                // 如果 baseSnapshots 为空（初始就是同步模式的情况），
+                // 则基准为默认值 (1.0, 0, 0)，最终值就是 transformState 的当前值
+                val base = baseSnapshots.value.getOrNull(index) ?: TransformSnapshot()
+                // 最终缩放 = 基准缩放 * 增量缩放
+                val finalScale = base.scale * transformState.scale
+                // 最终偏移 = 基准偏移 + 增量偏移（增量偏移按基准缩放调整）
+                val finalOffsetX = base.offsetX + transformState.offsetX * base.scale
+                val finalOffsetY = base.offsetY + transformState.offsetY * base.scale
+                state.setAll(finalScale, finalOffsetX, finalOffsetY)
             }
+            // 清空基准快照
+            baseSnapshots.value = emptyList()
         }
         previousSyncEnabled.value = syncZoomEnabled
     }
 
     var photoIndex = 0
-    
+
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterVertically),
@@ -327,7 +338,7 @@ private fun RenderLayout(
     ) {
         layout.rowDistribution.forEachIndexed { rowIndex, colsInRow ->
             val isFirstRow = rowIndex == 0
-            
+
             Row(
                 horizontalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically
@@ -336,17 +347,25 @@ private fun RenderLayout(
                     if (photoIndex < photos.size) {
                         val photo = photos[photoIndex]
                         val currentIndex = photoIndex
-                        
-                        // Use shared or individual transform state based on sync mode
+
+                        // 同步模式：使用共享状态 + 基准快照实现相对运动
+                        // 独立模式：直接使用独立状态，无基准
                         val effectiveTransformState = if (syncZoomEnabled) {
                             transformState
                         } else {
                             individualTransformStates.getOrNull(currentIndex) ?: transformState
                         }
-                        
+
+                        val baseSnapshot = if (syncZoomEnabled) {
+                            baseSnapshots.value.getOrNull(currentIndex)
+                        } else {
+                            null
+                        }
+
                         SyncZoomImage(
                             photo = photo,
                             transformState = effectiveTransformState,
+                            baseSnapshot = baseSnapshot,
                             isSelected = photo.id in selectedPhotoIds,
                             onSelect = { onSelectPhoto(photo.id) },
                             onFullscreenClick = onFullscreenClick?.let { { it(currentIndex) } },
@@ -356,7 +375,7 @@ private fun RenderLayout(
                                 .width(photoWidthDp)
                                 .height(photoHeightDp)
                         )
-                        
+
                         photoIndex++
                     }
                 }

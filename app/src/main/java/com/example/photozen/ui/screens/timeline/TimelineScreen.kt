@@ -59,8 +59,18 @@ import kotlinx.coroutines.launch
 import com.example.photozen.ui.components.fullscreen.UnifiedFullscreenViewer
 import com.example.photozen.ui.components.fullscreen.FullscreenActionType
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import com.example.photozen.ui.components.ConfirmDeleteSheet
+import com.example.photozen.ui.components.DeleteType
 import com.example.photozen.ui.components.shareImage
+import com.example.photozen.ui.components.openImageWithChooser
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 /**
  * Timeline Screen - Display photos grouped by time/events.
@@ -88,17 +98,31 @@ fun TimelineScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    // 分组模式引导状态
-    val groupingGuide = rememberGuideState(
-        guideKey = GuideKey.TIMELINE_GROUPING,
-        guideRepository = viewModel.guideRepository
-    )
-    var groupingSelectorBounds by remember { mutableStateOf<Rect?>(null) }
-
     // Fullscreen preview state
     var showFullscreen by remember { mutableStateOf(false) }
     var fullscreenPhotos by remember { mutableStateOf<List<PhotoEntity>>(emptyList()) }
     var fullscreenStartIndex by remember { mutableIntStateOf(0) }
+
+    // 删除确认状态
+    var showDeleteConfirmSheet by remember { mutableStateOf(false) }
+    var pendingDeletePhoto by remember { mutableStateOf<PhotoEntity?>(null) }
+
+    // 删除结果 launcher
+    val deleteResultLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            pendingDeletePhoto?.let { photo ->
+                viewModel.onPhotoDeleted(photo.id)
+                // 从当前全屏预览列表中移除
+                fullscreenPhotos = fullscreenPhotos.filter { it.id != photo.id }
+                if (fullscreenPhotos.isEmpty()) {
+                    showFullscreen = false
+                }
+            }
+        }
+        pendingDeletePhoto = null
+    }
     
     // Handle navigation to sorter (card mode)
     LaunchedEffect(uiState.navigateToSorter) {
@@ -255,10 +279,7 @@ fun TimelineScreen(
                 // Grouping mode selector
                 GroupingModeSelector(
                     currentMode = uiState.groupingMode,
-                    onModeSelected = viewModel::setGroupingMode,
-                    modifier = Modifier.onGloballyPositioned { coordinates ->
-                        groupingSelectorBounds = coordinates.boundsInRoot()
-                    }
+                    onModeSelected = viewModel::setGroupingMode
                 )
                 
                 if (uiState.isLoading) {
@@ -374,103 +395,86 @@ fun TimelineScreen(
     }
     
     // Fullscreen preview overlay - 使用统一的 UnifiedFullscreenViewer
+    // 使用 Dialog 包裹，确保在窗口级别渲染，覆盖底部导航栏
     if (showFullscreen && fullscreenPhotos.isNotEmpty()) {
-        UnifiedFullscreenViewer(
-            photos = fullscreenPhotos,
-            initialIndex = fullscreenStartIndex.coerceIn(0, fullscreenPhotos.lastIndex),
-            onExit = { showFullscreen = false },
-            onAction = { actionType, photo ->
-                when (actionType) {
-                    FullscreenActionType.COPY -> {
-                        // 时间线暂不支持复制
-                    }
-                    FullscreenActionType.OPEN_WITH -> {
-                        // 外部app打开
-                    }
-                    FullscreenActionType.EDIT -> {
-                        // 时间线暂不支持编辑
-                    }
-                    FullscreenActionType.SHARE -> {
-                        shareImage(context, Uri.parse(photo.systemUri))
-                    }
-                    FullscreenActionType.DELETE -> {
-                        // 切换状态（时间线中删除=标记为TRASH）
-                        viewModel.togglePhotoStatus(photo.id)
-                        // 从当前列表中移除
-                        fullscreenPhotos = fullscreenPhotos.filter { it.id != photo.id }
-                        if (fullscreenPhotos.isEmpty()) {
-                            showFullscreen = false
+        Dialog(
+            onDismissRequest = { showFullscreen = false },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false
+            )
+        ) {
+            UnifiedFullscreenViewer(
+                photos = fullscreenPhotos,
+                initialIndex = fullscreenStartIndex.coerceIn(0, fullscreenPhotos.lastIndex),
+                onExit = { showFullscreen = false },
+                onAction = { actionType, photo ->
+                    when (actionType) {
+                        FullscreenActionType.COPY -> {
+                            viewModel.copyPhoto(photo.id)
+                        }
+                        FullscreenActionType.OPEN_WITH -> {
+                            openImageWithChooser(context, Uri.parse(photo.systemUri))
+                        }
+                        FullscreenActionType.EDIT -> {
+                            // 时间线暂不支持编辑
+                        }
+                        FullscreenActionType.SHARE -> {
+                            shareImage(context, Uri.parse(photo.systemUri))
+                        }
+                        FullscreenActionType.DELETE -> {
+                            // 彻底删除 - 显示确认面板
+                            pendingDeletePhoto = photo
+                            showDeleteConfirmSheet = true
                         }
                     }
+                },
+                overlayContent = {
+                    // 全屏预览删除确认面板
+                    if (showDeleteConfirmSheet && pendingDeletePhoto != null) {
+                        ConfirmDeleteSheet(
+                            photos = listOf(pendingDeletePhoto!!),
+                            deleteType = DeleteType.PERMANENT_DELETE,
+                            onConfirm = {
+                                showDeleteConfirmSheet = false
+                                pendingDeletePhoto?.let { photo ->
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                        try {
+                                            val uri = Uri.parse(photo.systemUri)
+                                            val deleteRequest = MediaStore.createDeleteRequest(
+                                                context.contentResolver,
+                                                listOf(uri)
+                                            )
+                                            deleteResultLauncher.launch(
+                                                IntentSenderRequest.Builder(deleteRequest.intentSender).build()
+                                            )
+                                        } catch (e: Exception) {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar("删除失败: ${e.message}")
+                                            }
+                                            pendingDeletePhoto = null
+                                        }
+                                    } else {
+                                        // Android 10 及以下
+                                        viewModel.onPhotoDeleted(photo.id)
+                                        fullscreenPhotos = fullscreenPhotos.filter { it.id != photo.id }
+                                        if (fullscreenPhotos.isEmpty()) {
+                                            showFullscreen = false
+                                        }
+                                        pendingDeletePhoto = null
+                                    }
+                                }
+                            },
+                            onDismiss = {
+                                showDeleteConfirmSheet = false
+                                pendingDeletePhoto = null
+                            }
+                        )
+                    }
                 }
-            }
-        )
-    }
-
-    // 分组模式引导提示
-    if (groupingGuide.shouldShow && uiState.events.isNotEmpty()) {
-        GuideTooltip(
-            visible = true,
-            message = "📅 切换分组\n选择按天、月、年或智能分组查看照片",
-            targetBounds = groupingSelectorBounds,
-            arrowDirection = ArrowDirection.DOWN,
-            onDismiss = groupingGuide.dismiss
-        )
-    }
-}
-
-/**
- * Wrapper composable to handle async operations for TimelineFullscreenViewer.
- */
-@Composable
-private fun TimelineFullscreenViewerWrapper(
-    photos: List<PhotoEntity>,
-    initialIndex: Int,
-    albums: List<com.example.photozen.data.local.entity.AlbumBubbleEntity>,
-    viewModel: TimelineViewModel,
-    snackbarHostState: SnackbarHostState,
-    onDismiss: () -> Unit,
-    onPhotosUpdated: (List<PhotoEntity>) -> Unit
-) {
-    val scope = rememberCoroutineScope()
-    var currentPhotos by remember { mutableStateOf(photos) }
-    var deleteIntentSender by remember { mutableStateOf<android.content.IntentSender?>(null) }
-    
-    // Update when photos change externally
-    LaunchedEffect(photos) {
-        currentPhotos = photos
-    }
-    
-    TimelineFullscreenViewer(
-        photos = currentPhotos,
-        initialIndex = initialIndex,
-        albums = albums,
-        onDismiss = onDismiss,
-        onAddToAlbum = { photoId, albumBucketId ->
-            viewModel.addPhotoToAlbum(photoId, albumBucketId)
-            scope.launch {
-                snackbarHostState.showSnackbar("已添加到相册")
-            }
-        },
-        onRequestDelete = { photoId ->
-            // Fetch delete intent sender asynchronously
-            scope.launch {
-                deleteIntentSender = viewModel.getDeleteIntentSender(photoId)
-            }
-        },
-        deleteIntentSender = deleteIntentSender,
-        onToggleStatus = { photoId ->
-            viewModel.togglePhotoStatus(photoId)
-        },
-        onDeleteConfirmed = { photoId ->
-            viewModel.onPhotoDeleted(photoId)
-            // Remove from current photos list
-            val updatedPhotos = currentPhotos.filter { it.id != photoId }
-            currentPhotos = updatedPhotos
-            onPhotosUpdated(updatedPhotos)
-            deleteIntentSender = null
+            )
         }
-    )
+    }
 }
 
 /**

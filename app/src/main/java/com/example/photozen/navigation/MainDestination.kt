@@ -159,6 +159,8 @@ sealed class MainDestination(
             "Screen.PhotoList",
             // 相册照片列表
             "Screen.AlbumPhotoList",
+            // 时间线分组详情
+            "Screen.TimelineDetail",
             // 回收站
             "Screen.Trash",
             // 成就

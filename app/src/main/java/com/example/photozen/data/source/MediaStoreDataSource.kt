@@ -586,16 +586,29 @@ class MediaStoreDataSource @Inject constructor(
      * @param albumName Name of the album to create
      * @return The album name/path for use in subsequent operations, or null if failed
      */
-    suspend fun createAlbum(albumName: String): Pair<String, String>? = withContext(Dispatchers.IO) {
+    /**
+     * Create album result containing placeholder ID, relative path, and display name.
+     */
+    data class CreateAlbumResult(
+        val placeholderBucketId: String,
+        val relativePath: String,
+        val displayName: String
+    )
+
+    suspend fun createAlbum(albumName: String): CreateAlbumResult? = withContext(Dispatchers.IO) {
         try {
             // For Android 10+, we don't need to create the directory manually
             // It will be created automatically when we add the first file
             // Just return the album name for use in RELATIVE_PATH
             val relativePath = "${android.os.Environment.DIRECTORY_PICTURES}/$albumName"
-            
-            // Return a placeholder bucket_id (will be updated after first file is added)
-            // and the relative path for MediaStore operations
-            Pair(albumName.hashCode().toString(), relativePath)
+
+            // Return a placeholder bucket_id (will be updated after first file is added),
+            // the relative path for MediaStore operations, and the clean display name
+            CreateAlbumResult(
+                placeholderBucketId = albumName.hashCode().toString(),
+                relativePath = relativePath,
+                displayName = albumName
+            )
         } catch (e: Exception) {
             null
         }

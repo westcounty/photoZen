@@ -68,6 +68,7 @@ import com.example.photozen.data.local.entity.PhotoEntity
  * @param initialIndex 初始索引
  * @param onExit 退出回调
  * @param onAction 操作回调 (复制、分享等)
+ * @param overlayContent 可选的覆盖层内容，如删除确认面板等
  * @param modifier Modifier
  */
 @Composable
@@ -76,6 +77,7 @@ fun UnifiedFullscreenViewer(
     initialIndex: Int,
     onExit: () -> Unit,
     onAction: (FullscreenActionType, PhotoEntity) -> Unit,
+    overlayContent: @Composable (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     // 当前照片索引 - 使用 initialIndex 作为 key，确保每次打开时都能正确定位
@@ -227,6 +229,9 @@ fun UnifiedFullscreenViewer(
                 }
             }
         }
+
+        // 可选的覆盖层内容（如删除确认面板）
+        overlayContent?.invoke()
     }
 }
 
