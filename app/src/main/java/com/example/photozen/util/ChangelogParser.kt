@@ -98,12 +98,12 @@ object ChangelogParser {
             }
             
             if (!inVersion) continue
-            
-            // Skip separator lines
+
+            // Skip separator lines (but don't break - sections within a version use ---)
             if (line.trim() == "---") {
-                break // End of this version's content
+                continue
             }
-            
+
             // Parse title: ### 📁 相册分类模式 & 对比模式优化
             if (line.startsWith("### ") && title.isEmpty()) {
                 title = line.removePrefix("### ").trim()
@@ -208,12 +208,12 @@ object ChangelogParser {
             }
             
             if (!inTargetVersion) continue
-            
-            // Skip separator lines
+
+            // Skip separator lines (but don't break - sections within a version use ---)
             if (line.trim() == "---") {
-                break // End of this version's content
+                continue
             }
-            
+
             // Parse title: ### 📁 相册分类模式 & 对比模式优化
             if (line.startsWith("### ") && title.isEmpty()) {
                 title = line.removePrefix("### ").trim()
