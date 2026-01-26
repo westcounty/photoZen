@@ -69,38 +69,38 @@ object ThumbnailSizePolicy {
     
     /**
      * 获取指定场景的缩略图尺寸
-     * 
+     *
      * @param context 使用场景
      * @return 推荐的尺寸，FULLSCREEN 返回 Size.ORIGINAL
      */
     fun getSizeForContext(context: Context): Size = when (context) {
-        Context.GRID_4_COLUMN -> Size(120, 120)
-        Context.GRID_3_COLUMN -> Size(180, 180)
-        Context.GRID_2_COLUMN -> Size(300, 300)
-        Context.GRID_1_COLUMN -> Size(600, 600)
-        Context.CARD_PREVIEW -> Size(800, 800)
+        Context.GRID_4_COLUMN -> Size(200, 200)
+        Context.GRID_3_COLUMN -> Size(300, 300)
+        Context.GRID_2_COLUMN -> Size(450, 450)
+        Context.GRID_1_COLUMN -> Size(800, 800)
+        Context.CARD_PREVIEW -> Size(1200, 1200)  // 增大卡片预览尺寸，适配高分屏
         Context.FULLSCREEN -> Size.ORIGINAL
-        Context.THUMBNAIL_SMALL -> Size(80, 80)
-        Context.THUMBNAIL_MEDIUM -> Size(400, 400)
-        Context.TIMELINE -> Size(200, 200)
+        Context.THUMBNAIL_SMALL -> Size(120, 120)
+        Context.THUMBNAIL_MEDIUM -> Size(600, 600)
+        Context.TIMELINE -> Size(300, 300)
     }
     
     /**
      * 获取像素尺寸（用于不支持 Size 类型的场景）
-     * 
+     *
      * @param context 使用场景
      * @return Pair(width, height)，FULLSCREEN 返回 null 表示原图
      */
     fun getPixelSizeForContext(context: Context): Pair<Int, Int>? = when (context) {
-        Context.GRID_4_COLUMN -> 120 to 120
-        Context.GRID_3_COLUMN -> 180 to 180
-        Context.GRID_2_COLUMN -> 300 to 300
-        Context.GRID_1_COLUMN -> 600 to 600
-        Context.CARD_PREVIEW -> 800 to 800
+        Context.GRID_4_COLUMN -> 200 to 200
+        Context.GRID_3_COLUMN -> 300 to 300
+        Context.GRID_2_COLUMN -> 450 to 450
+        Context.GRID_1_COLUMN -> 800 to 800
+        Context.CARD_PREVIEW -> 1200 to 1200
         Context.FULLSCREEN -> null
-        Context.THUMBNAIL_SMALL -> 80 to 80
-        Context.THUMBNAIL_MEDIUM -> 400 to 400
-        Context.TIMELINE -> 200 to 200
+        Context.THUMBNAIL_SMALL -> 120 to 120
+        Context.THUMBNAIL_MEDIUM -> 600 to 600
+        Context.TIMELINE -> 300 to 300
     }
     
     /**
