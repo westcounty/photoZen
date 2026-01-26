@@ -150,8 +150,11 @@ cd photoZen
 | 文档 | 说明 |
 |:-----|:-----|
 | [CHANGELOG.md](CHANGELOG.md) | 版本更新记录 |
-| [PRD.md](PRD.md) | 产品需求文档 |
-| [TECH_DESIGN.md](TECH_DESIGN.md) | 技术设计文档 |
+| [docs/PRD.md](docs/PRD.md) | 产品需求文档 |
+| [docs/TECH_DESIGN.md](docs/TECH_DESIGN.md) | 技术设计文档 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构设计文档 |
+| [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md) | 设计系统规范 |
+| [docs/COMPONENT_USAGE.md](docs/COMPONENT_USAGE.md) | 组件使用指南 |
 
 ---
 
