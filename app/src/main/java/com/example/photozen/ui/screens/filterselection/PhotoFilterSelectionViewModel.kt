@@ -55,8 +55,7 @@ class PhotoFilterSelectionViewModel @Inject constructor(
                 val albums = mediaStoreDataSource.getAllAlbums()
                 // Get count of UNSORTED photos from database (not total from MediaStore)
                 // This ensures the displayed count matches what user will see in the sorter
-                val unsortedCount = photoDao.getUnsortedCountFilteredSync(
-                    bucketIds = null,
+                val unsortedCount = photoDao.getUnsortedCountAllSync(
                     startDateMs = null,
                     endDateMs = null
                 )
@@ -164,23 +163,21 @@ class PhotoFilterSelectionViewModel @Inject constructor(
                 val count = when {
                     // No selection = no album filter (all albums)
                     selectedCount == 0 -> {
-                        photoDao.getUnsortedCountFilteredSync(
-                            bucketIds = null,
+                        photoDao.getUnsortedCountAllSync(
                             startDateMs = startDateMs,
                             endDateMs = endDateMs
                         )
                     }
                     // All selected = no album filter
                     selectedCount == totalCount -> {
-                        photoDao.getUnsortedCountFilteredSync(
-                            bucketIds = null,
+                        photoDao.getUnsortedCountAllSync(
                             startDateMs = startDateMs,
                             endDateMs = endDateMs
                         )
                     }
                     // Use include mode when fewer albums are selected
                     selectedCount <= excludedCount -> {
-                        photoDao.getUnsortedCountFilteredSync(
+                        photoDao.getUnsortedCountByBucketsSync(
                             bucketIds = state.selectedAlbumIds.toList(),
                             startDateMs = startDateMs,
                             endDateMs = endDateMs

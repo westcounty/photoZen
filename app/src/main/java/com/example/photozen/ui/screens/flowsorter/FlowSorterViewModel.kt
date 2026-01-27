@@ -970,12 +970,14 @@ class FlowSorterViewModel @Inject constructor(
         @Suppress("UNCHECKED_CAST")
         var photos = values[0] as List<PhotoEntity>
         val realUnsortedCount = values[1] as Int  // Real count from COUNT query (not limited)
+        @Suppress("UNCHECKED_CAST")
         val loadingStates = values[2] as Triple<Boolean, Boolean, Boolean>
         val isLoading = loadingStates.first
         val isSyncing = loadingStates.second
         val isReloading = loadingStates.third
         val currentIndex = values[3] as Int
         val lastAction = values[4] as SortAction?
+        @Suppress("UNCHECKED_CAST")
         val combined = values[5] as Triple<String?, SortCounters, ComboState>
         val viewMode = values[6] as FlowSorterViewMode
         val selectionAndAlbum = values[7] as SelectionAndAlbumState

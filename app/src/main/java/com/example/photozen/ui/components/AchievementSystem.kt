@@ -26,12 +26,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.automirrored.filled.Assignment
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Assignment
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
@@ -44,7 +42,6 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FilterVintage
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Grade
-import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Loop
 import androidx.compose.material.icons.filled.MilitaryTech
@@ -90,11 +87,11 @@ import com.example.photozen.data.repository.AchievementData
  * Order: Daily Task → Sorting → Dedicated → Combo → Tagging → Selector → Cleaner → Creative → Explorer → Master
  */
 enum class AchievementCategory(val displayName: String, val icon: ImageVector) {
-    DAILY_TASK("每日挑战", Icons.Default.Assignment),
+    DAILY_TASK("每日挑战", Icons.AutoMirrored.Filled.Assignment),
     SORTING("整理大师", Icons.Default.PhotoLibrary),
     DEDICATED("坚持不懈", Icons.Default.Today),
     COMBO("连击高手", Icons.Default.Bolt),
-    TAGGING("分类达人", Icons.Default.Label),  // Renamed: supports both tags and albums
+    TAGGING("分类达人", Icons.AutoMirrored.Filled.Label),  // Renamed: supports both tags and albums
     SELECTOR("精选达人", Icons.Default.Favorite),  // Renamed from "收藏专家"
     CLEANER("清理专家", Icons.Default.Delete),
     CREATIVE("创意大师", Icons.Default.ContentCopy),  // Merged with EXPORTER
@@ -216,19 +213,19 @@ fun generateAchievements(data: AchievementData): List<Achievement> {
         // Supports both tagging and album classification
         Achievement(
             id = "tag_10", name = "分类入门", description = "为 10 张照片添加标签或分到相册",
-            icon = Icons.Default.Label, category = AchievementCategory.TAGGING,
+            icon = Icons.AutoMirrored.Filled.Label, category = AchievementCategory.TAGGING,
             targetValue = 10, currentValue = data.totalTagged,
             color = Color(0xFFA78BFA), rarity = AchievementRarity.COMMON
         ),
         Achievement(
             id = "tag_50", name = "分类爱好者", description = "为 50 张照片添加标签或分到相册",
-            icon = Icons.Default.Label, category = AchievementCategory.TAGGING,
+            icon = Icons.AutoMirrored.Filled.Label, category = AchievementCategory.TAGGING,
             targetValue = 50, currentValue = data.totalTagged,
             color = Color(0xFFA78BFA), rarity = AchievementRarity.UNCOMMON
         ),
         Achievement(
             id = "tag_100", name = "分类专家", description = "为 100 张照片添加标签或分到相册",
-            icon = Icons.Default.Label, category = AchievementCategory.TAGGING,
+            icon = Icons.AutoMirrored.Filled.Label, category = AchievementCategory.TAGGING,
             targetValue = 100, currentValue = data.totalTagged,
             color = Color(0xFFA78BFA), rarity = AchievementRarity.RARE
         ),
@@ -240,7 +237,7 @@ fun generateAchievements(data: AchievementData): List<Achievement> {
         ),
         Achievement(
             id = "tags_created_5", name = "标签创造者", description = "创建 5 个标签",
-            icon = Icons.Default.Label, category = AchievementCategory.TAGGING,
+            icon = Icons.AutoMirrored.Filled.Label, category = AchievementCategory.TAGGING,
             targetValue = 5, currentValue = data.tagsCreated,
             color = Color(0xFFA78BFA), rarity = AchievementRarity.COMMON
         ),
@@ -423,25 +420,25 @@ fun generateAchievements(data: AchievementData): List<Achievement> {
         // ==================== 每日挑战 (Daily Task) ====================
         Achievement(
             id = "daily_task_1", name = "每日首胜", description = "完成 1 次每日任务",
-            icon = Icons.Default.Assignment, category = AchievementCategory.DAILY_TASK,
+            icon = Icons.AutoMirrored.Filled.Assignment, category = AchievementCategory.DAILY_TASK,
             targetValue = 1, currentValue = data.dailyTasksCompleted,
             color = Color(0xFF009688), rarity = AchievementRarity.COMMON
         ),
         Achievement(
             id = "daily_task_7", name = "习惯养成", description = "完成 7 次每日任务",
-            icon = Icons.Default.Assignment, category = AchievementCategory.DAILY_TASK,
+            icon = Icons.AutoMirrored.Filled.Assignment, category = AchievementCategory.DAILY_TASK,
             targetValue = 7, currentValue = data.dailyTasksCompleted,
             color = Color(0xFF009688), rarity = AchievementRarity.UNCOMMON
         ),
         Achievement(
             id = "daily_task_30", name = "自律达人", description = "完成 30 次每日任务",
-            icon = Icons.Default.Assignment, category = AchievementCategory.DAILY_TASK,
+            icon = Icons.AutoMirrored.Filled.Assignment, category = AchievementCategory.DAILY_TASK,
             targetValue = 30, currentValue = data.dailyTasksCompleted,
             color = Color(0xFF009688), rarity = AchievementRarity.RARE
         ),
         Achievement(
             id = "daily_task_100", name = "整理生活", description = "完成 100 次每日任务",
-            icon = Icons.Default.Assignment, category = AchievementCategory.DAILY_TASK,
+            icon = Icons.AutoMirrored.Filled.Assignment, category = AchievementCategory.DAILY_TASK,
             targetValue = 100, currentValue = data.dailyTasksCompleted,
             color = Color(0xFF009688), rarity = AchievementRarity.EPIC
         )

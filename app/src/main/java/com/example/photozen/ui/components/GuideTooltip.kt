@@ -33,10 +33,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowLeft
+import androidx.compose.material.icons.automirrored.filled.ArrowRight
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowDropUp
-import androidx.compose.material.icons.filled.ArrowLeft
-import androidx.compose.material.icons.filled.ArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -383,7 +383,7 @@ private fun GuideTooltipBubble(
                     // 左侧箭头 (如果气泡在目标右方)
                     if (arrowDirection == ArrowDirection.LEFT) {
                         Icon(
-                            imageVector = Icons.Default.ArrowLeft,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowLeft,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier
@@ -459,7 +459,7 @@ private fun GuideTooltipBubble(
                     // 右侧箭头 (如果气泡在目标左方)
                     if (arrowDirection == ArrowDirection.RIGHT) {
                         Icon(
-                            imageVector = Icons.Default.ArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowRight,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier

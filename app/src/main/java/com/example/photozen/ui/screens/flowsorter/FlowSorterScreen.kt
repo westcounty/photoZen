@@ -45,9 +45,9 @@ import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.material.icons.filled.ViewColumn
-import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -310,7 +310,7 @@ fun FlowSorterScreen(
                             ) {
                                 Icon(
                                     imageVector = if (uiState.viewMode == FlowSorterViewMode.CARD)
-                                        Icons.Default.ViewCarousel else Icons.Default.ViewList,
+                                        Icons.Default.ViewCarousel else Icons.AutoMirrored.Filled.ViewList,
                                     contentDescription = if (uiState.viewMode == FlowSorterViewMode.CARD)
                                         "切换到列表模式" else "切换到卡片模式"
                                 )
@@ -789,7 +789,7 @@ fun FlowSorterContent(
                         ) {
                             Icon(
                                 imageVector = if (effectiveViewMode == FlowSorterViewMode.CARD)
-                                    Icons.Default.ViewCarousel else Icons.Default.ViewList,
+                                    Icons.Default.ViewCarousel else Icons.AutoMirrored.Filled.ViewList,
                                 contentDescription = if (effectiveViewMode == FlowSorterViewMode.CARD)
                                     "切换到列表模式" else "切换到卡片模式",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1413,7 +1413,7 @@ private fun WorkflowViewModeDropdown(
         ) {
             Icon(
                 imageVector = if (viewMode == FlowSorterViewMode.CARD)
-                    Icons.Default.ViewCarousel else Icons.Default.ViewList,
+                    Icons.Default.ViewCarousel else Icons.AutoMirrored.Filled.ViewList,
                 contentDescription = "视图模式",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1515,7 +1515,7 @@ private fun FlowSorterViewModeDropdown(
         IconButton(onClick = { expanded = true }) {
             Icon(
                 imageVector = if (viewMode == FlowSorterViewMode.CARD)
-                    Icons.Default.ViewCarousel else Icons.Default.ViewList,
+                    Icons.Default.ViewCarousel else Icons.AutoMirrored.Filled.ViewList,
                 contentDescription = "视图模式"
             )
         }

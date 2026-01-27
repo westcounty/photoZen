@@ -12,10 +12,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -82,7 +82,7 @@ fun FullscreenBottomBar(
 
         // 2. 打开
         ActionButton(
-            icon = Icons.Default.OpenInNew,
+            icon = Icons.AutoMirrored.Filled.OpenInNew,
             label = "打开",
             onClick = { onAction(FullscreenActionType.OPEN_WITH) }
         )

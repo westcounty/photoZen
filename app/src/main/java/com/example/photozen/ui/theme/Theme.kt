@@ -104,7 +104,9 @@ fun PicZenTheme(
         SideEffect {
             val window = (view.context as Activity).window
             // edge-to-edge 模式下，状态栏和导航栏应该透明
+            @Suppress("DEPRECATION")
             window.statusBarColor = Color.TRANSPARENT
+            @Suppress("DEPRECATION")
             window.navigationBarColor = Color.TRANSPARENT
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }

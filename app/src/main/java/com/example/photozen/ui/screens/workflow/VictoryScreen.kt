@@ -24,12 +24,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Share
@@ -343,7 +343,7 @@ private fun StatsGrid(stats: WorkflowStats, cardSortingAlbumEnabled: Boolean = f
                     StatCard(
                         value = stats.classifiedToAlbumCount.toString(),
                         label = "分类到相册",
-                        icon = Icons.Default.Label,
+                        icon = Icons.AutoMirrored.Filled.Label,
                         color = KeepGreen,
                         modifier = Modifier.weight(1f)
                     )
@@ -403,7 +403,7 @@ private fun StatsGrid(stats: WorkflowStats, cardSortingAlbumEnabled: Boolean = f
                 StatCard(
                     value = stats.taggedCount.toString(),
                     label = "已分类",
-                    icon = Icons.Default.Label,
+                    icon = Icons.AutoMirrored.Filled.Label,
                     color = KeepGreen,
                     modifier = Modifier.weight(1f)
                 )
