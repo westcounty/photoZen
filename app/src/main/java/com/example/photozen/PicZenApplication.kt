@@ -8,6 +8,7 @@ import com.example.photozen.data.local.dao.DailyStatsDao
 import com.example.photozen.data.local.dao.SortingRecordDao
 import com.example.photozen.data.local.entity.SortingRecordEntity
 import com.example.photozen.data.repository.PreferencesRepository
+import com.example.photozen.data.repository.StatsRepository
 import com.example.photozen.service.DailyProgressService
 import com.example.photozen.util.CrashLogger
 import dagger.hilt.android.HiltAndroidApp
@@ -38,6 +39,9 @@ class PicZenApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var sortingRecordDao: SortingRecordDao
+
+    @Inject
+    lateinit var statsRepository: StatsRepository
 
     override fun onCreate() {
         super.onCreate()
@@ -115,6 +119,16 @@ class PicZenApplication : Application(), Configuration.Provider {
                         "历史整理记录迁移完成"
                     )
                 }
+
+                // 迁移完成后，重新计算连续天数并更新到 DataStore
+                // 这样成就系统也能获取到正确的连续天数
+                val statsSummary = statsRepository.getStatsSummary()
+                preferencesRepository.syncConsecutiveDays(statsSummary.consecutiveDays)
+
+                CrashLogger.logStartupEvent(
+                    this@PicZenApplication,
+                    "连续天数已同步: ${statsSummary.consecutiveDays} 天"
+                )
 
                 // 标记迁移完成
                 preferencesRepository.markSortingRecordsMigrated()

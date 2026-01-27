@@ -1315,6 +1315,16 @@ class PreferencesRepository @Inject constructor(
             preferences[KEY_SORTING_RECORDS_MIGRATED] = true
         }
     }
+
+    /**
+     * 同步连续天数到 DataStore
+     * 用于迁移后将计算出的连续天数同步给成就系统使用
+     */
+    suspend fun syncConsecutiveDays(days: Int) {
+        dataStore.edit { preferences ->
+            preferences[KEY_CONSECUTIVE_DAYS] = days
+        }
+    }
 }
 
 /**
