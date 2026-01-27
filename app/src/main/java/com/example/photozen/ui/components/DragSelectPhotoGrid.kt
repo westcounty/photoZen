@@ -39,6 +39,7 @@ package com.example.photozen.ui.components
  */
 
 import android.net.Uri
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -236,52 +237,15 @@ fun DragSelectPhotoGrid(
     // Note: Drag select functionality has been removed (Phase 3-10)
     // Long press is now handled by individual items only
 
+    // 在 Grid 级别使用 rememberUpdatedState 包装所有回调，确保 LazyGrid item 能获取最新回调
+    val currentOnSelectionChanged by rememberUpdatedState(onSelectionChanged)
+    val currentOnPhotoClick by rememberUpdatedState(onPhotoClick)
+    val currentOnPhotoLongPress by rememberUpdatedState(onPhotoLongPress)
+    val currentOnSelectionToggle by rememberUpdatedState(onSelectionToggle)
+
     Box(
         modifier = modifier.fillMaxSize()
     ) {
-        // Render item content (shared between both grid types)
-        @Composable
-        fun PhotoItemContent(index: Int, photo: PhotoEntity, forceSquare: Boolean) {
-            val isSelected = selectedIds.contains(photo.id)
-
-            DragSelectPhotoItem(
-                photo = photo,
-                isSelected = isSelected,
-                isSelectionMode = selectedIds.isNotEmpty(),
-                selectionColor = selectionColor,
-                enableLongPressOnItem = true, // Always handle long press on item
-                showStatusBadge = showStatusBadge,
-                hapticEnabled = config.hapticEnabled,
-                forceSquare = forceSquare,
-                onClick = {
-                    if (clickAlwaysTogglesSelection || selectedIds.isNotEmpty()) {
-                        // Use onSelectionToggle if provided to avoid closure capture issues
-                        if (onSelectionToggle != null) {
-                            onSelectionToggle(photo.id)
-                        } else {
-                            // Fallback to computing newSelection locally
-                            val newSelection = if (isSelected) {
-                                selectedIds - photo.id
-                            } else {
-                                selectedIds + photo.id
-                            }
-                            onSelectionChanged(newSelection)
-                        }
-                    } else {
-                        onPhotoClick(photo.id, index)
-                    }
-                },
-                onLongPress = {
-                    // Long press selects the photo and enters selection mode
-                    // (unless longPressAddsToSelection is false, e.g., for MAYBE list action sheet)
-                    if (longPressAddsToSelection && !selectedIds.contains(photo.id)) {
-                        onSelectionChanged(selectedIds + photo.id)
-                    }
-                    onPhotoLongPress(photo.id, photo.systemUri)
-                }
-            )
-        }
-
         when (gridMode) {
             PhotoGridMode.SQUARE -> {
                 // Square grid with uniform cells - supports drag select
@@ -295,7 +259,40 @@ fun DragSelectPhotoGrid(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
-                        PhotoItemContent(index, photo, forceSquare = true)
+                        val isSelected = selectedIds.contains(photo.id)
+                        DragSelectPhotoItem(
+                            photo = photo,
+                            isSelected = isSelected,
+                            isSelectionMode = selectedIds.isNotEmpty(),
+                            selectionColor = selectionColor,
+                            enableLongPressOnItem = true,
+                            showStatusBadge = showStatusBadge,
+                            hapticEnabled = config.hapticEnabled,
+                            forceSquare = true,
+                            photoId = photo.id,
+                            photoUri = photo.systemUri,
+                            longPressAddsToSelection = longPressAddsToSelection,
+                            selectedIds = selectedIds,
+                            onSelectionChanged = currentOnSelectionChanged,
+                            onPhotoLongPress = currentOnPhotoLongPress,
+                            onClick = {
+                                if (clickAlwaysTogglesSelection || selectedIds.isNotEmpty()) {
+                                    val toggle = currentOnSelectionToggle
+                                    if (toggle != null) {
+                                        toggle(photo.id)
+                                    } else {
+                                        val newSelection = if (isSelected) {
+                                            selectedIds - photo.id
+                                        } else {
+                                            selectedIds + photo.id
+                                        }
+                                        currentOnSelectionChanged(newSelection)
+                                    }
+                                } else {
+                                    currentOnPhotoClick(photo.id, index)
+                                }
+                            }
+                        )
                     }
                 }
             }
@@ -311,7 +308,40 @@ fun DragSelectPhotoGrid(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
-                        PhotoItemContent(index, photo, forceSquare = false)
+                        val isSelected = selectedIds.contains(photo.id)
+                        DragSelectPhotoItem(
+                            photo = photo,
+                            isSelected = isSelected,
+                            isSelectionMode = selectedIds.isNotEmpty(),
+                            selectionColor = selectionColor,
+                            enableLongPressOnItem = true,
+                            showStatusBadge = showStatusBadge,
+                            hapticEnabled = config.hapticEnabled,
+                            forceSquare = false,
+                            photoId = photo.id,
+                            photoUri = photo.systemUri,
+                            longPressAddsToSelection = longPressAddsToSelection,
+                            selectedIds = selectedIds,
+                            onSelectionChanged = currentOnSelectionChanged,
+                            onPhotoLongPress = currentOnPhotoLongPress,
+                            onClick = {
+                                if (clickAlwaysTogglesSelection || selectedIds.isNotEmpty()) {
+                                    val toggle = currentOnSelectionToggle
+                                    if (toggle != null) {
+                                        toggle(photo.id)
+                                    } else {
+                                        val newSelection = if (isSelected) {
+                                            selectedIds - photo.id
+                                        } else {
+                                            selectedIds + photo.id
+                                        }
+                                        currentOnSelectionChanged(newSelection)
+                                    }
+                                } else {
+                                    currentOnPhotoClick(photo.id, index)
+                                }
+                            }
+                        )
                     }
                 }
             }
@@ -340,15 +370,27 @@ private fun DragSelectPhotoItem(
     hapticEnabled: Boolean,
     forceSquare: Boolean = false,
     onClick: () -> Unit,
-    onLongPress: () -> Unit
+    // 新增：直接传递长按所需的所有参数，避免闭包捕获问题
+    photoId: String = "",
+    photoUri: String = "",
+    longPressAddsToSelection: Boolean = true,
+    selectedIds: Set<String> = emptySet(),
+    onSelectionChanged: (Set<String>) -> Unit = {},
+    onPhotoLongPress: (String, String) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
-    // 使用 rememberUpdatedState 确保 pointerInput 中总是使用最新的回调
-    // 这解决了闭包捕获旧值导致选择状态不更新的问题
+    // 使用 rememberUpdatedState 确保 pointerInput 中总是使用最新的回调和参数
+    // pointerInput 的 lambda 只在 key 变化时重新执行，但通过 rememberUpdatedState
+    // 可以在 lambda 内部获取最新的值
     val currentOnClick by rememberUpdatedState(onClick)
-    val currentOnLongPress by rememberUpdatedState(onLongPress)
+    val currentLongPressAddsToSelection by rememberUpdatedState(longPressAddsToSelection)
+    val currentSelectedIds by rememberUpdatedState(selectedIds)
+    val currentOnSelectionChanged by rememberUpdatedState(onSelectionChanged)
+    val currentOnPhotoLongPress by rememberUpdatedState(onPhotoLongPress)
+    val currentPhotoId by rememberUpdatedState(photoId)
+    val currentPhotoUri by rememberUpdatedState(photoUri)
 
     // DES-036: 按压状态追踪，用于缩放动画
     var isPressed by remember { mutableStateOf(false) }
@@ -393,6 +435,7 @@ private fun DragSelectPhotoItem(
                 } else Modifier
             )
             // Unified gesture handling: use pointerInput to handle both tap and long press
+            // 使用 rememberUpdatedState + 固定 key，确保手势处理器能获取最新回调
             .pointerInput(enableLongPressOnItem, hapticEnabled) {
                 detectTapGestures(
                     onPress = {
@@ -410,7 +453,14 @@ private fun DragSelectPhotoItem(
                             if (hapticEnabled) {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
-                            currentOnLongPress()
+
+                            // 长按添加到选择（如果启用且未选中）
+                            if (currentLongPressAddsToSelection && !currentSelectedIds.contains(currentPhotoId)) {
+                                currentOnSelectionChanged(currentSelectedIds + currentPhotoId)
+                            }
+
+                            // 调用外部回调显示操作菜单
+                            currentOnPhotoLongPress(currentPhotoId, currentPhotoUri)
                         }
                     } else null
                 )

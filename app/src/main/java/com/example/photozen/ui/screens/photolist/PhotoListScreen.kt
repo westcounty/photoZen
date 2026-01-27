@@ -526,7 +526,6 @@ fun PhotoListScreen(
                                             showMaybeActionSheet = true
                                         }
                                     }
-                                    // 其他列表的长按选择已在 DragSelectPhotoGrid.onLongPress 中处理
                                 },
                                 columns = uiState.gridColumns,
                                 gridMode = uiState.gridMode,
