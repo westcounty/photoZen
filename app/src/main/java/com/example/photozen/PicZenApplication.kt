@@ -60,15 +60,11 @@ class PicZenApplication : Application(), Configuration.Provider {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val enabled = preferencesRepository.getProgressNotificationEnabled().first()
-                Log.d("PicZenApp", "Progress notification enabled: $enabled")
                 if (enabled) {
                     // 使用主线程启动服务，确保稳定性
                     kotlinx.coroutines.withContext(Dispatchers.Main) {
                         DailyProgressService.start(this@PicZenApplication)
                     }
-                    Log.d("PicZenApp", "Progress notification service started successfully")
-                } else {
-                    Log.d("PicZenApp", "Progress notification disabled, skipping service start")
                 }
             } catch (e: Exception) {
                 Log.e("PicZenApp", "Failed to start progress service", e)

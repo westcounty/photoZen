@@ -46,15 +46,9 @@ class DailyProgressWidget : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
-        Log.d(TAG, "onUpdate called for ${appWidgetIds.size} widgets")
         for (appWidgetId in appWidgetIds) {
             updateAppWidget(context, appWidgetManager, appWidgetId)
         }
-    }
-    
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-        Log.d(TAG, "onReceive: ${intent.action}")
     }
 
     private fun updateAppWidget(
@@ -62,7 +56,6 @@ class DailyProgressWidget : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetId: Int
     ) {
-        Log.d(TAG, "updateAppWidget for id: $appWidgetId")
         
         val pendingResult = goAsync()
         
@@ -84,14 +77,11 @@ class DailyProgressWidget : AppWidgetProvider() {
                     .format(java.util.Date())
                 val stats = dailyStatsDao.getStatsByDateOneShot(today)
                 val current = stats?.count ?: 0
-                
-                Log.d(TAG, "Direct read - enabled=$isEnabled, target=$target, current=$current, today=$today")
-                
+
                 val views = RemoteViews(context.packageName, R.layout.widget_daily_progress)
-                
+
                 // If daily task is not enabled, show disabled state
                 if (!isEnabled) {
-                    Log.d(TAG, "Daily task is disabled")
                     views.setTextViewText(R.id.widget_emoji, "😴")
                     views.setTextViewText(R.id.widget_status_text, "每日任务未开启")
                     views.setViewVisibility(R.id.widget_progress_bar, android.view.View.GONE)
@@ -118,9 +108,7 @@ class DailyProgressWidget : AppWidgetProvider() {
                         isInProgress -> "继续加油！"
                         else -> "新的一天，开始整理吧！"
                     }
-                    
-                    Log.d(TAG, "Setting emoji: $emoji, statusText: $statusText, isCompleted=$isCompleted, isInProgress=$isInProgress (current=$current, target=$target, progress=$progressPercent%)")
-                    
+
                     views.setTextViewText(R.id.widget_emoji, emoji)
                     views.setTextViewText(R.id.widget_status_text, statusText)
                     
@@ -150,10 +138,8 @@ class DailyProgressWidget : AppWidgetProvider() {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
                 views.setOnClickPendingIntent(R.id.widget_container, pendingIntent)
-                
+
                 appWidgetManager.updateAppWidget(appWidgetId, views)
-                Log.d(TAG, "Widget updated successfully")
-                
             } catch (e: Exception) {
                 Log.e(TAG, "Error updating widget", e)
                 // Show error state so user can at least click to open app

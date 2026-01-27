@@ -40,28 +40,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.QuestionMark
-import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.Undo
-import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.FilterAltOff
-import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.PhotoAlbum
 import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.ViewColumn
-import androidx.compose.material.icons.filled.ViewModule
-import androidx.compose.material.icons.filled.ViewComfy
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Share
 import com.example.photozen.ui.components.shareImage
 import com.example.photozen.ui.components.PhotoGridMode
 import com.example.photozen.ui.components.StoragePermissionDialog
@@ -271,15 +254,6 @@ fun PhotoListScreen(
         return
     }
 
-    // Handle back press in selection mode
-    val handleBack: () -> Unit = {
-        if (uiState.isSelectionMode) {
-            viewModel.exitSelectionMode()
-        } else {
-            onNavigateBack()
-        }
-    }
-    
     Scaffold(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },

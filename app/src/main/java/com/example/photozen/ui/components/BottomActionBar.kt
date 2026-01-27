@@ -34,23 +34,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.ui.unit.IntOffset
 import com.example.photozen.ui.theme.PicZenMotion
-import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.PhotoAlbum
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -292,18 +286,6 @@ fun trashAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
 )
 
 /**
- * Create a "Delete" (删除) action - move to trash.
- * @deprecated Use trashAction for clearer naming
- */
-fun deleteAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
-    icon = Icons.Default.Delete,
-    label = "删除",
-    color = TrashRed,
-    onClick = onClick,
-    enabled = enabled
-)
-
-/**
  * Create a "Permanent Delete" (彻底删除) action.
  * Uses filled DeleteForever icon and red color for emphasis.
  */
@@ -334,18 +316,6 @@ fun resetAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
 fun albumAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
     icon = Icons.Default.PhotoAlbum,
     label = "相册",
-    color = MaterialTheme.colorScheme.primary,
-    onClick = onClick,
-    enabled = enabled
-)
-
-/**
- * Create a "Move" (移动) action - move to another album.
- */
-@Composable
-fun moveAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
-    icon = Icons.Default.Folder,
-    label = "移动",
     color = MaterialTheme.colorScheme.primary,
     onClick = onClick,
     enabled = enabled
@@ -387,18 +357,6 @@ fun shareAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
 )
 
 /**
- * Create a "Filter" (筛选) action - start filtering from this photo.
- */
-@Composable
-fun filterAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
-    icon = Icons.Default.FilterList,
-    label = "筛选",
-    color = MaterialTheme.colorScheme.secondary,
-    onClick = onClick,
-    enabled = enabled
-)
-
-/**
  * Create a "Start From Here" (从此开始) action - start sorting from this photo.
  * Used in album photo list for single selection.
  */
@@ -406,41 +364,6 @@ fun filterAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction
 fun startFromHereAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
     icon = Icons.Default.FilterList,
     label = "从此开始",
-    color = MaterialTheme.colorScheme.primary,
-    onClick = onClick,
-    enabled = enabled
-)
-
-/**
- * Create a "Discard" (丢弃) action for light table comparison.
- */
-fun discardAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
-    icon = Icons.Default.Delete,
-    label = "丢弃",
-    color = TrashRed,
-    onClick = onClick,
-    enabled = enabled
-)
-
-/**
- * Create a "Clear" (清除) action - clear all selections (REQ-031).
- */
-@Composable
-fun clearAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
-    icon = Icons.Default.Clear,
-    label = "清除",
-    color = MaterialTheme.colorScheme.onSurfaceVariant,
-    onClick = onClick,
-    enabled = enabled
-)
-
-/**
- * Create a "Compare" (对比) action - enter compare mode (REQ-031).
- */
-@Composable
-fun compareAction(onClick: () -> Unit, enabled: Boolean = true) = BottomBarAction(
-    icon = Icons.AutoMirrored.Filled.CompareArrows,
-    label = "对比",
     color = MaterialTheme.colorScheme.primary,
     onClick = onClick,
     enabled = enabled

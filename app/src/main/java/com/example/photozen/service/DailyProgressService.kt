@@ -50,34 +50,28 @@ class DailyProgressService : Service() {
     
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "DailyProgressService onCreate")
         createNotificationChannel()
     }
-    
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "DailyProgressService onStartCommand, action: ${intent?.action}")
-        
         // Start foreground immediately with initial notification
         startForeground(PROGRESS_NOTIFICATION_ID, buildProgressNotification(0, 100, false))
-        Log.d(TAG, "Service started foreground successfully")
-        
+
         // Start observing progress updates
         observeProgressUpdates()
-        
+
         return START_STICKY // Restart if killed
     }
-    
+
     override fun onBind(intent: Intent?): IBinder? = null
-    
+
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "DailyProgressService onDestroy")
         serviceScope.cancel()
     }
-    
+
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        Log.d(TAG, "DailyProgressService onTaskRemoved - attempting restart")
         
         // 当用户从最近任务中移除app时，尝试重新启动服务
         try {
@@ -109,7 +103,6 @@ class DailyProgressService : Service() {
                 setSound(null, null)
             }
             notificationManager.createNotificationChannel(progressChannel)
-            Log.d(TAG, "Notification channel created")
         }
     }
     
@@ -249,7 +242,6 @@ class DailyProgressService : Service() {
          * Start the service.
          */
         fun start(context: Context) {
-            Log.d(TAG, "Starting DailyProgressService...")
             val intent = Intent(context, DailyProgressService::class.java)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -257,17 +249,15 @@ class DailyProgressService : Service() {
                 } else {
                     context.startService(intent)
                 }
-                Log.d(TAG, "Service start intent sent successfully")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start service", e)
             }
         }
-        
+
         /**
          * Stop the service.
          */
         fun stop(context: Context) {
-            Log.d(TAG, "Stopping DailyProgressService...")
             val intent = Intent(context, DailyProgressService::class.java)
             context.stopService(intent)
         }

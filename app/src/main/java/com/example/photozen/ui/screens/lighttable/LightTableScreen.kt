@@ -45,7 +45,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
@@ -611,46 +610,6 @@ private fun SelectionBottomBar(
                 label = "对比",
                 color = if (canCompare) MaybeAmber else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                 onClick = if (canCompare) onStartComparison else onCompareDisabledClick
-            )
-        }
-    }
-}
-
-/**
- * Bottom bar for comparison mode with vertical icon+text layout.
- */
-@Composable
-private fun ComparisonBottomBar(
-    onKeepAll: () -> Unit,
-    onTrashAll: () -> Unit
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        tonalElevation = 8.dp,
-        shadowElevation = 8.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 4.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Trash all
-            LightTableBottomBarItem(
-                icon = Icons.Default.Delete,
-                label = "丢弃",
-                color = TrashRed,
-                onClick = onTrashAll
-            )
-            
-            // Keep all
-            LightTableBottomBarItem(
-                icon = Icons.Default.Favorite,
-                label = "保留",
-                color = KeepGreen,
-                onClick = onKeepAll
             )
         }
     }

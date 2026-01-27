@@ -7,6 +7,7 @@ import android.os.Build
 import android.provider.MediaStore
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.navigation.toRoute
 import androidx.lifecycle.viewModelScope
 import com.example.photozen.data.local.dao.AlbumBubbleDao
 import com.example.photozen.data.local.dao.PhotoDao
@@ -225,7 +226,7 @@ class PhotoListViewModel @Inject constructor(
     // UI 事件流
     private val _uiEvent = MutableSharedFlow<UiEvent>()
     val uiEvent: SharedFlow<UiEvent> = _uiEvent.asSharedFlow()
-    
+
     private val statusName: String = savedStateHandle.get<String>("statusName") ?: "UNSORTED"
     private val status: PhotoStatus = try {
         PhotoStatus.valueOf(statusName)

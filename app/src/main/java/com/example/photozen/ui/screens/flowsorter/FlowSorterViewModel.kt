@@ -1,7 +1,6 @@
 package com.example.photozen.ui.screens.flowsorter
 
 import android.net.Uri
-import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -449,9 +448,7 @@ class FlowSorterViewModel @Inject constructor(
             _sortedPhotoIds
         ) { photos, sortedIds ->
             // Filter out photos that have been sorted
-            val filtered = photos.filter { it.id !in sortedIds }
-            Log.d(TAG, "getFilteredPhotosFlow: pagedPhotos=${photos.size}, sortedIds=${sortedIds.size}, filtered=${filtered.size}")
-            filtered
+            photos.filter { it.id !in sortedIds }
         }
     }
     
@@ -553,11 +550,8 @@ class FlowSorterViewModel @Inject constructor(
                     )
                 }
 
-                Log.d(TAG, "loadInitialPhotos: photoCount=$photoCount, maxSnapshot=$MAX_SNAPSHOT_SIZE")
-
                 if (photoCount > MAX_SNAPSHOT_SIZE) {
                     // Large dataset: Use database-level pagination to avoid OOM
-                    Log.d(TAG, "Using database pagination mode for $photoCount photos")
                     useDatabasePagination = true
                     currentSessionIds = null
                     dbPaginationParams = DatabasePaginationParams(
@@ -597,7 +591,6 @@ class FlowSorterViewModel @Inject constructor(
                     hasMorePages = photos.size >= GetUnsortedPhotosUseCase.PAGE_SIZE
                 } else {
                     // Small dataset: Use snapshot pagination for better UX (stable random order)
-                    Log.d(TAG, "Using snapshot pagination mode for $photoCount photos")
                     useDatabasePagination = false
                     dbPaginationParams = null
 
@@ -1209,8 +1202,6 @@ class FlowSorterViewModel @Inject constructor(
             config
         }
 
-        Log.d(TAG, "applyFilter: albumIds=${safeConfig.albumIds?.size}, hasDateFilter=${safeConfig.hasDateFilter}")
-
         // CRITICAL: Reset initial total count BEFORE setting filter config
         // This ensures the combine flow uses the new count instead of cached old value
         // Without this, the first filter apply shows stale count (requires two applies to update)
@@ -1296,14 +1287,12 @@ class FlowSorterViewModel @Inject constructor(
      */
     fun keepPhoto(photoId: String): Int {
         if (photoId.isEmpty()) return 0
-        Log.d(TAG, "keepPhoto: photoId=$photoId, sortedCountImmediate before=${_sortedCountImmediate.value}")
         val comboCount = updateCombo()
         // Mark photo as sorted immediately (removes from display list)
         markPhotoAsSorted(photoId)
         // Update counters SYNCHRONOUSLY to ensure UI reflects change immediately
         _counters.value = _counters.value.copy(keep = _counters.value.keep + 1)
         _sortedCountImmediate.value++  // Immediate counter for UI
-        Log.d(TAG, "keepPhoto: sortedCountImmediate after=${_sortedCountImmediate.value}")
         
         // Phase 4: 预加载下一批照片
         preloadNextPhotos()
@@ -2123,14 +2112,12 @@ class FlowSorterViewModel @Inject constructor(
         
         // Update the photos list
         _pagedPhotos.value = photosFromIndex
-        
+
         // Reset the current index to 0 (start of the new list)
         _currentIndex.value = 0
-        
+
         // Clear any selection
         _selectedPhotoIds.value = emptySet()
-        
-        Log.d(TAG, "startFromIndex: index=$index, remaining photos=${photosFromIndex.size}")
     }
     
     override fun onCleared() {
