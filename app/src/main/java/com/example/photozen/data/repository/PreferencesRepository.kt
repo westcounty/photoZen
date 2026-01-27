@@ -2,6 +2,7 @@ package com.example.photozen.data.repository
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -182,6 +183,9 @@ class PreferencesRepository @Inject constructor(
         val KEY_TRASH_COUNT = intPreferencesKey("trash_count")
         val KEY_MAYBE_COUNT = intPreferencesKey("maybe_count")
         val KEY_DAILY_TASKS_COMPLETED = intPreferencesKey("daily_tasks_completed")
+
+        // 数据迁移标志
+        val KEY_SORTING_RECORDS_MIGRATED = booleanPreferencesKey("sorting_records_migrated_v1")
     }
     
     // ==================== PHOTO FILTER SETTINGS ====================
@@ -1292,6 +1296,24 @@ class PreferencesRepository @Inject constructor(
             maybeCount = preferences[KEY_MAYBE_COUNT] ?: 0,
             dailyTasksCompleted = preferences[KEY_DAILY_TASKS_COMPLETED] ?: 0
         )
+    }
+
+    // ==================== 数据迁移 ====================
+
+    /**
+     * 检查 sorting_records 数据迁移是否已完成
+     */
+    suspend fun isSortingRecordsMigrated(): Boolean {
+        return dataStore.data.first()[KEY_SORTING_RECORDS_MIGRATED] ?: false
+    }
+
+    /**
+     * 标记 sorting_records 数据迁移已完成
+     */
+    suspend fun markSortingRecordsMigrated() {
+        dataStore.edit { preferences ->
+            preferences[KEY_SORTING_RECORDS_MIGRATED] = true
+        }
     }
 }
 

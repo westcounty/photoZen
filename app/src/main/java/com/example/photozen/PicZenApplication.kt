@@ -4,6 +4,9 @@ import android.app.Application
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.example.photozen.data.local.dao.DailyStatsDao
+import com.example.photozen.data.local.dao.SortingRecordDao
+import com.example.photozen.data.local.entity.SortingRecordEntity
 import com.example.photozen.data.repository.PreferencesRepository
 import com.example.photozen.service.DailyProgressService
 import com.example.photozen.util.CrashLogger
@@ -26,10 +29,16 @@ class PicZenApplication : Application(), Configuration.Provider {
     
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
-    
+
     @Inject
     lateinit var preferencesRepository: PreferencesRepository
-    
+
+    @Inject
+    lateinit var dailyStatsDao: DailyStatsDao
+
+    @Inject
+    lateinit var sortingRecordDao: SortingRecordDao
+
     override fun onCreate() {
         super.onCreate()
         
@@ -44,7 +53,10 @@ class PicZenApplication : Application(), Configuration.Provider {
         
         // Note: MapLibre initialization is now done lazily in MapLibreInitializer
         // to avoid potential initialization issues during app startup
-        
+
+        // 执行数据迁移（从 daily_stats 迁移到 sorting_records）
+        migrateSortingRecords()
+
         // Start foreground progress service if enabled
         initProgressService()
         
@@ -52,6 +64,71 @@ class PicZenApplication : Application(), Configuration.Provider {
         Log.i("PicZenApp", "Application initialization complete")
     }
     
+    /**
+     * 从 daily_stats 表迁移历史数据到 sorting_records 表。
+     * 用于修复从 1.6 升级到 2.0 后连续整理天数丢失的问题。
+     *
+     * 迁移逻辑：
+     * 1. 检查是否已经迁移过
+     * 2. 读取 daily_stats 表中的所有历史记录
+     * 3. 将每条记录转换为 sorting_records 格式并插入
+     * 4. 标记迁移完成
+     */
+    private fun migrateSortingRecords() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // 检查是否已迁移
+                if (preferencesRepository.isSortingRecordsMigrated()) {
+                    return@launch
+                }
+
+                // 读取 daily_stats 表中的所有历史记录
+                val dailyStatsList = dailyStatsDao.getAllStatsSync()
+
+                if (dailyStatsList.isNotEmpty()) {
+                    CrashLogger.logStartupEvent(
+                        this@PicZenApplication,
+                        "开始迁移 ${dailyStatsList.size} 条历史整理记录"
+                    )
+
+                    // 将每条记录转换为 SortingRecordEntity 并插入
+                    for (stats in dailyStatsList) {
+                        // 检查 sorting_records 表中是否已有该日期的记录
+                        val existingRecord = sortingRecordDao.getRecordByDate(stats.date)
+                        if (existingRecord == null && stats.count > 0) {
+                            // 只迁移有实际整理数的记录
+                            val record = SortingRecordEntity(
+                                date = stats.date,
+                                sortedCount = stats.count,
+                                // 旧版本没有详细分类，全部计入 kept
+                                keptCount = stats.count,
+                                trashedCount = 0,
+                                maybeCount = 0,
+                                createdAt = System.currentTimeMillis()
+                            )
+                            sortingRecordDao.upsert(record)
+                        }
+                    }
+
+                    CrashLogger.logStartupEvent(
+                        this@PicZenApplication,
+                        "历史整理记录迁移完成"
+                    )
+                }
+
+                // 标记迁移完成
+                preferencesRepository.markSortingRecordsMigrated()
+
+            } catch (e: Exception) {
+                Log.e("PicZenApp", "数据迁移失败", e)
+                CrashLogger.logStartupEvent(
+                    this@PicZenApplication,
+                    "数据迁移失败: ${e.message}"
+                )
+            }
+        }
+    }
+
     /**
      * Initialize foreground progress service on app startup.
      * This service displays daily progress in status bar and keeps the app alive.

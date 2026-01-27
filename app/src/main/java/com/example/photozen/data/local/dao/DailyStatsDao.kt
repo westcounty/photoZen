@@ -30,4 +30,10 @@ interface DailyStatsDao {
     
     @Query("SELECT * FROM daily_stats")
     fun getAllStats(): Flow<List<DailyStats>>
+
+    /**
+     * 获取所有历史记录（同步版本，用于数据迁移）
+     */
+    @Query("SELECT * FROM daily_stats ORDER BY date ASC")
+    suspend fun getAllStatsSync(): List<DailyStats>
 }
