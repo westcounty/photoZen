@@ -381,16 +381,8 @@ private fun DragSelectPhotoItem(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
-    // 使用 rememberUpdatedState 确保 pointerInput 中总是使用最新的回调和参数
-    // pointerInput 的 lambda 只在 key 变化时重新执行，但通过 rememberUpdatedState
-    // 可以在 lambda 内部获取最新的值
-    val currentOnClick by rememberUpdatedState(onClick)
-    val currentLongPressAddsToSelection by rememberUpdatedState(longPressAddsToSelection)
-    val currentSelectedIds by rememberUpdatedState(selectedIds)
-    val currentOnSelectionChanged by rememberUpdatedState(onSelectionChanged)
-    val currentOnPhotoLongPress by rememberUpdatedState(onPhotoLongPress)
-    val currentPhotoId by rememberUpdatedState(photoId)
-    val currentPhotoUri by rememberUpdatedState(photoUri)
+    // 不使用 rememberUpdatedState，直接将回调作为 pointerInput 的 key
+    // 这样当回调变化时，pointerInput 会重新执行，捕获最新的回调
 
     // DES-036: 按压状态追踪，用于缩放动画
     var isPressed by remember { mutableStateOf(false) }
@@ -435,8 +427,18 @@ private fun DragSelectPhotoItem(
                 } else Modifier
             )
             // Unified gesture handling: use pointerInput to handle both tap and long press
-            // 使用 rememberUpdatedState + 固定 key，确保手势处理器能获取最新回调
-            .pointerInput(enableLongPressOnItem, hapticEnabled) {
+            // 将所有可能变化的参数都加入 key，确保回调变化时重新创建手势处理器
+            .pointerInput(
+                enableLongPressOnItem,
+                hapticEnabled,
+                onClick,
+                onPhotoLongPress,
+                longPressAddsToSelection,
+                selectedIds,
+                onSelectionChanged,
+                photoId,
+                photoUri
+            ) {
                 detectTapGestures(
                     onPress = {
                         // DES-036: 开始按压时缩放
@@ -447,7 +449,7 @@ private fun DragSelectPhotoItem(
                             isPressed = false
                         }
                     },
-                    onTap = { currentOnClick() },
+                    onTap = { onClick() },
                     onLongPress = if (enableLongPressOnItem) {
                         {
                             if (hapticEnabled) {
@@ -455,12 +457,12 @@ private fun DragSelectPhotoItem(
                             }
 
                             // 长按添加到选择（如果启用且未选中）
-                            if (currentLongPressAddsToSelection && !currentSelectedIds.contains(currentPhotoId)) {
-                                currentOnSelectionChanged(currentSelectedIds + currentPhotoId)
+                            if (longPressAddsToSelection && !selectedIds.contains(photoId)) {
+                                onSelectionChanged(selectedIds + photoId)
                             }
 
                             // 调用外部回调显示操作菜单
-                            currentOnPhotoLongPress(currentPhotoId, currentPhotoUri)
+                            onPhotoLongPress(photoId, photoUri)
                         }
                     } else null
                 )

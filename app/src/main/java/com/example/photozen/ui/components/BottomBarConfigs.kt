@@ -80,61 +80,6 @@ object BottomBarConfigs {
         permanentDeleteAction(onPermanentDelete)
     )
     
-    // ============== 待定列表 (PhotoListScreen - MAYBE) ==============
-
-    /**
-     * 待定列表 - 单选模式
-     */
-    @Composable
-    fun maybeListSingleSelect(
-        onEdit: () -> Unit,
-        onShare: () -> Unit,
-        onKeep: () -> Unit,
-        onTrash: () -> Unit,
-        onReset: () -> Unit
-    ): List<BottomBarAction> = listOf(
-        editAction(onEdit),
-        shareAction(onShare),
-        keepAction(onKeep),
-        deleteAction(onTrash),
-        resetAction(onReset)
-    )
-
-    /**
-     * 待定列表 - 多选模式
-     */
-    @Composable
-    fun maybeListMultiSelect(
-        onKeep: () -> Unit,
-        onTrash: () -> Unit,
-        onReset: () -> Unit
-    ): List<BottomBarAction> = listOf(
-        keepAction(onKeep),
-        deleteAction(onTrash),
-        resetAction(onReset)
-    )
-
-    /**
-     * 待定列表 - 对比选择模式 (REQ-031)
-     *
-     * 用于待定列表中的照片对比选择场景：
-     * - 清除：取消所有选中
-     * - 对比：进入对比模式（仅在选中2-6张时可用）
-     *
-     * @param selectedCount 当前选中数量
-     * @param onClear 清除选中回调
-     * @param onCompare 进入对比模式回调
-     */
-    @Composable
-    fun maybeListCompareSelect(
-        selectedCount: Int,
-        onClear: () -> Unit,
-        onCompare: () -> Unit
-    ): List<BottomBarAction> = listOf(
-        clearAction(onClear),
-        compareAction(onCompare, enabled = selectedCount in 2..6)
-    )
-    
     // ============== 回收站列表 (TrashScreen) ==============
     
     /**

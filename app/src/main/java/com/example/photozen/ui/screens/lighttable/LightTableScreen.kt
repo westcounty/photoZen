@@ -40,8 +40,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Compare
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Star
@@ -214,9 +216,13 @@ fun LightTableScreen(
                                         style = MaterialTheme.typography.titleLarge
                                     )
                                     Text(
-                                        text = "${uiState.allMaybePhotos.size}张待对比",
+                                        text = if (uiState.selectionCount > 0) {
+                                            "已选择 ${uiState.selectionCount} 张（共 ${uiState.allMaybePhotos.size} 张）"
+                                        } else {
+                                            "${uiState.allMaybePhotos.size}张待对比"
+                                        },
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = if (uiState.selectionCount > 0) MaybeAmber else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             },
@@ -256,16 +262,34 @@ fun LightTableScreen(
                         )
                     },
                     bottomBar = {
-                        SelectionBottomBar(
-                            selectionCount = uiState.selectionCount,
-                            maxSelection = LightTableUiState.MAX_COMPARISON_PHOTOS,
-                            canCompare = uiState.canCompare,
-                            onClearSelection = { viewModel.clearSelection() },
-                            onStartComparison = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                viewModel.startComparison()
-                            }
-                        )
+                        AnimatedVisibility(
+                            visible = uiState.selectionCount > 0,
+                            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                        ) {
+                            SelectionBottomBar(
+                                selectionCount = uiState.selectionCount,
+                                canCompare = uiState.canCompare,
+                                onKeep = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.keepAllSelected()
+                                },
+                                onTrash = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.trashAllSelected()
+                                },
+                                onClearSelection = { viewModel.clearSelection() },
+                                onStartComparison = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.startComparison()
+                                },
+                                onCompareDisabledClick = {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("请选择2-6张照片进行对比")
+                                    }
+                                }
+                            )
+                        }
                     }
                 ) { paddingValues ->
                     Box(
@@ -536,73 +560,58 @@ fun LightTableScreen(
 @Composable
 private fun SelectionBottomBar(
     selectionCount: Int,
-    maxSelection: Int,
     canCompare: Boolean,
+    onKeep: () -> Unit,
+    onTrash: () -> Unit,
     onClearSelection: () -> Unit,
-    onStartComparison: () -> Unit
+    onStartComparison: () -> Unit,
+    onCompareDisabledClick: () -> Unit
 ) {
-    BottomAppBar(
-        containerColor = MaterialTheme.colorScheme.surface
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding(),
+        tonalElevation = 8.dp,
+        shadowElevation = 8.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Selection count
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(MaybeAmber.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = selectionCount.toString(),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaybeAmber
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "已选择 (2-${maxSelection}张)",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            
-            // Action buttons
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AnimatedVisibility(
-                    visible = selectionCount > 0,
-                    enter = fadeIn() + scaleIn(),
-                    exit = fadeOut() + scaleOut()
-                ) {
-                    OutlinedButton(onClick = onClearSelection) {
-                        Text("清除")
-                    }
-                }
-                
-                Button(
-                    onClick = onStartComparison,
-                    enabled = canCompare,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaybeAmber
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Compare,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("对比", color = Color.Black)
-                }
-            }
+            // 保留按钮
+            LightTableBottomBarItem(
+                icon = Icons.Default.Favorite,
+                label = "保留",
+                color = KeepGreen,
+                onClick = onKeep
+            )
+
+            // 回收站按钮
+            LightTableBottomBarItem(
+                icon = Icons.Outlined.Delete,
+                label = "回收站",
+                color = MaterialTheme.colorScheme.onSurface,
+                onClick = onTrash
+            )
+
+            // 清除选择按钮
+            LightTableBottomBarItem(
+                icon = Icons.Default.Clear,
+                label = "清除选择",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                onClick = onClearSelection
+            )
+
+            // 对比按钮（禁用时也可点击，显示提示）
+            LightTableBottomBarItem(
+                icon = Icons.Default.Compare,
+                label = "对比",
+                color = if (canCompare) MaybeAmber else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                onClick = if (canCompare) onStartComparison else onCompareDisabledClick
+            )
         }
     }
 }
@@ -652,12 +661,14 @@ private fun LightTableBottomBarItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     color: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
+    val actualColor = if (enabled) color else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -665,13 +676,13 @@ private fun LightTableBottomBarItem(
             modifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape)
-                .background(color.copy(alpha = 0.15f)),
+                .background(if (enabled) color.copy(alpha = 0.15f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = color,
+                tint = actualColor,
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -679,7 +690,7 @@ private fun LightTableBottomBarItem(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = color,
+            color = actualColor,
             textAlign = TextAlign.Center,
             maxLines = 1
         )
@@ -1009,6 +1020,8 @@ fun LightTableContent(
     val uiState by viewModel.uiState.collectAsState()
     val haptic = LocalHapticFeedback.current
     val transformState = rememberTransformState()
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     // Individual transform states for each photo (max 6 photos in comparison)
     // These are managed here so reset button can reset all of them
@@ -1096,15 +1109,31 @@ fun LightTableContent(
                     }
                     
                     // Bottom bar for selection mode
-                    if (!uiState.isLoading && uiState.allMaybePhotos.isNotEmpty()) {
+                    AnimatedVisibility(
+                        visible = !uiState.isLoading && uiState.allMaybePhotos.isNotEmpty() && uiState.selectionCount > 0,
+                        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                    ) {
                         SelectionBottomBar(
                             selectionCount = uiState.selectionCount,
-                            maxSelection = LightTableUiState.MAX_COMPARISON_PHOTOS,
                             canCompare = uiState.canCompare,
+                            onKeep = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.keepAllSelected()
+                            },
+                            onTrash = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.trashAllSelected()
+                            },
                             onClearSelection = { viewModel.clearSelection() },
                             onStartComparison = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 viewModel.startComparison()
+                            },
+                            onCompareDisabledClick = {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("请选择2-6张照片进行对比")
+                                }
                             }
                         )
                     }

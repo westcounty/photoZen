@@ -397,14 +397,7 @@ fun PhotoListScreen(
                         onReset = { viewModel.resetSelectedToUnsorted() },
                         onPermanentDelete = { viewModel.requestPermanentDeleteSelected() }  // 系统确认弹窗
                     )
-                    PhotoStatus.MAYBE -> {
-                        // REQ-031: 待定列表使用清除+对比按钮
-                        BottomBarConfigs.maybeListCompareSelect(
-                            selectedCount = uiState.selectedCount,
-                            onClear = { viewModel.exitSelectionMode() },
-                            onCompare = { onNavigateToLightTable() }
-                        )
-                    }
+                    PhotoStatus.MAYBE -> emptyList() // 待定照片通过灯箱对比界面处理，此处无UI入口
                     PhotoStatus.TRASH -> BottomBarConfigs.adaptive(
                         selectedCount = uiState.selectedCount,
                         singleSelectActions = {
