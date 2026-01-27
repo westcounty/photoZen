@@ -347,7 +347,8 @@ class FlowSorterViewModel @Inject constructor(
     private val _permissionRetryError = MutableStateFlow(false)
     private val _pendingAlbumBucketId = MutableStateFlow<String?>(null)
     private var _pendingPhotoId: String? = null  // Photo waiting for permission
-    
+    private var _pendingBatchPhotoIds: List<String> = emptyList()  // Batch photos waiting for permission
+
     // System albums state (for album picker)
     private val _availableAlbums = MutableStateFlow<List<com.example.photozen.data.source.Album>>(emptyList())
     val availableAlbums: StateFlow<List<com.example.photozen.data.source.Album>> = _availableAlbums.asStateFlow()
@@ -1652,16 +1653,28 @@ class FlowSorterViewModel @Inject constructor(
      */
     fun onPermissionGranted() {
         if (storagePermissionHelper.hasManageStoragePermission()) {
-            // Permission granted, execute pending operation
-            val photoId = _pendingPhotoId
-            val bucketId = _pendingAlbumBucketId.value
-            
-            // Close dialog and clear pending state
+            // Close dialog first
             _showPermissionDialog.value = false
             _permissionRetryError.value = false
+
+            // Handle batch operation if pending
+            if (_pendingBatchPhotoIds.isNotEmpty()) {
+                val batchIds = _pendingBatchPhotoIds
+                val bucketId = _pendingAlbumBucketId.value
+                _pendingBatchPhotoIds = emptyList()
+                _pendingAlbumBucketId.value = null
+                if (bucketId != null) {
+                    executeBatchAddToAlbum(batchIds, bucketId)
+                }
+                return
+            }
+
+            // Handle single photo operation
+            val photoId = _pendingPhotoId
+            val bucketId = _pendingAlbumBucketId.value
             _pendingPhotoId = null
             _pendingAlbumBucketId.value = null
-            
+
             // Execute the pending operation
             if (photoId != null && bucketId != null) {
                 executeKeepAndAddToAlbum(photoId, bucketId)
@@ -1671,7 +1684,7 @@ class FlowSorterViewModel @Inject constructor(
             _permissionRetryError.value = true
         }
     }
-    
+
     /**
      * Called when user dismisses the permission dialog without granting permission.
      */
@@ -1679,6 +1692,7 @@ class FlowSorterViewModel @Inject constructor(
         _showPermissionDialog.value = false
         _permissionRetryError.value = false
         _pendingPhotoId = null
+        _pendingBatchPhotoIds = emptyList()
         _pendingAlbumBucketId.value = null
     }
 
@@ -1999,10 +2013,10 @@ class FlowSorterViewModel @Inject constructor(
     fun maybeSelectedPhotos() {
         val selectedIds = _selectedPhotoIds.value.toList()
         if (selectedIds.isEmpty()) return
-        
+
         // Clear selection immediately to prevent UI accessing removed items
         _selectedPhotoIds.value = emptySet()
-        
+
         viewModelScope.launch {
             try {
                 // Use batch operation for better performance and atomicity
@@ -2016,7 +2030,111 @@ class FlowSorterViewModel @Inject constructor(
             }
         }
     }
-    
+
+    /**
+     * Batch add selected photos to an album.
+     * The action (copy or move) is determined by albumAddAction setting.
+     *
+     * For MOVE action on Android 11+, checks if MANAGE_EXTERNAL_STORAGE permission is granted.
+     */
+    fun batchAddToAlbum(photoIds: List<String>, bucketId: String) {
+        if (photoIds.isEmpty()) return
+
+        // For MOVE action, check permission first
+        if (_albumAddAction.value == AlbumAddAction.MOVE &&
+            storagePermissionHelper.isManageStoragePermissionApplicable() &&
+            !storagePermissionHelper.hasManageStoragePermission()) {
+            // Save pending operation and show permission dialog
+            _pendingBatchPhotoIds = photoIds
+            _pendingAlbumBucketId.value = bucketId
+            _permissionRetryError.value = false
+            _showPermissionDialog.value = true
+            return
+        }
+
+        // Execute the operation
+        executeBatchAddToAlbum(photoIds, bucketId)
+    }
+
+    /**
+     * Execute batch add to album operation.
+     * Called directly or after permission is granted.
+     */
+    private fun executeBatchAddToAlbum(photoIds: List<String>, bucketId: String) {
+        if (photoIds.isEmpty()) return
+
+        // Capture photos BEFORE clearing selection (important for state consistency)
+        val photos = uiState.value.photos.filter { it.id in photoIds }
+        if (photos.isEmpty()) return
+
+        // Clear selection immediately
+        _selectedPhotoIds.value = emptySet()
+
+        viewModelScope.launch {
+            val album = _albumBubbleList.value.find { it.bucketId == bucketId }
+            val targetPath = mediaStoreDataSource.getAlbumPath(bucketId)
+                ?: "Pictures/${album?.displayName ?: "PhotoZen"}"
+
+            // Step 1: Batch mark all photos as KEEP first
+            try {
+                sortPhotoUseCase.batchUpdateStatus(photoIds, PhotoStatus.KEEP)
+                _counters.value = _counters.value.copy(keep = _counters.value.keep + photoIds.size)
+                preferencesRepository.incrementSortedCount(photoIds.size)
+                // incrementKeepCount doesn't support batch, call in loop
+                repeat(photoIds.size) {
+                    preferencesRepository.incrementKeepCount()
+                }
+                statsRepository.recordKeep(photoIds.size)
+            } catch (e: Exception) {
+                _error.value = "标记保留失败: ${e.message}"
+                return@launch
+            }
+
+            // Step 2: Perform album operations
+            var albumSuccessCount = 0
+            var albumFailCount = 0
+
+            for (photo in photos) {
+                try {
+                    val photoUri = Uri.parse(photo.systemUri)
+                    val success = when (_albumAddAction.value) {
+                        AlbumAddAction.COPY -> {
+                            albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath).isSuccess
+                        }
+                        AlbumAddAction.MOVE -> {
+                            val result = albumOperationsUseCase.movePhotoToAlbum(photoUri, targetPath)
+                            result is MovePhotoResult.Success
+                        }
+                    }
+
+                    if (success) {
+                        albumSuccessCount++
+                    } else {
+                        albumFailCount++
+                    }
+                } catch (e: Exception) {
+                    albumFailCount++
+                }
+            }
+
+            // Show result message
+            val actionName = if (_albumAddAction.value == AlbumAddAction.COPY) "复制" else "移动"
+            _albumMessage.value = when {
+                albumFailCount == 0 -> "已保留并${actionName} $albumSuccessCount 张照片到 ${album?.displayName}"
+                albumSuccessCount == 0 -> "已保留 ${photoIds.size} 张照片，但${actionName}到相册失败"
+                else -> "已保留 ${photoIds.size} 张，${actionName}成功 $albumSuccessCount 张，失败 $albumFailCount 张"
+            }
+
+            // Trigger album list refresh
+            if (albumSuccessCount > 0) {
+                preferencesRepository.triggerAlbumRefresh()
+            }
+
+            // Update widget
+            widgetUpdater.updateDailyProgressWidgets()
+        }
+    }
+
     /**
      * Update combo state based on time since last swipe.
      * Called after each successful sort action.

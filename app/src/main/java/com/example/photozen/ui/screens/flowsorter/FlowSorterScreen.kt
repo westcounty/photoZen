@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.PhotoAlbum
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SelectAll
@@ -95,6 +96,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
+import com.example.photozen.ui.components.AlbumPickerBottomSheet
 import com.example.photozen.ui.components.ComboOverlay
 import com.example.photozen.ui.components.DailyTaskTitle
 import com.example.photozen.ui.components.DragSelectPhotoGrid
@@ -426,10 +428,14 @@ fun FlowSorterContent(
     var fullscreenPhotoIndex by remember { mutableIntStateOf(-1) }
     val showFullscreen = fullscreenPhotoIndex >= 0
 
-    // Album picker state
+    // Album picker state (for quick album list management)
     var showAlbumPicker by remember { mutableStateOf(false) }
     val availableAlbums by viewModel.availableAlbums.collectAsState()
     var selectedAlbumIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    // Batch add to album state
+    var showBatchAlbumPicker by remember { mutableStateOf(false) }
+    var showBatchAlbumEditor by remember { mutableStateOf(false) }
 
     // 全屏预览永久删除状态
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
@@ -669,6 +675,7 @@ fun FlowSorterContent(
                     onKeep = { viewModel.keepSelectedPhotos() },
                     onTrash = { viewModel.trashSelectedPhotos() },
                     onMaybe = { viewModel.maybeSelectedPhotos() },
+                    onAddToAlbum = { showBatchAlbumPicker = true },
                     onStartFromHere = if (singleSelectedIndex >= 0) {
                         {
                             // Start from this photo and switch to card mode
@@ -981,6 +988,64 @@ fun FlowSorterContent(
             onDismiss = { showFilterSheet = false }
         )
     }
+
+    // 批量添加到相册 - 相册选择面板
+    if (showBatchAlbumPicker) {
+        AlbumPickerBottomSheet(
+            albums = uiState.albumBubbleList,
+            title = "添加到相册",
+            showAddAlbum = true,
+            onAlbumSelected = { album ->
+                viewModel.batchAddToAlbum(
+                    photoIds = uiState.selectedPhotoIds.toList(),
+                    bucketId = album.bucketId
+                )
+                showBatchAlbumPicker = false
+            },
+            onAddAlbumClick = {
+                // Load system albums for editing quick album list
+                viewModel.loadSystemAlbums()
+                selectedAlbumIds = uiState.albumBubbleList.map { it.bucketId }.toSet()
+                showBatchAlbumEditor = true
+            },
+            onDismiss = { showBatchAlbumPicker = false }
+        )
+    }
+
+    // 批量添加到相册 - 编辑快捷相册弹窗
+    if (showBatchAlbumEditor) {
+        SystemAlbumPickerDialog(
+            title = "管理快捷相册列表",
+            albums = availableAlbums,
+            selectedIds = selectedAlbumIds,
+            isLoading = availableAlbums.isEmpty(),
+            onToggleSelection = { albumId ->
+                selectedAlbumIds = if (albumId in selectedAlbumIds) {
+                    selectedAlbumIds - albumId
+                } else {
+                    selectedAlbumIds + albumId
+                }
+            },
+            onConfirm = {
+                // Add newly selected albums to quick list
+                val existingIds = uiState.albumBubbleList.map { it.bucketId }.toSet()
+                val toAdd = selectedAlbumIds - existingIds
+                toAdd.forEach { bucketId ->
+                    viewModel.addAlbumToQuickList(bucketId)
+                }
+                // Remove deselected albums
+                val toRemove = existingIds - selectedAlbumIds
+                toRemove.forEach { bucketId ->
+                    viewModel.removeAlbumFromQuickList(bucketId)
+                }
+                showBatchAlbumEditor = false
+            },
+            onDismiss = { showBatchAlbumEditor = false },
+            onCreateAlbum = { albumName ->
+                viewModel.createAlbumAndAdd(albumName)
+            }
+        )
+    }
 }
 
 /**
@@ -1288,6 +1353,7 @@ private fun ConfettiAnimation(
  * @param onKeep Callback for keep action
  * @param onTrash Callback for trash action
  * @param onMaybe Callback for maybe action
+ * @param onAddToAlbum Callback for add to album action
  * @param onStartFromHere Callback for "从此张开始筛选" action (only shown when single photo selected)
  */
 @Composable
@@ -1296,6 +1362,7 @@ private fun BatchActionBar(
     onKeep: () -> Unit,
     onTrash: () -> Unit,
     onMaybe: () -> Unit,
+    onAddToAlbum: () -> Unit,
     onStartFromHere: (() -> Unit)? = null
 ) {
     Surface(
@@ -1327,6 +1394,14 @@ private fun BatchActionBar(
                 label = "保留",
                 color = KeepGreen,
                 onClick = onKeep
+            )
+
+            // Album button (添加到相册)
+            FlowSorterBottomBarActionItem(
+                icon = Icons.Default.PhotoAlbum,
+                label = "相册",
+                color = MaterialTheme.colorScheme.secondary,
+                onClick = onAddToAlbum
             )
 
             // Maybe button
