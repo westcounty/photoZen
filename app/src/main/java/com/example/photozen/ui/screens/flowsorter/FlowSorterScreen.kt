@@ -444,7 +444,7 @@ fun FlowSorterContent(
         val targetId = initialScrollPhotoId ?: return@LaunchedEffect
         val index = uiState.photos.indexOfFirst { it.id == targetId }
         if (index >= 0) {
-            viewModel.setCurrentIndex(index)
+            viewModel.startFromIndex(index)
             staggeredGridState.scrollToItem(index)
             squareGridState.scrollToItem(index)
             viewModel.consumeInitialScrollPhotoId()
@@ -1098,7 +1098,7 @@ private fun CardStack(
     modifier: Modifier = Modifier
 ) {
     SwipeableCardStack(
-        photos = uiState.photos.drop(uiState.currentIndex),
+        photos = uiState.photos,
         swipeSensitivity = uiState.swipeSensitivity,
         hapticFeedbackEnabled = uiState.hapticFeedbackEnabled,  // Phase 3-7
         onSwipeLeft = onSwipeLeft,

@@ -106,7 +106,6 @@ enum class FlowSorterViewMode {
  */
 data class FlowSorterUiState(
     val photos: List<PhotoEntity> = emptyList(),
-    val currentIndex: Int = 0,
     val isLoading: Boolean = true,
     val isSyncing: Boolean = false,
     val isReloading: Boolean = false,
@@ -149,16 +148,16 @@ data class FlowSorterUiState(
     val initialScrollPhotoId: String? = null
 ) {
     val currentPhoto: PhotoEntity?
-        get() = photos.getOrNull(currentIndex)
-    
+        get() = photos.firstOrNull()
+
     val nextPhoto: PhotoEntity?
-        get() = photos.getOrNull(currentIndex + 1)
+        get() = photos.getOrNull(1)
     
     val hasPhotos: Boolean
         get() = photos.isNotEmpty()
     
     val isComplete: Boolean
-        get() = photos.isEmpty() || currentIndex >= photos.size
+        get() = photos.isEmpty()
     
     val progress: Float
         get() = if (totalCount > 0) sortedCount.toFloat() / totalCount else 0f
@@ -217,7 +216,7 @@ class FlowSorterViewModel @Inject constructor(
     
     private val _isLoading = MutableStateFlow(true)
     private val _isSyncing = MutableStateFlow(false)
-    private val _currentIndex = MutableStateFlow(0)
+
     private val _lastAction = MutableStateFlow<SortAction?>(null)
     private val _error = MutableStateFlow<String?>(null)
     private val _counters = MutableStateFlow(SortCounters())
@@ -1047,7 +1046,6 @@ class FlowSorterViewModel @Inject constructor(
         getFilteredPhotosFlow(),
         getFilteredPhotosCountFlow(), // Add real count flow
         combine(_isLoading, _isSyncing, _isReloading) { loading, syncing, reloading -> Triple(loading, syncing, reloading) },
-        _currentIndex,
         _lastAction,
         combine(_error, _counters, _combo) { e, c, co -> Triple(e, c, co) },
         _viewMode,
@@ -1074,15 +1072,14 @@ class FlowSorterViewModel @Inject constructor(
         val isLoading = loadingStates.first
         val isSyncing = loadingStates.second
         val isReloading = loadingStates.third
-        val currentIndex = values[3] as Int
-        val lastAction = values[4] as SortAction?
+        val lastAction = values[3] as SortAction?
         @Suppress("UNCHECKED_CAST")
-        val combined = values[5] as Triple<String?, SortCounters, ComboState>
-        val viewMode = values[6] as FlowSorterViewMode
-        val selectionAndAlbum = values[7] as SelectionAndAlbumState
+        val combined = values[4] as Triple<String?, SortCounters, ComboState>
+        val viewMode = values[5] as FlowSorterViewMode
+        val selectionAndAlbum = values[6] as SelectionAndAlbumState
         @Suppress("UNCHECKED_CAST")
-        val prefsState = values[8] as Pair<Pair<PhotoFilterMode, Boolean>, Triple<Boolean, Float, Boolean>>
-        val dailyStatus = values[9] as com.example.photozen.domain.usecase.DailyTaskStatus?
+        val prefsState = values[7] as Pair<Pair<PhotoFilterMode, Boolean>, Triple<Boolean, Float, Boolean>>
+        val dailyStatus = values[8] as com.example.photozen.domain.usecase.DailyTaskStatus?
         
         val error = combined.first
         val counters = combined.second
@@ -1141,7 +1138,6 @@ class FlowSorterViewModel @Inject constructor(
         
         FlowSorterUiState(
             photos = sortedPhotos,
-            currentIndex = 0, // Always 0 since we remove sorted photos from list
             isLoading = shouldShowLoading && sortedPhotos.isEmpty(),
             isSyncing = isSyncing,
             isReloading = isReloading,
@@ -1578,13 +1574,11 @@ class FlowSorterViewModel @Inject constructor(
      */
     private fun preloadNextPhotos() {
         val currentState = uiState.value
-        val photos = currentState.photos
-        val currentIndex = currentState.currentIndex
-        
+
         // 使用 PhotoPreloader 预加载
         photoPreloader.preloadForSwipe(
-            photos = photos,
-            currentIndex = currentIndex,
+            photos = currentState.photos,
+            currentIndex = 0,
             preloadCount = 3
         )
     }
@@ -1652,10 +1646,6 @@ class FlowSorterViewModel @Inject constructor(
         _initialScrollPhotoId.value = null
     }
 
-    fun setCurrentIndex(index: Int) {
-        _currentIndex.value = index
-    }
-    
     /**
      * Clear album message.
      */
@@ -2376,9 +2366,6 @@ class FlowSorterViewModel @Inject constructor(
         
         // Update the photos list
         _pagedPhotos.value = photosFromIndex
-
-        // Reset the current index to 0 (start of the new list)
-        _currentIndex.value = 0
 
         // Clear any selection
         _selectedPhotoIds.value = emptySet()

@@ -33,7 +33,6 @@ import com.example.photozen.data.repository.PhotoFilterMode
  * 包含照片列表和当前位置相关的字段。
  * 
  * @property photos 当前显示的照片列表
- * @property currentIndex 当前索引（卡片模式）
  * @property totalCount 总数量（用于进度显示）
  * @property isLoading 是否正在加载
  * @property isSyncing 是否正在同步
@@ -41,7 +40,6 @@ import com.example.photozen.data.repository.PhotoFilterMode
  */
 data class SorterPhotosState(
     val photos: List<PhotoEntity> = emptyList(),
-    val currentIndex: Int = 0,
     val totalCount: Int = 0,
     val isLoading: Boolean = true,
     val isSyncing: Boolean = false,
@@ -51,13 +49,13 @@ data class SorterPhotosState(
      * 当前照片
      */
     val currentPhoto: PhotoEntity?
-        get() = photos.getOrNull(currentIndex)
-    
+        get() = photos.firstOrNull()
+
     /**
      * 下一张照片（用于预加载）
      */
     val nextPhoto: PhotoEntity?
-        get() = photos.getOrNull(currentIndex + 1)
+        get() = photos.getOrNull(1)
     
     /**
      * 是否有照片
@@ -69,13 +67,13 @@ data class SorterPhotosState(
      * 是否整理完成
      */
     val isComplete: Boolean
-        get() = photos.isEmpty() || currentIndex >= photos.size
-    
+        get() = photos.isEmpty()
+
     /**
      * 剩余照片数量
      */
     val remainingCount: Int
-        get() = (photos.size - currentIndex).coerceAtLeast(0)
+        get() = photos.size
     
     companion object {
         val EMPTY = SorterPhotosState()
@@ -367,8 +365,6 @@ data class FlowSorterUiStateV2(
     val isSyncing: Boolean get() = photos.isSyncing
     val isReloading: Boolean get() = photos.isReloading
     val totalCount: Int get() = photos.totalCount
-    val currentIndex: Int get() = photos.currentIndex
-    
     // Counters
     val sortedCount: Int get() = counters.sortedCount
     val keepCount: Int get() = counters.keepCount
@@ -423,7 +419,6 @@ data class FlowSorterUiStateV2(
  */
 fun FlowSorterUiState.toPhotosState(): SorterPhotosState = SorterPhotosState(
     photos = photos,
-    currentIndex = currentIndex,
     totalCount = totalCount,
     isLoading = isLoading,
     isSyncing = isSyncing,
