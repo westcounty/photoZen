@@ -22,10 +22,10 @@ import javax.inject.Singleton
  * ## 使用方式
  * ```kotlin
  * // 检查引导是否完成
- * val isCompleted = guideRepository.isGuideCompleted(GuideKey.PHOTO_LIST_LONG_PRESS).first()
+ * val isCompleted = guideRepository.isGuideCompleted(GuideKey.STATS_CALENDAR).first()
  *
  * // 标记引导完成
- * guideRepository.markGuideCompleted(GuideKey.PHOTO_LIST_LONG_PRESS)
+ * guideRepository.markGuideCompleted(GuideKey.STATS_CALENDAR)
  *
  * // 重置所有引导
  * guideRepository.resetAllGuides()

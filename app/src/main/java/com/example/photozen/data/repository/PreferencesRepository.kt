@@ -195,9 +195,6 @@ class PreferencesRepository @Inject constructor(
         val KEY_LAST_SEEN_CHANGELOG_VERSION = stringPreferencesKey("last_seen_changelog_version")
         val KEY_COMPLETED_QUICK_START_VERSION = stringPreferencesKey("completed_quick_start_version")
 
-        // Onboarding guide flags (REQ-067)
-        val KEY_PINCH_ZOOM_GUIDE_SEEN = androidx.datastore.preferences.core.booleanPreferencesKey("pinch_zoom_guide_seen")
-        
         // Achievement keys
         val KEY_TAGGED_COUNT = intPreferencesKey("total_tagged_count")
         val KEY_MAX_COMBO = intPreferencesKey("max_combo")
@@ -1498,25 +1495,6 @@ class PreferencesRepository @Inject constructor(
         }
     }
     
-    // ==================== ONBOARDING GUIDE FLAGS (REQ-067) ====================
-
-    /**
-     * Check if user has seen the pinch zoom guide.
-     * Default is false (not seen).
-     */
-    fun hasPinchZoomGuideSeen(): Flow<Boolean> = dataStore.data.map { preferences ->
-        preferences[KEY_PINCH_ZOOM_GUIDE_SEEN] ?: false
-    }
-
-    /**
-     * Mark pinch zoom guide as seen.
-     */
-    suspend fun setPinchZoomGuideSeen(seen: Boolean = true) {
-        dataStore.edit { preferences ->
-            preferences[KEY_PINCH_ZOOM_GUIDE_SEEN] = seen
-        }
-    }
-
     // ==================== CHANGELOG AND QUICK START VERSION TRACKING ====================
 
     /**

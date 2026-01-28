@@ -54,13 +54,13 @@ data class GuideSequenceState(
  * ```kotlin
  * @Composable
  * fun MyScreen(guideRepository: GuideRepository) {
- *     val guideState = rememberGuideState(GuideKey.PHOTO_LIST_LONG_PRESS, guideRepository)
- *     
+ *     val guideState = rememberGuideState(GuideKey.STATS_CALENDAR, guideRepository)
+ *
  *     // 显示引导
  *     if (guideState.shouldShow) {
  *         GuideTooltip(
  *             visible = true,
- *             message = "长按选择照片",
+ *             message = "点击查看详情",
  *             targetBounds = bounds,
  *             onDismiss = guideState.dismiss
  *         )
@@ -103,14 +103,14 @@ fun rememberGuideState(
  * @Composable
  * fun MyScreen(guideRepository: GuideRepository) {
  *     val guideSequence = rememberGuideSequenceState(
- *         guideKeys = listOf(GuideKey.PHOTO_LIST_LONG_PRESS, GuideKey.HOME_START_BUTTON),
+ *         guideKeys = listOf(GuideKey.SWIPE_SORT_FULLSCREEN_GUIDE, GuideKey.FLOW_SORTER_VIEW_TOGGLE),
  *         guideRepository = guideRepository
  *     )
  *
  *     // 根据当前引导显示不同内容
  *     when (guideSequence.currentGuide) {
- *         GuideKey.PHOTO_LIST_LONG_PRESS -> GuideTooltip(message = "长按选择", ...)
- *         GuideKey.HOME_START_BUTTON -> GuideTooltip(message = "点击开始", ...)
+ *         GuideKey.SWIPE_SORT_FULLSCREEN_GUIDE -> GuideTooltip(message = "滑动手势引导", ...)
+ *         GuideKey.FLOW_SORTER_VIEW_TOGGLE -> GuideTooltip(message = "视图切换", ...)
  *         else -> { /* 引导完成 */ }
  *     }
  * }
