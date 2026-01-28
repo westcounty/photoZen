@@ -7,6 +7,7 @@ import com.example.photozen.data.local.dao.PhotoDao
 import com.example.photozen.data.local.entity.AlbumBubbleEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.source.Album
+import com.example.photozen.data.source.DeleteResult
 import com.example.photozen.data.source.MediaStoreDataSource
 import com.example.photozen.domain.usecase.AlbumOperationsUseCase
 import com.example.photozen.domain.usecase.AlbumStats
@@ -53,7 +54,10 @@ data class AlbumBubbleUiState(
     val message: String? = null,
     // For undo remove operation
     val lastRemovedAlbum: AlbumBubbleEntity? = null,
-    val showUndoSnackbar: Boolean = false
+    val showUndoSnackbar: Boolean = false,
+    // For album deletion via system API
+    val pendingDeleteIntentSender: android.content.IntentSender? = null,
+    val pendingDeleteBucketId: String? = null
 )
 
 /**
@@ -258,8 +262,12 @@ class AlbumBubbleViewModel @Inject constructor(
                 val systemAlbumsById = allSystemAlbums.associateBy { it.id }
                 val systemAlbumsByName = allSystemAlbums.groupBy { it.name }
 
+                // Filter to only albums still in the bubble list (may have been deleted)
+                val validBucketIds = albumBubbleDao.getAllSync().map { it.bucketId }.toSet()
+                val validAlbums = currentAlbums.filter { it.bucketId in validBucketIds }
+
                 // Update stats for each album without changing order
-                val updatedAlbums = currentAlbums.map { album ->
+                val updatedAlbums = validAlbums.map { album ->
                     try {
                         var bucketId = album.bucketId
                         var systemAlbum = systemAlbumsById[bucketId]
@@ -606,16 +614,54 @@ class AlbumBubbleViewModel @Inject constructor(
     fun deleteAlbum(bucketId: String) {
         viewModelScope.launch {
             try {
-                // The deleteAlbum returns an IntentSender for system confirmation
-                // For now, we just remove from the bubble list
-                // Full deletion requires UI to handle the IntentSender
-                albumBubbleDao.deleteByBucketId(bucketId)
-                loadAlbumBubbles()
-                _uiState.update { it.copy(message = "相册已从列表移除（完全删除需要系统权限确认）") }
+                val result = mediaStoreDataSource.deleteAlbum(bucketId)
+                when (result) {
+                    is DeleteResult.Success -> {
+                        // Album was empty or deleted on older Android
+                        albumBubbleDao.deleteByBucketId(bucketId)
+                        loadAlbumBubbles()
+                        _uiState.update { it.copy(message = "相册已删除") }
+                    }
+                    is DeleteResult.RequiresConfirmation -> {
+                        // Need system confirmation dialog
+                        _uiState.update { it.copy(
+                            pendingDeleteIntentSender = result.intentSender,
+                            pendingDeleteBucketId = bucketId
+                        ) }
+                    }
+                    is DeleteResult.Failed -> {
+                        _uiState.update { it.copy(error = result.message) }
+                    }
+                }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "操作失败: ${e.message}") }
             }
         }
+    }
+
+    fun onAlbumDeleteConfirmed() {
+        viewModelScope.launch {
+            val bucketId = _uiState.value.pendingDeleteBucketId
+            if (bucketId != null) {
+                albumBubbleDao.deleteByBucketId(bucketId)
+                // Immediately remove from UI list without waiting for full reload
+                _uiState.update { state ->
+                    state.copy(
+                        albums = state.albums.filter { it.bucketId != bucketId },
+                        message = "相册已删除",
+                        pendingDeleteIntentSender = null,
+                        pendingDeleteBucketId = null
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearPendingDelete() {
+        _uiState.update { it.copy(
+            pendingDeleteIntentSender = null,
+            pendingDeleteBucketId = null
+        ) }
     }
     
     /**

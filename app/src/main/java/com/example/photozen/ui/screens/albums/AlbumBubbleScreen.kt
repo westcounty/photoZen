@@ -66,6 +66,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import com.example.photozen.data.source.Album
 import com.example.photozen.ui.components.CompactSortingButton
 import com.example.photozen.ui.components.SystemAlbumPickerDialog
@@ -117,6 +120,30 @@ fun AlbumBubbleScreen(
     // Context menu state
     var selectedAlbumForMenu by remember { mutableStateOf<AlbumBubbleData?>(null) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+
+    // System delete confirmation launcher
+    val deleteResultLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { activityResult ->
+        if (activityResult.resultCode == android.app.Activity.RESULT_OK) {
+            viewModel.onAlbumDeleteConfirmed()
+        } else {
+            viewModel.clearPendingDelete()
+        }
+    }
+
+    // Launch system delete confirmation when IntentSender is available
+    LaunchedEffect(uiState.pendingDeleteIntentSender) {
+        uiState.pendingDeleteIntentSender?.let { intentSender ->
+            try {
+                deleteResultLauncher.launch(
+                    IntentSenderRequest.Builder(intentSender).build()
+                )
+            } catch (e: Exception) {
+                viewModel.clearPendingDelete()
+            }
+        }
+    }
 
     // Show error/message
     LaunchedEffect(uiState.error) {
