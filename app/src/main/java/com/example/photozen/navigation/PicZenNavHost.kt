@@ -359,6 +359,9 @@ private fun PicZenNavHostInternal(
                 },
                 onNavigateToQuickSort = { bucketId ->
                     navController.navigate(Screen.FlowSorter(albumBucketId = bucketId))
+                },
+                onNavigateToFlowSorter = {
+                    navController.navigate(Screen.FlowSorter())
                 }
             )
         }

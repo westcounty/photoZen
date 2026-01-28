@@ -137,6 +137,8 @@ import com.example.photozen.ui.theme.TrashRed
 import com.example.photozen.ui.util.rememberHapticFeedbackManager
 import com.example.photozen.ui.components.onboarding.SwipeSortOnboarding
 import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -432,6 +434,23 @@ fun FlowSorterContent(
     var fullscreenPhotoIndex by remember { mutableIntStateOf(-1) }
     val showFullscreen = fullscreenPhotoIndex >= 0
 
+    // Grid states for LIST view mode
+    val staggeredGridState = rememberLazyStaggeredGridState()
+    val squareGridState = rememberLazyGridState()
+
+    // 「从此开始」初始滚动位置
+    val initialScrollPhotoId by viewModel.initialScrollPhotoId.collectAsState()
+    LaunchedEffect(initialScrollPhotoId, uiState.photos) {
+        val targetId = initialScrollPhotoId ?: return@LaunchedEffect
+        val index = uiState.photos.indexOfFirst { it.id == targetId }
+        if (index >= 0) {
+            viewModel.setCurrentIndex(index)
+            staggeredGridState.scrollToItem(index)
+            squareGridState.scrollToItem(index)
+            viewModel.consumeInitialScrollPhotoId()
+        }
+    }
+
     // Album picker state (for quick album list management)
     var showAlbumPicker by remember { mutableStateOf(false) }
     val availableAlbums by viewModel.availableAlbums.collectAsState()
@@ -588,6 +607,8 @@ fun FlowSorterContent(
                             },
                             columns = uiState.gridColumns,
                             gridMode = uiState.gridMode,
+                            staggeredGridState = staggeredGridState,
+                            squareGridState = squareGridState,
                             enableDragSelect = false,  // Disable drag select, use simple long press
                             clickAlwaysTogglesSelection = true,
                             onSelectionToggle = { photoId ->
@@ -1077,7 +1098,7 @@ private fun CardStack(
     modifier: Modifier = Modifier
 ) {
     SwipeableCardStack(
-        photos = uiState.photos,
+        photos = uiState.photos.drop(uiState.currentIndex),
         swipeSensitivity = uiState.swipeSensitivity,
         hapticFeedbackEnabled = uiState.hapticFeedbackEnabled,  // Phase 3-7
         onSwipeLeft = onSwipeLeft,

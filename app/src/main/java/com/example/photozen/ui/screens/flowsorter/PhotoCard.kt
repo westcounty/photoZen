@@ -50,7 +50,7 @@ import com.example.photozen.util.withThumbnailPolicy
 import com.example.photozen.ui.components.EdgeGlowOverlay
 import com.example.photozen.ui.components.GlowingDirectionIndicator
 import com.example.photozen.ui.components.SwipeIndicatorDirection
-import com.example.photozen.util.OfflineGeocoder
+import com.example.photozen.util.GeoLocationResolver
 import kotlin.math.abs
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -258,25 +258,12 @@ private fun PhotoInfoOverlay(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val offlineGeocoder = remember { OfflineGeocoder(context) }
+    val geoResolver = remember { GeoLocationResolver.from(context) }
     var locationText by remember { mutableStateOf<String?>(null) }
-    
-    // Load location text asynchronously
-    // If photo has GPS coordinates, use them directly
-    // Otherwise, if GPS hasn't been scanned yet, try to read from EXIF lazily
+
+    // Load location text asynchronously with DB caching
     LaunchedEffect(photo.id, photo.latitude, photo.longitude, photo.gpsScanned) {
-        locationText = when {
-            // Photo already has GPS coordinates
-            photo.latitude != null && photo.longitude != null -> {
-                offlineGeocoder.getLocationText(photo.latitude, photo.longitude)
-            }
-            // GPS not yet scanned - try to read from EXIF lazily
-            !photo.gpsScanned -> {
-                offlineGeocoder.getLocationTextFromUri(photo.systemUri)
-            }
-            // GPS was scanned but no data found
-            else -> null
-        }
+        locationText = geoResolver.resolveText(photo)
     }
     
     // Text colors based on compact mode
@@ -399,20 +386,12 @@ private fun PhotoInfoOverlayCompact(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val offlineGeocoder = remember { OfflineGeocoder(context) }
+    val geoResolver = remember { GeoLocationResolver.from(context) }
     var locationText by remember { mutableStateOf<String?>(null) }
-    
-    // Load location text asynchronously
+
+    // Load location text asynchronously with DB caching
     LaunchedEffect(photo.id, photo.latitude, photo.longitude, photo.gpsScanned) {
-        locationText = when {
-            photo.latitude != null && photo.longitude != null -> {
-                offlineGeocoder.getLocationText(photo.latitude, photo.longitude)
-            }
-            !photo.gpsScanned -> {
-                offlineGeocoder.getLocationTextFromUri(photo.systemUri)
-            }
-            else -> null
-        }
+        locationText = geoResolver.resolveText(photo)
     }
     
     Column(modifier = modifier) {

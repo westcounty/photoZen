@@ -187,30 +187,34 @@ class OfflineGeocoder @Inject constructor(
     /**
      * Get location details by reading GPS coordinates from photo EXIF data.
      */
-    suspend fun getLocationDetailsFromUri(photoUri: String?): LocationDetails? {
+    /**
+     * Extract raw GPS coordinates from photo EXIF data.
+     *
+     * @return Pair(latitude, longitude) or null if not available
+     */
+    suspend fun extractGpsFromUri(photoUri: String?): Pair<Double, Double>? {
         if (photoUri.isNullOrEmpty()) return null
 
         return withContext(Dispatchers.IO) {
             try {
                 val uri = Uri.parse(photoUri)
-                val contentResolver = context.contentResolver
-
-                contentResolver.openInputStream(uri)?.use { inputStream ->
+                context.contentResolver.openInputStream(uri)?.use { inputStream ->
                     val exif = ExifInterface(inputStream)
-
                     val latLong = FloatArray(2)
                     if (exif.getLatLong(latLong)) {
-                        val lat = latLong[0].toDouble()
-                        val lng = latLong[1].toDouble()
-                        return@withContext getLocationDetails(lat, lng)
+                        return@withContext Pair(latLong[0].toDouble(), latLong[1].toDouble())
                     }
                 }
-
                 null
             } catch (e: Exception) {
                 null
             }
         }
+    }
+
+    suspend fun getLocationDetailsFromUri(photoUri: String?): LocationDetails? {
+        val (lat, lng) = extractGpsFromUri(photoUri) ?: return null
+        return getLocationDetails(lat, lng)
     }
 
     /**
@@ -244,32 +248,7 @@ class OfflineGeocoder @Inject constructor(
      * @return Location text or null if no GPS data available
      */
     suspend fun getLocationTextFromUri(photoUri: String?): String? {
-        if (photoUri.isNullOrEmpty()) return null
-        
-        return withContext(Dispatchers.IO) {
-            try {
-                val uri = Uri.parse(photoUri)
-                val contentResolver = context.contentResolver
-                
-                contentResolver.openInputStream(uri)?.use { inputStream ->
-                    val exif = ExifInterface(inputStream)
-                    
-                    // Try to get GPS coordinates
-                    val latLong = FloatArray(2)
-                    if (exif.getLatLong(latLong)) {
-                        val lat = latLong[0].toDouble()
-                        val lng = latLong[1].toDouble()
-                        
-                        // Convert to location text using existing method
-                        return@withContext getLocationText(lat, lng)
-                    }
-                }
-                
-                null
-            } catch (e: Exception) {
-                // Silently fail - not all photos have GPS data
-                null
-            }
-        }
+        val (lat, lng) = extractGpsFromUri(photoUri) ?: return null
+        return getLocationText(lat, lng)
     }
 }

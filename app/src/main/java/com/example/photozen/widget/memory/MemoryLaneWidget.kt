@@ -19,7 +19,7 @@ import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
 import com.example.photozen.data.repository.PhotoRepository
 import com.example.photozen.data.repository.PreferencesRepository
-import com.example.photozen.util.OfflineGeocoder
+import com.example.photozen.util.GeoLocationResolver
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -39,7 +39,7 @@ import timber.log.Timber
 interface MemoryLaneWidgetEntryPoint {
     fun photoRepository(): PhotoRepository
     fun preferencesRepository(): PreferencesRepository
-    fun offlineGeocoder(): OfflineGeocoder
+    fun geoLocationResolver(): GeoLocationResolver
 }
 
 /**
@@ -185,7 +185,7 @@ class MemoryLaneWidget : AppWidgetProvider() {
                 )
                 val photoRepository = entryPoint.photoRepository()
                 val preferencesRepository = entryPoint.preferencesRepository()
-                val offlineGeocoder = entryPoint.offlineGeocoder()
+                val geoLocationResolver = entryPoint.geoLocationResolver()
 
                 // Read per-widget settings (falls back to global if not set)
                 val thisDayPriority = preferencesRepository.getWidgetThisDayPriority(appWidgetId)
@@ -237,15 +237,7 @@ class MemoryLaneWidget : AppWidgetProvider() {
                     views.setTextViewText(R.id.memory_time_text, timeText)
 
                     // Display location if available
-                    val locationText = when {
-                        photo.latitude != null && photo.longitude != null -> {
-                            offlineGeocoder.getLocationText(photo.latitude, photo.longitude)
-                        }
-                        !photo.gpsScanned -> {
-                            offlineGeocoder.getLocationTextFromUri(photo.systemUri)
-                        }
-                        else -> null
-                    }
+                    val locationText = geoLocationResolver.resolveText(photo)
                     if (locationText != null) {
                         views.setTextViewText(R.id.memory_location_text, locationText)
                         views.setViewVisibility(R.id.memory_location_text, android.view.View.VISIBLE)
@@ -545,7 +537,7 @@ class MemoryLaneWidget : AppWidgetProvider() {
             )
             val photoRepository = entryPoint.photoRepository()
             val preferencesRepository = entryPoint.preferencesRepository()
-            val offlineGeocoder = entryPoint.offlineGeocoder()
+            val geoLocationResolver = entryPoint.geoLocationResolver()
 
             // Read per-widget settings (falls back to global if not set)
             val thisDayPriority = preferencesRepository.getWidgetThisDayPriority(appWidgetId)
@@ -571,15 +563,7 @@ class MemoryLaneWidget : AppWidgetProvider() {
                 views.setTextViewText(R.id.memory_time_text, timeText)
 
                 // Display location if available
-                val locationText = when {
-                    photo.latitude != null && photo.longitude != null -> {
-                        offlineGeocoder.getLocationText(photo.latitude, photo.longitude)
-                    }
-                    !photo.gpsScanned -> {
-                        offlineGeocoder.getLocationTextFromUri(photo.systemUri)
-                    }
-                    else -> null
-                }
+                val locationText = geoLocationResolver.resolveText(photo)
                 if (locationText != null) {
                     views.setTextViewText(R.id.memory_location_text, locationText)
                     views.setViewVisibility(R.id.memory_location_text, android.view.View.VISIBLE)

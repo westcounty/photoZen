@@ -51,7 +51,16 @@ data class TimelineDetailUiState(
     val isSquareMode: Boolean = true,
     val columnCount: Int = 3,
     // Sort order
-    val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC
+    val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC,
+    // Rename state
+    val renameProgress: Int = -1,
+    val renameTotal: Int = 0,
+    val renameSuccessCount: Int = 0,
+    val renameFailCount: Int = 0,
+    val renameFailReasons: List<String> = emptyList(),
+    val showRenameResult: Boolean = false,
+    val showPermissionDialog: Boolean = false,
+    val permissionRetryError: Boolean = false
 ) {
     val selectedCount: Int get() = selectedIds.size
     val unsortedCount: Int get() = totalCount - sortedCount
@@ -72,7 +81,9 @@ class TimelineDetailViewModel @Inject constructor(
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val albumOperationsUseCase: AlbumOperationsUseCase,
     private val preferencesRepository: PreferencesRepository,
-    private val selectionStateHolder: PhotoSelectionStateHolder
+    private val selectionStateHolder: PhotoSelectionStateHolder,
+    private val storagePermissionHelper: com.example.photozen.util.StoragePermissionHelper,
+    private val geoLocationResolver: com.example.photozen.util.GeoLocationResolver
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TimelineDetailUiState())
@@ -550,6 +561,108 @@ class TimelineDetailViewModel @Inject constructor(
     fun clearMessage() {
         _uiState.update { it.copy(message = null) }
     }
+
+    // ============== 重命名功能 ==============
+
+    @Volatile
+    private var renameCancelled = false
+    private var pendingRenameTemplate: com.example.photozen.ui.components.RenameTemplate? = null
+
+    fun checkPermissionAndRename(template: com.example.photozen.ui.components.RenameTemplate) {
+        viewModelScope.launch {
+            if (!storagePermissionHelper.hasManageStoragePermission()) {
+                pendingRenameTemplate = template
+                _uiState.update { it.copy(showPermissionDialog = true) }
+                return@launch
+            }
+            executeRename(template)
+        }
+    }
+
+    fun onPermissionGrantedForRename() {
+        val template = pendingRenameTemplate ?: return
+        pendingRenameTemplate = null
+        viewModelScope.launch { executeRename(template) }
+    }
+
+    fun dismissPermissionDialog() {
+        _uiState.update { it.copy(showPermissionDialog = false) }
+    }
+
+    private suspend fun executeRename(template: com.example.photozen.ui.components.RenameTemplate) {
+        val selectedIds = selectionStateHolder.selectedIds.value
+        val photos = _uiState.value.photos.filter { it.id in selectedIds }
+        if (photos.isEmpty()) return
+
+        renameCancelled = false
+        _uiState.update { it.copy(renameProgress = 0, renameTotal = photos.size) }
+
+        var successCount = 0
+        var failCount = 0
+        val failReasons = mutableListOf<String>()
+
+        val hasGeoElement = template.elements.any { it is com.example.photozen.ui.components.RenameElement.GeoLocation }
+        val locationMap = mutableMapOf<String, com.example.photozen.util.LocationDetails?>()
+        if (hasGeoElement) {
+            photos.forEach { photo ->
+                locationMap[photo.id] =
+                    geoLocationResolver.resolveDetails(photo)
+            }
+        }
+
+        photos.forEachIndexed { index, photo ->
+            if (renameCancelled) return@forEachIndexed
+            _uiState.update { it.copy(renameProgress = index + 1) }
+
+            val location = locationMap[photo.id]
+            val newBaseName = com.example.photozen.ui.components.generateNewName(
+                photo, template, index, photos.size, location
+            )
+            val sanitized = com.example.photozen.ui.components.sanitizeFileName(newBaseName)
+            if (sanitized.isBlank()) {
+                failCount++
+                failReasons.add("${photo.displayName}: 生成的文件名为空")
+                return@forEachIndexed
+            }
+            val ext = com.example.photozen.ui.components.getPhotoExtension(photo.displayName)
+            val newDisplayName = sanitized + ext
+
+            val uri = android.net.Uri.parse(photo.systemUri)
+            mediaStoreDataSource.renamePhoto(uri, newDisplayName).fold(
+                onSuccess = { actualName ->
+                    photoDao.updateDisplayName(photo.id, actualName)
+                    successCount++
+                },
+                onFailure = { e ->
+                    failCount++
+                    failReasons.add("${photo.displayName}: ${e.message}")
+                }
+            )
+        }
+
+        if (renameCancelled) {
+            _uiState.update {
+                it.copy(
+                    renameProgress = -1,
+                    message = "已取消，已完成 $successCount/${photos.size} 张"
+                )
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    renameProgress = -1,
+                    renameSuccessCount = successCount,
+                    renameFailCount = failCount,
+                    renameFailReasons = failReasons,
+                    showRenameResult = true
+                )
+            }
+        }
+        clearSelection()
+    }
+
+    fun cancelRename() { renameCancelled = true }
+    fun dismissRenameResult() { _uiState.update { it.copy(showRenameResult = false) } }
 
     override fun onCleared() {
         super.onCleared()

@@ -83,7 +83,14 @@ data class AlbumPhotoListUiState(
     val sortOrder: PhotoListSortOrder = PhotoListSortOrder.DATE_DESC,
     // Permission dialog for move operations
     val showPermissionDialog: Boolean = false,
-    val permissionRetryError: Boolean = false
+    val permissionRetryError: Boolean = false,
+    // Rename state
+    val renameProgress: Int = -1, // -1 = not renaming, 0..N = progress
+    val renameTotal: Int = 0,
+    val renameSuccessCount: Int = 0,
+    val renameFailCount: Int = 0,
+    val renameFailReasons: List<String> = emptyList(),
+    val showRenameResult: Boolean = false
 ) {
     val selectedCount: Int get() = selectedIds.size
     val unsortedCount: Int get() = totalCount - sortedCount
@@ -106,7 +113,8 @@ class AlbumPhotoListViewModel @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
     // Phase 4: 共享选择状态
     private val selectionStateHolder: PhotoSelectionStateHolder,
-    private val storagePermissionHelper: StoragePermissionHelper
+    private val storagePermissionHelper: StoragePermissionHelper,
+    private val geoLocationResolver: com.example.photozen.util.GeoLocationResolver
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(AlbumPhotoListUiState())
@@ -626,22 +634,32 @@ class AlbumPhotoListViewModel @Inject constructor(
     fun clearMessage() {
         _uiState.update { it.copy(message = null) }
     }
+
+    fun setMessage(msg: String) {
+        _uiState.update { it.copy(message = msg) }
+    }
     
     /**
      * Set custom filter session with specific photo IDs and prepare for navigation.
      * This allows "从此张开始筛选" feature to work by filtering only the specified photos.
      */
-    fun setFilterSessionAndNavigate(photoIds: List<String>) {
+    fun setFilterSessionAndNavigate(
+        photoIds: List<String>,
+        initialPhotoId: String? = null,
+        sortOrder: com.example.photozen.data.model.PhotoSortOrder? = null
+    ) {
         viewModelScope.launch {
-            // Set custom filter session with specific photo IDs
+            // Save current filter mode to restore when session ends
+            val currentMode = preferencesRepository.getPhotoFilterModeSync()
             preferencesRepository.setSessionCustomFilter(
                 CustomFilterSession(
                     photoIds = photoIds,
-                    preciseMode = true
+                    preciseMode = true,
+                    defaultSortOrder = sortOrder,
+                    initialPhotoId = initialPhotoId,
+                    previousFilterMode = currentMode.name
                 )
             )
-            
-            // Set filter mode to CUSTOM
             preferencesRepository.setPhotoFilterMode(PhotoFilterMode.CUSTOM)
         }
     }
@@ -698,9 +716,11 @@ class AlbumPhotoListViewModel @Inject constructor(
 
                 val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
                 if (result.isSuccess) {
-                    // 将新照片插入 Room 数据库，保留原照片的筛选状态
                     result.getOrNull()?.let { newPhoto ->
-                        val photoWithStatus = newPhoto.copy(status = photo.status)
+                        val photoWithStatus = newPhoto.copy(
+                            status = photo.status,
+                            bucketId = photo.bucketId ?: bucketId
+                        )
                         photoDao.insert(photoWithStatus)
                     }
                     successCount++
@@ -732,9 +752,11 @@ class AlbumPhotoListViewModel @Inject constructor(
 
                 val result = albumOperationsUseCase.copyPhotoToAlbum(photoUri, targetPath)
                 if (result.isSuccess) {
-                    // 将新照片插入 Room 数据库，保留原照片的筛选状态
                     result.getOrNull()?.let { newPhoto ->
-                        val photoWithStatus = newPhoto.copy(status = photo.status)
+                        val photoWithStatus = newPhoto.copy(
+                            status = photo.status,
+                            bucketId = photo.bucketId ?: bucketId
+                        )
                         photoDao.insert(photoWithStatus)
                     }
                     successCount++
@@ -768,6 +790,125 @@ class AlbumPhotoListViewModel @Inject constructor(
             _uiState.update { it.copy(message = "已将 ${selectedIds.size} 张照片标记为$statusName") }
             clearSelection()
         }
+    }
+
+    // ============== 重命名功能 ==============
+
+    @Volatile
+    private var renameCancelled = false
+
+    /**
+     * 检查权限后执行重命名
+     */
+    fun checkPermissionAndRename(template: com.example.photozen.ui.components.RenameTemplate) {
+        viewModelScope.launch {
+            if (!storagePermissionHelper.hasManageStoragePermission()) {
+                // 保存待执行的模板，先弹权限
+                pendingRenameTemplate = template
+                _uiState.update { it.copy(showPermissionDialog = true) }
+                return@launch
+            }
+            executeRename(template)
+        }
+    }
+
+    private var pendingRenameTemplate: com.example.photozen.ui.components.RenameTemplate? = null
+
+    /**
+     * 权限授权后继续执行重命名
+     */
+    fun onPermissionGrantedForRename() {
+        val template = pendingRenameTemplate ?: return
+        pendingRenameTemplate = null
+        viewModelScope.launch {
+            executeRename(template)
+        }
+    }
+
+    /**
+     * 执行批量重命名
+     */
+    private suspend fun executeRename(template: com.example.photozen.ui.components.RenameTemplate) {
+        val selectedIds = selectionStateHolder.selectedIds.value
+        val photos = _uiState.value.photos.filter { it.id in selectedIds }
+        if (photos.isEmpty()) return
+
+        renameCancelled = false
+        _uiState.update { it.copy(renameProgress = 0, renameTotal = photos.size) }
+
+        var successCount = 0
+        var failCount = 0
+        val failReasons = mutableListOf<String>()
+
+        // Pre-resolve geo locations for all photos that need it
+        val hasGeoElement = template.elements.any { it is com.example.photozen.ui.components.RenameElement.GeoLocation }
+        val locationMap = mutableMapOf<String, com.example.photozen.util.LocationDetails?>()
+        if (hasGeoElement) {
+            photos.forEach { photo ->
+                locationMap[photo.id] = geoLocationResolver.resolveDetails(photo)
+            }
+        }
+
+        photos.forEachIndexed { index, photo ->
+            if (renameCancelled) return@forEachIndexed
+
+            _uiState.update { it.copy(renameProgress = index + 1) }
+
+            val location = locationMap[photo.id]
+            val newBaseName = com.example.photozen.ui.components.generateNewName(
+                photo, template, index, photos.size, location
+            )
+            val sanitized = com.example.photozen.ui.components.sanitizeFileName(newBaseName)
+            if (sanitized.isBlank()) {
+                failCount++
+                failReasons.add("${photo.displayName}: 生成的文件名为空")
+                return@forEachIndexed
+            }
+            val ext = com.example.photozen.ui.components.getPhotoExtension(photo.displayName)
+            val newDisplayName = sanitized + ext
+
+            val uri = android.net.Uri.parse(photo.systemUri)
+            val result = mediaStoreDataSource.renamePhoto(uri, newDisplayName)
+
+            result.fold(
+                onSuccess = { actualName ->
+                    photoDao.updateDisplayName(photo.id, actualName)
+                    successCount++
+                },
+                onFailure = { e ->
+                    failCount++
+                    failReasons.add("${photo.displayName}: ${e.message}")
+                }
+            )
+        }
+
+        if (renameCancelled) {
+            _uiState.update {
+                it.copy(
+                    renameProgress = -1,
+                    message = "已取消，已完成 $successCount/${photos.size} 张"
+                )
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    renameProgress = -1,
+                    renameSuccessCount = successCount,
+                    renameFailCount = failCount,
+                    renameFailReasons = failReasons,
+                    showRenameResult = true
+                )
+            }
+        }
+        clearSelection()
+    }
+
+    fun cancelRename() {
+        renameCancelled = true
+    }
+
+    fun dismissRenameResult() {
+        _uiState.update { it.copy(showRenameResult = false) }
     }
 
     /**

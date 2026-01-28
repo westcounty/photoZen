@@ -163,11 +163,11 @@ class MemoryLaneWidgetLarge : AppWidgetProvider() {
                 val usePoeticTime = preferencesRepository.getWidgetPoeticTime(appWidgetId)
                 val refreshIntervalMinutes = preferencesRepository.getWidgetRefreshInterval(appWidgetId)
 
-                // Get OfflineGeocoder for location
-                val offlineGeocoder = EntryPointAccessors.fromApplication(
+                // Get GeoLocationResolver for location
+                val geoLocationResolver = EntryPointAccessors.fromApplication(
                     context.applicationContext,
                     MemoryLaneWidgetEntryPoint::class.java
-                ).offlineGeocoder()
+                ).geoLocationResolver()
 
                 // Check if scheduled refresh should get a new photo
                 val lastRefreshTime = preferencesRepository.getWidgetLastRefreshTime(appWidgetId)
@@ -207,15 +207,7 @@ class MemoryLaneWidgetLarge : AppWidgetProvider() {
                     views.setViewVisibility(R.id.memory_empty_state, android.view.View.GONE)
 
                     // Get location details (province and city separately)
-                    val locationDetails = when {
-                        photo.latitude != null && photo.longitude != null -> {
-                            offlineGeocoder.getLocationDetails(photo.latitude, photo.longitude)
-                        }
-                        !photo.gpsScanned -> {
-                            offlineGeocoder.getLocationDetailsFromUri(photo.systemUri)
-                        }
-                        else -> null
-                    }
+                    val locationDetails = geoLocationResolver.resolveDetails(photo)
 
                     // Format time display with location embedded
                     // Date shows with province (e.g., "2019.07.28 福建省")
@@ -506,7 +498,7 @@ class MemoryLaneWidgetLarge : AppWidgetProvider() {
             )
             val photoRepository = entryPoint.photoRepository()
             val preferencesRepository = entryPoint.preferencesRepository()
-            val offlineGeocoder = entryPoint.offlineGeocoder()
+            val geoLocationResolver = entryPoint.geoLocationResolver()
 
             val thisDayPriority = preferencesRepository.getWidgetThisDayPriority(appWidgetId)
             val usePoeticTime = preferencesRepository.getWidgetPoeticTime(appWidgetId)
@@ -526,15 +518,7 @@ class MemoryLaneWidgetLarge : AppWidgetProvider() {
                 views.setViewVisibility(R.id.memory_empty_state, android.view.View.GONE)
 
                 // Get location details (province and city separately)
-                val locationDetails = when {
-                    photo.latitude != null && photo.longitude != null -> {
-                        offlineGeocoder.getLocationDetails(photo.latitude, photo.longitude)
-                    }
-                    !photo.gpsScanned -> {
-                        offlineGeocoder.getLocationDetailsFromUri(photo.systemUri)
-                    }
-                    else -> null
-                }
+                val locationDetails = geoLocationResolver.resolveDetails(photo)
 
                 // Format time display with location embedded
                 val (dateText, poeticText) = MemoryTimeFormatter.formatFullWithLocation(

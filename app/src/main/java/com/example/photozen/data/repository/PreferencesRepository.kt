@@ -1633,7 +1633,11 @@ data class CustomFilterSession(
     val preciseMode: Boolean = false,
     val photoIds: List<String>? = null,
     /** Optional default sort order for this session. If set, FlowSorter will use this on initial load. */
-    val defaultSortOrder: com.example.photozen.data.model.PhotoSortOrder? = null
+    val defaultSortOrder: com.example.photozen.data.model.PhotoSortOrder? = null,
+    /** Optional photo ID to initially scroll to when entering FlowSorter. */
+    val initialPhotoId: String? = null,
+    /** Previous filter mode to restore when session ends. */
+    val previousFilterMode: String? = null
 ) {
     /**
      * Check if this filter uses exclude mode (NOT IN instead of IN).

@@ -31,7 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.photozen.data.local.entity.PhotoEntity
-import com.example.photozen.util.OfflineGeocoder
+import com.example.photozen.util.GeoLocationResolver
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -58,25 +58,12 @@ fun PhotoInfoOverlay(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val offlineGeocoder = remember { OfflineGeocoder(context) }
+    val geoResolver = remember { GeoLocationResolver.from(context) }
     var locationText by remember { mutableStateOf<String?>(null) }
 
-    // Load location text asynchronously
-    // If photo has GPS coordinates, use them directly
-    // Otherwise, if GPS hasn't been scanned yet, try to read from EXIF lazily
+    // Load location text asynchronously with DB caching
     LaunchedEffect(photo.id, photo.latitude, photo.longitude, photo.gpsScanned) {
-        locationText = when {
-            // Photo already has GPS coordinates
-            photo.latitude != null && photo.longitude != null -> {
-                offlineGeocoder.getLocationText(photo.latitude, photo.longitude)
-            }
-            // GPS not yet scanned - try to read from EXIF lazily
-            !photo.gpsScanned -> {
-                offlineGeocoder.getLocationTextFromUri(photo.systemUri)
-            }
-            // GPS was scanned but no data found
-            else -> null
-        }
+        locationText = geoResolver.resolveText(photo)
     }
 
     Column(

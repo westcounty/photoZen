@@ -144,7 +144,9 @@ data class FlowSorterUiState(
     val permissionRetryError: Boolean = false,
     val pendingAlbumBucketId: String? = null,
     // REQ-064: 来源名称（相册名/时间线分组名）
-    val sourceName: String? = null
+    val sourceName: String? = null,
+    // 从「从此开始」进入时，需要初始定位到的照片 ID（消费后清空）
+    val initialScrollPhotoId: String? = null
 ) {
     val currentPhoto: PhotoEntity?
         get() = photos.getOrNull(currentIndex)
@@ -356,6 +358,10 @@ class FlowSorterViewModel @Inject constructor(
     // CRITICAL FIX: Store initial total count to prevent flickering during rapid swipes
     // This ensures totalCount remains stable even when counters and photos list update at different times
     private val _initialTotalCount = MutableStateFlow(-1) // -1 means not yet initialized
+
+    // 「从此开始」功能：初始定位到的照片 ID（一次性消费）
+    private val _initialScrollPhotoId = MutableStateFlow<String?>(null)
+    val initialScrollPhotoId: StateFlow<String?> = _initialScrollPhotoId.asStateFlow()
     
     // Random seed for consistent random sorting until changed
     // Use currentTimeMillis % Int.MAX_VALUE to prevent SQL integer overflow
@@ -1198,8 +1204,11 @@ class FlowSorterViewModel @Inject constructor(
         viewModelScope.launch {
             loadCameraAlbumIds()
             syncPhotos()
-            // Check if sessionFilter has a default sort order (e.g., from timeline group)
+            // Check if sessionFilter has initial scroll target or default sort order
             val sessionFilter = preferencesRepository.getSessionCustomFilter()
+            if (sessionFilter?.initialPhotoId != null) {
+                _initialScrollPhotoId.value = sessionFilter.initialPhotoId
+            }
             if (sessionFilter?.defaultSortOrder != null) {
                 _sortOrder.value = sessionFilter.defaultSortOrder
             } else {
@@ -1637,6 +1646,14 @@ class FlowSorterViewModel @Inject constructor(
      */
     fun clearError() {
         _error.value = null
+    }
+
+    fun consumeInitialScrollPhotoId() {
+        _initialScrollPhotoId.value = null
+    }
+
+    fun setCurrentIndex(index: Int) {
+        _currentIndex.value = index
     }
     
     /**
@@ -2371,10 +2388,19 @@ class FlowSorterViewModel @Inject constructor(
         super.onCleared()
         comboTimeoutJob?.cancel()
         
-        // Clear session filter if it was a precise-mode filter (from timeline sorting)
-        // This ensures the temporary timeline filter doesn't persist after exiting
+        // Clear session filter if it was a precise-mode filter (from timeline/album sorting)
+        // This ensures the temporary filter doesn't persist after exiting
         val sessionFilter = preferencesRepository.getSessionCustomFilter()
         if (sessionFilter?.preciseMode == true) {
+            // Restore previous filter mode if saved
+            sessionFilter.previousFilterMode?.let { modeName ->
+                try {
+                    val mode = com.example.photozen.data.repository.PhotoFilterMode.valueOf(modeName)
+                    kotlinx.coroutines.runBlocking {
+                        preferencesRepository.setPhotoFilterMode(mode)
+                    }
+                } catch (_: Exception) {}
+            }
             preferencesRepository.clearSessionCustomFilter()
         }
     }
