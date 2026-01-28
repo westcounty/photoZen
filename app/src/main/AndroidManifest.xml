@@ -114,6 +114,63 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/daily_progress_widget_info" />
         </receiver>
+
+        <!-- Memory Lane Widget Configuration Activity -->
+        <activity
+            android:name=".widget.memory.MemoryLaneWidgetConfigActivity"
+            android:exported="true"
+            android:label="时光拾遗设置"
+            android:theme="@style/Theme.PhotoZen">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Memory Lane Widget - 时光拾遗 (标准 4x2) -->
+        <receiver
+            android:name=".widget.memory.MemoryLaneWidget"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.example.photozen.widget.memory.ACTION_KEEP" />
+                <action android:name="com.example.photozen.widget.memory.ACTION_TRASH" />
+                <action android:name="com.example.photozen.widget.memory.ACTION_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/memory_lane_widget_info" />
+        </receiver>
+
+        <!-- Memory Lane Widget - 时光拾遗 (小 2x2) -->
+        <receiver
+            android:name=".widget.memory.MemoryLaneWidgetCompact"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/memory_lane_widget_compact_info" />
+        </receiver>
+
+        <!-- Memory Lane Widget - 时光拾遗 (大 4x4) -->
+        <receiver
+            android:name=".widget.memory.MemoryLaneWidgetLarge"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.example.photozen.widget.memory.large.ACTION_KEEP" />
+                <action android:name="com.example.photozen.widget.memory.large.ACTION_TRASH" />
+                <action android:name="com.example.photozen.widget.memory.large.ACTION_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/memory_lane_widget_large_info" />
+        </receiver>
         
         <!-- Boot Receiver to start services after device restart -->
         <receiver

@@ -589,6 +589,10 @@ fun FlowSorterContent(
                             onSelectionToggle = { photoId ->
                                 // Toggle selection using ViewModel to ensure fresh state
                                 viewModel.toggleSelection(photoId)
+                            },
+                            onReachEnd = {
+                                // Trigger loading more photos when scrolling near end
+                                viewModel.checkAndLoadMorePhotos()
                             }
                         )
                     }

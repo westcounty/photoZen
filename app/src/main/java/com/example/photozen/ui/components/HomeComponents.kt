@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Widgets
+import androidx.compose.material.icons.filled.PhotoAlbum
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -1105,5 +1106,12 @@ object HomeTipData {
         title = "添加桌面小部件，每日任务不错过",
         description = "把图禅小部件放在桌面上，随时查看任务进度",
         accentColor = { MaterialTheme.colorScheme.primary }
+    )
+
+    val memoryLaneTip = TipContent(
+        icon = Icons.Default.PhotoAlbum,
+        title = "添加时光拾遗小部件，重温尘封记忆",
+        description = "桌面长按 → 添加小部件 → 搜索\"时光拾遗\"",
+        accentColor = { MaybeAmber }
     )
 }

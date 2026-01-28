@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +35,15 @@ enum class WidgetPhotoSource {
     ALL,
     CAMERA,
     CUSTOM
+}
+
+/**
+ * Memory Lane widget photo source mode.
+ */
+enum class MemoryLanePhotoSource {
+    ALL,            // 全部照片
+    ONLY_ALBUMS,    // 仅指定相册
+    EXCLUDE_ALBUMS  // 排除指定相册
 }
 
 /**
@@ -99,6 +109,27 @@ class PreferencesRepository @Inject constructor(
         val KEY_WIDGET_CUSTOM_ALBUM_IDS = androidx.datastore.preferences.core.stringSetPreferencesKey("widget_custom_album_ids")
         val KEY_WIDGET_START_DATE = longPreferencesKey("widget_start_date")
         val KEY_WIDGET_END_DATE = longPreferencesKey("widget_end_date")
+
+        // Memory Lane Widget Settings (Global defaults)
+        val KEY_MEMORY_LANE_REFRESH_INTERVAL = intPreferencesKey("memory_lane_refresh_interval") // in minutes
+        val KEY_MEMORY_LANE_THIS_DAY_PRIORITY = booleanPreferencesKey("memory_lane_this_day_priority")
+        val KEY_MEMORY_LANE_POETIC_TIME = booleanPreferencesKey("memory_lane_poetic_time")
+
+        // Per-widget configuration key prefixes
+        private const val WIDGET_CONFIG_PREFIX = "widget_config_"
+
+        // Helper to create per-widget keys
+        fun memoryLaneRefreshIntervalKey(widgetId: Int) = intPreferencesKey("${WIDGET_CONFIG_PREFIX}${widgetId}_refresh_interval")
+        fun memoryLaneThisDayPriorityKey(widgetId: Int) = booleanPreferencesKey("${WIDGET_CONFIG_PREFIX}${widgetId}_this_day_priority")
+        fun memoryLanePoeticTimeKey(widgetId: Int) = booleanPreferencesKey("${WIDGET_CONFIG_PREFIX}${widgetId}_poetic_time")
+        // B2: Per-widget photo source configuration
+        fun memoryLanePhotoSourceKey(widgetId: Int) = stringPreferencesKey("${WIDGET_CONFIG_PREFIX}${widgetId}_photo_source")
+        fun memoryLaneSelectedAlbumsKey(widgetId: Int) = stringSetPreferencesKey("${WIDGET_CONFIG_PREFIX}${widgetId}_selected_albums")
+        fun memoryLaneExcludedAlbumsKey(widgetId: Int) = stringSetPreferencesKey("${WIDGET_CONFIG_PREFIX}${widgetId}_excluded_albums")
+        // Current photo ID cache for each widget (to prevent auto-refresh on visibility change)
+        fun memoryLaneCurrentPhotoIdKey(widgetId: Int) = stringPreferencesKey("${WIDGET_CONFIG_PREFIX}${widgetId}_current_photo_id")
+        // Last refresh timestamp for each widget (to support scheduled updates with cache)
+        fun memoryLaneLastRefreshTimeKey(widgetId: Int) = longPreferencesKey("${WIDGET_CONFIG_PREFIX}${widgetId}_last_refresh_time")
         
         // Default external app for opening photos
         val KEY_DEFAULT_EXTERNAL_APP = stringPreferencesKey("default_external_app")
@@ -380,6 +411,257 @@ class PreferencesRepository @Inject constructor(
             } else {
                 preferences.remove(KEY_WIDGET_END_DATE)
             }
+        }
+    }
+
+    // ==================== MEMORY LANE WIDGET SETTINGS ====================
+
+    /**
+     * Get Memory Lane widget refresh interval in minutes.
+     * Default is 120 (2 hours).
+     */
+    fun getMemoryLaneRefreshInterval(): Flow<Int> = dataStore.data.map { preferences ->
+        preferences[KEY_MEMORY_LANE_REFRESH_INTERVAL] ?: 120
+    }
+
+    /**
+     * Get Memory Lane widget refresh interval synchronously.
+     */
+    suspend fun getMemoryLaneRefreshIntervalSync(): Int {
+        return getMemoryLaneRefreshInterval().first()
+    }
+
+    /**
+     * Set Memory Lane widget refresh interval.
+     * @param minutes Refresh interval (30, 60, 120, 240, 480, 1440)
+     */
+    suspend fun setMemoryLaneRefreshInterval(minutes: Int) {
+        dataStore.edit { preferences ->
+            preferences[KEY_MEMORY_LANE_REFRESH_INTERVAL] = minutes.coerceIn(30, 1440)
+        }
+    }
+
+    /**
+     * Get whether "this day in history" photos are prioritized.
+     * Default is true.
+     */
+    fun getMemoryLaneThisDayPriority(): Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[KEY_MEMORY_LANE_THIS_DAY_PRIORITY] ?: true
+    }
+
+    /**
+     * Get "this day in history" priority synchronously.
+     */
+    suspend fun getMemoryLaneThisDayPrioritySync(): Boolean {
+        return getMemoryLaneThisDayPriority().first()
+    }
+
+    /**
+     * Set "this day in history" priority.
+     */
+    suspend fun setMemoryLaneThisDayPriority(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[KEY_MEMORY_LANE_THIS_DAY_PRIORITY] = enabled
+        }
+    }
+
+    /**
+     * Get whether poetic time format is enabled.
+     * Default is true.
+     */
+    fun getMemoryLanePoeticTime(): Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[KEY_MEMORY_LANE_POETIC_TIME] ?: true
+    }
+
+    /**
+     * Get poetic time format setting synchronously.
+     */
+    suspend fun getMemoryLanePoeticTimeSync(): Boolean {
+        return getMemoryLanePoeticTime().first()
+    }
+
+    /**
+     * Set poetic time format.
+     */
+    suspend fun setMemoryLanePoeticTime(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[KEY_MEMORY_LANE_POETIC_TIME] = enabled
+        }
+    }
+
+    // ==================== PER-WIDGET CONFIGURATION ====================
+
+    /**
+     * Get refresh interval for a specific widget.
+     * Falls back to global setting if not set.
+     */
+    suspend fun getWidgetRefreshInterval(widgetId: Int): Int {
+        val prefs = dataStore.data.first()
+        return prefs[memoryLaneRefreshIntervalKey(widgetId)]
+            ?: prefs[KEY_MEMORY_LANE_REFRESH_INTERVAL]
+            ?: 120
+    }
+
+    /**
+     * Set refresh interval for a specific widget.
+     */
+    suspend fun setWidgetRefreshInterval(widgetId: Int, minutes: Int) {
+        dataStore.edit { preferences ->
+            preferences[memoryLaneRefreshIntervalKey(widgetId)] = minutes.coerceIn(30, 1440)
+        }
+    }
+
+    /**
+     * Get "this day in history" priority for a specific widget.
+     * Falls back to global setting if not set.
+     */
+    suspend fun getWidgetThisDayPriority(widgetId: Int): Boolean {
+        val prefs = dataStore.data.first()
+        return prefs[memoryLaneThisDayPriorityKey(widgetId)]
+            ?: prefs[KEY_MEMORY_LANE_THIS_DAY_PRIORITY]
+            ?: true
+    }
+
+    /**
+     * Set "this day in history" priority for a specific widget.
+     */
+    suspend fun setWidgetThisDayPriority(widgetId: Int, enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[memoryLaneThisDayPriorityKey(widgetId)] = enabled
+        }
+    }
+
+    /**
+     * Get poetic time format for a specific widget.
+     * Falls back to global setting if not set.
+     */
+    suspend fun getWidgetPoeticTime(widgetId: Int): Boolean {
+        val prefs = dataStore.data.first()
+        return prefs[memoryLanePoeticTimeKey(widgetId)]
+            ?: prefs[KEY_MEMORY_LANE_POETIC_TIME]
+            ?: true
+    }
+
+    /**
+     * Set poetic time format for a specific widget.
+     */
+    suspend fun setWidgetPoeticTime(widgetId: Int, enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[memoryLanePoeticTimeKey(widgetId)] = enabled
+        }
+    }
+
+    /**
+     * Get photo source mode for a specific widget.
+     * Default is ALL (all photos).
+     */
+    suspend fun getWidgetPhotoSource(widgetId: Int): MemoryLanePhotoSource {
+        val prefs = dataStore.data.first()
+        val sourceStr = prefs[memoryLanePhotoSourceKey(widgetId)]
+        return try {
+            sourceStr?.let { MemoryLanePhotoSource.valueOf(it) } ?: MemoryLanePhotoSource.ALL
+        } catch (e: IllegalArgumentException) {
+            MemoryLanePhotoSource.ALL
+        }
+    }
+
+    /**
+     * Set photo source mode for a specific widget.
+     */
+    suspend fun setWidgetPhotoSource(widgetId: Int, source: MemoryLanePhotoSource) {
+        dataStore.edit { preferences ->
+            preferences[memoryLanePhotoSourceKey(widgetId)] = source.name
+        }
+    }
+
+    /**
+     * Get selected album IDs for a specific widget (used when source is ONLY_ALBUMS).
+     */
+    suspend fun getWidgetSelectedAlbums(widgetId: Int): Set<String> {
+        val prefs = dataStore.data.first()
+        return prefs[memoryLaneSelectedAlbumsKey(widgetId)] ?: emptySet()
+    }
+
+    /**
+     * Set selected album IDs for a specific widget.
+     */
+    suspend fun setWidgetSelectedAlbums(widgetId: Int, albumIds: Set<String>) {
+        dataStore.edit { preferences ->
+            preferences[memoryLaneSelectedAlbumsKey(widgetId)] = albumIds
+        }
+    }
+
+    /**
+     * Get excluded album IDs for a specific widget (used when source is EXCLUDE_ALBUMS).
+     */
+    suspend fun getWidgetExcludedAlbums(widgetId: Int): Set<String> {
+        val prefs = dataStore.data.first()
+        return prefs[memoryLaneExcludedAlbumsKey(widgetId)] ?: emptySet()
+    }
+
+    /**
+     * Set excluded album IDs for a specific widget.
+     */
+    suspend fun setWidgetExcludedAlbums(widgetId: Int, albumIds: Set<String>) {
+        dataStore.edit { preferences ->
+            preferences[memoryLaneExcludedAlbumsKey(widgetId)] = albumIds
+        }
+    }
+
+    /**
+     * Get current photo ID for a specific widget.
+     * Used to prevent auto-refresh when widget becomes visible.
+     */
+    suspend fun getWidgetCurrentPhotoId(widgetId: Int): String? {
+        val prefs = dataStore.data.first()
+        return prefs[memoryLaneCurrentPhotoIdKey(widgetId)]
+    }
+
+    /**
+     * Set current photo ID for a specific widget.
+     */
+    suspend fun setWidgetCurrentPhotoId(widgetId: Int, photoId: String?) {
+        dataStore.edit { preferences ->
+            if (photoId != null) {
+                preferences[memoryLaneCurrentPhotoIdKey(widgetId)] = photoId
+            } else {
+                preferences.remove(memoryLaneCurrentPhotoIdKey(widgetId))
+            }
+        }
+    }
+
+    /**
+     * Get last refresh timestamp for a specific widget.
+     * Used to determine if scheduled refresh should get a new photo.
+     */
+    suspend fun getWidgetLastRefreshTime(widgetId: Int): Long {
+        val prefs = dataStore.data.first()
+        return prefs[memoryLaneLastRefreshTimeKey(widgetId)] ?: 0L
+    }
+
+    /**
+     * Set last refresh timestamp for a specific widget.
+     */
+    suspend fun setWidgetLastRefreshTime(widgetId: Int, timestamp: Long) {
+        dataStore.edit { preferences ->
+            preferences[memoryLaneLastRefreshTimeKey(widgetId)] = timestamp
+        }
+    }
+
+    /**
+     * Delete all configuration for a specific widget.
+     * Called when widget is removed from home screen.
+     */
+    suspend fun deleteWidgetConfig(widgetId: Int) {
+        dataStore.edit { preferences ->
+            preferences.remove(memoryLaneRefreshIntervalKey(widgetId))
+            preferences.remove(memoryLaneThisDayPriorityKey(widgetId))
+            preferences.remove(memoryLanePoeticTimeKey(widgetId))
+            preferences.remove(memoryLanePhotoSourceKey(widgetId))
+            preferences.remove(memoryLaneSelectedAlbumsKey(widgetId))
+            preferences.remove(memoryLaneExcludedAlbumsKey(widgetId))
+            preferences.remove(memoryLaneCurrentPhotoIdKey(widgetId))
+            preferences.remove(memoryLaneLastRefreshTimeKey(widgetId))
         }
     }
 

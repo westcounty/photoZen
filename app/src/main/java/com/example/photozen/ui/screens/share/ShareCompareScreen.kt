@@ -86,6 +86,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import coil3.size.Size
 import com.example.photozen.ui.components.AlbumPickerBottomSheet
 import com.example.photozen.ui.screens.lighttable.TransformState
 import com.example.photozen.ui.screens.lighttable.TransformSnapshot
@@ -879,11 +880,12 @@ private fun ExternalSyncZoomImage(
             transformState.offsetY
         }
 
-        // Image with transformation
+        // Image with transformation - use ORIGINAL size for full resolution when zooming
         AsyncImage(
             model = ImageRequest.Builder(context)
                 .data(photo.uri)
                 .crossfade(true)
+                .size(Size.ORIGINAL)  // Load full resolution for zoom clarity
                 .build(),
             contentDescription = null,
             contentScale = ContentScale.Fit,

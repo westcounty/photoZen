@@ -379,13 +379,17 @@ interface PhotoDao {
     
     /**
      * Get unsorted photos with pagination - Random order using seeded pseudo-random.
-     * Uses (CAST(SUBSTR(id, 1, 8) AS INTEGER) * seed) % prime for consistent random ordering.
+     * Uses LCG (Linear Congruential Generator) formula for proper random distribution.
      * The seed ensures the same random order when fetching subsequent pages.
+     *
+     * Formula: ((id + seed) * 1103515245 + 12345) % 2147483647
+     * - Adding seed first ensures different seeds produce completely different orderings
+     * - LCG multiplier (1103515245) properly scrambles sequential IDs
      */
     @Query("""
-        SELECT * FROM photos 
-        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
-        ORDER BY (ABS(CAST(SUBSTR(id, 1, 8) AS INTEGER)) * :seed) % 2147483647
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        ORDER BY ((ABS(CAST(SUBSTR(id, 4) AS INTEGER)) + :seed) * 1103515245 + 12345) % 2147483647
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosPagedRandom(seed: Long, limit: Int, offset: Int): List<PhotoEntity>
@@ -418,10 +422,10 @@ interface PhotoDao {
      * Get unsorted photos filtered by bucket IDs with pagination - Random order.
      */
     @Query("""
-        SELECT * FROM photos 
-        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
         AND bucket_id IN (:bucketIds)
-        ORDER BY (ABS(CAST(SUBSTR(id, 1, 8) AS INTEGER)) * :seed) % 2147483647
+        ORDER BY ((ABS(CAST(SUBSTR(id, 4) AS INTEGER)) + :seed) * 1103515245 + 12345) % 2147483647
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosByBucketsPagedRandom(bucketIds: List<String>, seed: Long, limit: Int, offset: Int): List<PhotoEntity>
@@ -454,10 +458,10 @@ interface PhotoDao {
      * Get unsorted photos excluding bucket IDs with pagination - Random order.
      */
     @Query("""
-        SELECT * FROM photos 
-        WHERE status = 'UNSORTED' AND is_virtual_copy = 0 
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
         AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL)
-        ORDER BY (ABS(CAST(SUBSTR(id, 1, 8) AS INTEGER)) * :seed) % 2147483647
+        ORDER BY ((ABS(CAST(SUBSTR(id, 4) AS INTEGER)) + :seed) * 1103515245 + 12345) % 2147483647
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosExcludingBucketsPagedRandom(bucketIds: List<String>, seed: Long, limit: Int, offset: Int): List<PhotoEntity>
@@ -514,7 +518,7 @@ interface PhotoDao {
         AND (:bucketIds IS NULL OR bucket_id IN (:bucketIds))
         AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
         AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
-        ORDER BY (ABS(CAST(SUBSTR(id, 1, 8) AS INTEGER)) * :seed) % 2147483647
+        ORDER BY ((ABS(CAST(SUBSTR(id, 4) AS INTEGER)) + :seed) * 1103515245 + 12345) % 2147483647
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosFilteredPagedRandom(
@@ -577,7 +581,7 @@ interface PhotoDao {
         AND bucket_id IN (:bucketIds)
         AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
         AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
-        ORDER BY (ABS(CAST(SUBSTR(id, 1, 8) AS INTEGER)) * :seed) % 2147483647
+        ORDER BY ((ABS(CAST(SUBSTR(id, 4) AS INTEGER)) + :seed) * 1103515245 + 12345) % 2147483647
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosByBucketsDateFilteredPagedRandom(
@@ -635,7 +639,7 @@ interface PhotoDao {
         WHERE status = 'UNSORTED' AND is_virtual_copy = 0
         AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
         AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
-        ORDER BY (ABS(CAST(SUBSTR(id, 1, 8) AS INTEGER)) * :seed) % 2147483647
+        ORDER BY ((ABS(CAST(SUBSTR(id, 4) AS INTEGER)) + :seed) * 1103515245 + 12345) % 2147483647
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosAllDateFilteredPagedRandom(
@@ -701,7 +705,7 @@ interface PhotoDao {
         AND (bucket_id NOT IN (:excludeBucketIds) OR bucket_id IS NULL)
         AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
         AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
-        ORDER BY (ABS(CAST(SUBSTR(id, 1, 8) AS INTEGER)) * :seed) % 2147483647
+        ORDER BY ((ABS(CAST(SUBSTR(id, 4) AS INTEGER)) + :seed) * 1103515245 + 12345) % 2147483647
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosExcludingBucketsFilteredPagedRandom(
@@ -1156,4 +1160,120 @@ interface PhotoDao {
      */
     @Query("SELECT COUNT(*) FROM photos WHERE gps_scanned = 0 AND is_virtual_copy = 0")
     suspend fun getPendingGpsScanCountSync(): Int
+
+    // ==================== QUERY - Memory Lane Widget ====================
+
+    /**
+     * Get a batch of random unsorted photos for Memory Lane widget weighted selection.
+     * Returns photos with their dateTaken for age-based weighting.
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        ORDER BY RANDOM()
+        LIMIT :limit
+    """)
+    suspend fun getRandomUnsortedPhotoBatch(limit: Int = 200): List<PhotoEntity>
+
+    /**
+     * Get "this day in history" photos - photos taken on the same month and day in previous years.
+     * @param month Month (1-12)
+     * @param day Day of month (1-31)
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND CAST(strftime('%m', datetime(COALESCE(NULLIF(date_taken, 0), date_added * 1000) / 1000, 'unixepoch')) AS INTEGER) = :month
+        AND CAST(strftime('%d', datetime(COALESCE(NULLIF(date_taken, 0), date_added * 1000) / 1000, 'unixepoch')) AS INTEGER) = :day
+        ORDER BY RANDOM()
+        LIMIT :limit
+    """)
+    suspend fun getThisDayInHistoryPhotos(month: Int, day: Int, limit: Int = 10): List<PhotoEntity>
+
+    /**
+     * Get random unsorted photos filtered by specific albums (ONLY_ALBUMS mode).
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND bucket_id IN (:albumIds)
+        ORDER BY RANDOM()
+        LIMIT :limit
+    """)
+    suspend fun getRandomUnsortedPhotoBatchByAlbums(albumIds: List<String>, limit: Int = 200): List<PhotoEntity>
+
+    /**
+     * Get random unsorted photos excluding specific albums (EXCLUDE_ALBUMS mode).
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (bucket_id IS NULL OR bucket_id NOT IN (:albumIds))
+        ORDER BY RANDOM()
+        LIMIT :limit
+    """)
+    suspend fun getRandomUnsortedPhotoBatchExcludingAlbums(albumIds: List<String>, limit: Int = 200): List<PhotoEntity>
+
+    /**
+     * Get "this day in history" photos filtered by specific albums.
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND bucket_id IN (:albumIds)
+        AND CAST(strftime('%m', datetime(COALESCE(NULLIF(date_taken, 0), date_added * 1000) / 1000, 'unixepoch')) AS INTEGER) = :month
+        AND CAST(strftime('%d', datetime(COALESCE(NULLIF(date_taken, 0), date_added * 1000) / 1000, 'unixepoch')) AS INTEGER) = :day
+        ORDER BY RANDOM()
+        LIMIT :limit
+    """)
+    suspend fun getThisDayInHistoryPhotosByAlbums(month: Int, day: Int, albumIds: List<String>, limit: Int = 10): List<PhotoEntity>
+
+    /**
+     * Get "this day in history" photos excluding specific albums.
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (bucket_id IS NULL OR bucket_id NOT IN (:albumIds))
+        AND CAST(strftime('%m', datetime(COALESCE(NULLIF(date_taken, 0), date_added * 1000) / 1000, 'unixepoch')) AS INTEGER) = :month
+        AND CAST(strftime('%d', datetime(COALESCE(NULLIF(date_taken, 0), date_added * 1000) / 1000, 'unixepoch')) AS INTEGER) = :day
+        ORDER BY RANDOM()
+        LIMIT :limit
+    """)
+    suspend fun getThisDayInHistoryPhotosExcludingAlbums(month: Int, day: Int, albumIds: List<String>, limit: Int = 10): List<PhotoEntity>
+
+    // ==================== QUERY - Widget Photo Preview ====================
+
+    /**
+     * Get all unsorted photos sorted by date (newest first).
+     * Used for widget photo preview screen.
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
+    """)
+    suspend fun getAllUnsortedPhotosSortedByDate(): List<PhotoEntity>
+
+    /**
+     * Get unsorted photos from specific albums, sorted by date (newest first).
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND bucket_id IN (:albumIds)
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
+    """)
+    suspend fun getUnsortedPhotosByAlbumsSortedByDate(albumIds: List<String>): List<PhotoEntity>
+
+    /**
+     * Get unsorted photos excluding specific albums, sorted by date (newest first).
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (bucket_id IS NULL OR bucket_id NOT IN (:albumIds))
+        ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
+    """)
+    suspend fun getUnsortedPhotosExcludingAlbumsSortedByDate(albumIds: List<String>): List<PhotoEntity>
 }

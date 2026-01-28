@@ -1,3 +1,25 @@
 <resources>
     <string name="app_name">photoZen</string>
+
+    <!-- Daily Progress Widget -->
+    <string name="daily_progress_widget_description">每日任务</string>
+
+    <!-- Memory Lane Widget -->
+    <string name="memory_lane_widget_description">时光拾遗 (标准) - 重温尘封的记忆</string>
+    <string name="memory_lane_widget_compact_description">时光拾遗 (小) - 重温尘封的记忆</string>
+    <string name="memory_lane_widget_large_description">时光拾遗 (大) - 重温尘封的记忆</string>
+    <string name="memory_photo_description">记忆照片</string>
+    <string name="memory_this_day_badge">那年今日</string>
+    <string name="memory_time_placeholder">三年前的\n夏天</string>
+    <string name="memory_btn_keep_description">保留</string>
+    <string name="memory_btn_trash_description">删除</string>
+    <string name="memory_btn_refresh_description">刷新</string>
+    <string name="memory_action_delete">删除</string>
+    <string name="memory_action_refresh">刷新</string>
+    <string name="memory_empty_emoji">\uD83C\uDF89</string>
+    <string name="memory_empty_text">所有记忆都已重温</string>
+
+    <!-- Memory Lane Widget Feedback -->
+    <string name="memory_feedback_keep">这份记忆已珍藏 💚</string>
+    <string name="memory_feedback_trash">告别这份记忆 👋</string>
 </resources>

@@ -151,4 +151,18 @@ sealed interface Screen {
      */
     @Serializable
     data class ShareCompare(val urisJson: String) : Screen
+
+    // ==================== Widget Preview Screens ====================
+
+    /**
+     * Widget Photo Preview screen - fullscreen preview from Memory Lane widget.
+     * Shows photos from the widget's configured photo range.
+     * @param photoId The ID of the initially displayed photo
+     * @param widgetId The widget instance ID (for loading photo source config)
+     */
+    @Serializable
+    data class WidgetPhotoPreview(
+        val photoId: String,
+        val widgetId: Int
+    ) : Screen
 }

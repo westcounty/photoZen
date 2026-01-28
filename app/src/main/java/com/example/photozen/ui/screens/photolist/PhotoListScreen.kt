@@ -73,10 +73,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -148,6 +152,15 @@ fun PhotoListScreen(
     var showFullscreenViewer by remember { mutableStateOf(false) }
     var fullscreenInitialIndex by remember { mutableStateOf(0) }
 
+    // 提升 grid state 用于滚动位置保持
+    val staggeredGridState = rememberLazyStaggeredGridState()
+    val squareGridState = rememberLazyGridState()
+
+    // 跟踪全屏预览位置
+    var lastFullscreenIndex by remember { mutableIntStateOf(0) }
+    var lastFullscreenPhotoId by remember { mutableStateOf<String?>(null) }
+    var hasViewedFullscreen by remember { mutableStateOf(false) }
+
     // 待定照片长按操作菜单状态 (仅用于 MAYBE 列表)
     var showMaybeActionSheet by remember { mutableStateOf(false) }
     var maybeActionPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
@@ -180,6 +193,31 @@ fun PhotoListScreen(
         uiState.message?.let { message ->
             snackbarHostState.showSnackbar(message)
             viewModel.clearMessage()
+        }
+    }
+
+    // 退出全屏时恢复滚动位置（居中显示目标项）
+    LaunchedEffect(showFullscreenViewer) {
+        if (!showFullscreenViewer && hasViewedFullscreen) {
+            hasViewedFullscreen = false  // 重置标志
+            delay(50)  // 等待 grid 组合完成
+
+            // 优先通过 photoId 查找位置（处理删除后索引变化）
+            val targetIndex = lastFullscreenPhotoId?.let { id ->
+                uiState.photos.indexOfFirst { it.id == id }.takeIf { it >= 0 }
+            } ?: lastFullscreenIndex.coerceIn(0, uiState.photos.lastIndex.coerceAtLeast(0))
+
+            // 计算居中滚动位置：向前偏移约半屏的项目数
+            // 估算可见行数约为 2-3 行，乘以列数得到可见项数
+            val columns = uiState.gridColumns
+            val estimatedVisibleRows = 2
+            val offsetItems = (columns * estimatedVisibleRows / 2).coerceAtLeast(0)
+            val scrollToIndex = (targetIndex - offsetItems).coerceAtLeast(0)
+
+            when (uiState.gridMode) {
+                PhotoGridMode.WATERFALL -> staggeredGridState.scrollToItem(scrollToIndex)
+                PhotoGridMode.SQUARE -> squareGridState.scrollToItem(scrollToIndex)
+            }
         }
     }
 
@@ -216,6 +254,11 @@ fun PhotoListScreen(
             photos = uiState.photos,
             initialIndex = fullscreenInitialIndex.coerceIn(0, uiState.photos.lastIndex),
             onExit = { showFullscreenViewer = false },
+            onCurrentIndexChange = { index, photoId ->
+                lastFullscreenIndex = index
+                lastFullscreenPhotoId = photoId
+                hasViewedFullscreen = true
+            },
             onAction = { actionType, photo ->
                 when (actionType) {
                     FullscreenActionType.COPY -> viewModel.duplicatePhoto(photo.id)
@@ -496,6 +539,8 @@ fun PhotoListScreen(
                                 },
                                 columns = uiState.gridColumns,
                                 gridMode = uiState.gridMode,
+                                staggeredGridState = staggeredGridState,
+                                squareGridState = squareGridState,
                                 selectionColor = color,
                                 clickAlwaysTogglesSelection = uiState.status == PhotoStatus.MAYBE,
                                 // 待定列表长按不进入选择模式，仅显示操作菜单

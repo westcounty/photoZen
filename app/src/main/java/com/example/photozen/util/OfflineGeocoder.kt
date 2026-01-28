@@ -24,6 +24,14 @@ data class CityData(
 )
 
 /**
+ * Location details with separate province and city.
+ */
+data class LocationDetails(
+    val province: String,
+    val city: String
+)
+
+/**
  * Offline reverse geocoder using bundled city coordinates.
  * Converts GPS coordinates to province/city text without network access.
  */
@@ -136,6 +144,75 @@ class OfflineGeocoder @Inject constructor(
         }
     }
     
+    /**
+     * Get location details (province and city separately) from latitude and longitude.
+     * Useful for widget display where province and city need to be shown in different places.
+     *
+     * @param lat Latitude in degrees
+     * @param lng Longitude in degrees
+     * @return LocationDetails or null if not found
+     */
+    suspend fun getLocationDetails(lat: Double?, lng: Double?): LocationDetails? {
+        if (lat == null || lng == null) return null
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null
+
+        ensureLoaded()
+
+        if (cities.isEmpty()) return null
+
+        return withContext(Dispatchers.Default) {
+            var closestCity: CityData? = null
+            var minDistance = Double.MAX_VALUE
+
+            for (city in cities) {
+                val distance = haversineDistance(lat, lng, city.lat, city.lng)
+                if (distance < minDistance) {
+                    minDistance = distance
+                    closestCity = city
+                }
+            }
+
+            // Only return result if within 100km of a city
+            if (minDistance < 100.0 && closestCity != null) {
+                LocationDetails(
+                    province = closestCity.province,
+                    city = closestCity.name
+                )
+            } else {
+                null
+            }
+        }
+    }
+
+    /**
+     * Get location details by reading GPS coordinates from photo EXIF data.
+     */
+    suspend fun getLocationDetailsFromUri(photoUri: String?): LocationDetails? {
+        if (photoUri.isNullOrEmpty()) return null
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val uri = Uri.parse(photoUri)
+                val contentResolver = context.contentResolver
+
+                contentResolver.openInputStream(uri)?.use { inputStream ->
+                    val exif = ExifInterface(inputStream)
+
+                    val latLong = FloatArray(2)
+                    if (exif.getLatLong(latLong)) {
+                        val lat = latLong[0].toDouble()
+                        val lng = latLong[1].toDouble()
+                        return@withContext getLocationDetails(lat, lng)
+                    }
+                }
+
+                null
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
     /**
      * Calculate Haversine distance between two points in kilometers.
      */

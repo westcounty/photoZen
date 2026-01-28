@@ -142,6 +142,9 @@ dependencies {
     // Reorderable for drag-to-reorder in LazyColumn
     implementation("sh.calvin.reorderable:reorderable:2.4.3")
 
+    // Logging
+    implementation(libs.timber)
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

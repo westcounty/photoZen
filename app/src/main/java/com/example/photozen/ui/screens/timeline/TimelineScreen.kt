@@ -55,6 +55,7 @@ import com.example.photozen.ui.components.SelectionTopBar
 import com.example.photozen.ui.guide.rememberGuideState
 import com.example.photozen.domain.model.GuideKey
 import androidx.activity.compose.BackHandler
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.example.photozen.ui.components.fullscreen.UnifiedFullscreenViewer
 import com.example.photozen.ui.components.fullscreen.FullscreenActionType
@@ -102,6 +103,10 @@ fun TimelineScreen(
     var showFullscreen by remember { mutableStateOf(false) }
     var fullscreenPhotos by remember { mutableStateOf<List<PhotoEntity>>(emptyList()) }
     var fullscreenStartIndex by remember { mutableIntStateOf(0) }
+
+    // 跟踪全屏预览位置（事件级别）
+    var lastFullscreenEventIndex by remember { mutableIntStateOf(0) }
+    var hasViewedFullscreen by remember { mutableStateOf(false) }
 
     // 删除确认状态
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
@@ -161,6 +166,20 @@ fun TimelineScreen(
         uiState.message?.let { message ->
             snackbarHostState.showSnackbar(message)
             viewModel.clearMessage()
+        }
+    }
+
+    // 退出全屏时恢复滚动位置（居中显示目标事件卡片）
+    LaunchedEffect(showFullscreen) {
+        if (!showFullscreen && hasViewedFullscreen) {
+            hasViewedFullscreen = false  // 重置标志
+            delay(50)  // 等待列表组合完成
+
+            // 计算居中滚动位置：向前偏移约 1 个事件卡片
+            // 因为事件卡片较大，偏移 1 个通常就足够居中
+            val scrollToIndex = (lastFullscreenEventIndex - 1).coerceAtLeast(0)
+                .coerceAtMost(uiState.events.lastIndex.coerceAtLeast(0))
+            listState.scrollToItem(scrollToIndex)
         }
     }
     
@@ -324,6 +343,9 @@ fun TimelineScreen(
                                 selectedIds = uiState.selectedPhotoIds,
                                 onToggleExpanded = { viewModel.toggleEventExpanded(event.id) },
                                 onPhotoClick = { photoId ->
+                                    // 记录事件索引用于退出全屏后恢复滚动位置
+                                    lastFullscreenEventIndex = uiState.events.indexOf(event)
+                                    hasViewedFullscreen = true
                                     // Open fullscreen preview with current event's photos
                                     val clickedIndex = event.photos.indexOfFirst { it.id == photoId }
                                     fullscreenPhotos = event.photos

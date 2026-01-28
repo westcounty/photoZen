@@ -297,7 +297,39 @@ interface PhotoRepository {
      * Returns null if no unsorted photos exist.
      */
     suspend fun getRandomUnsortedPhoto(): PhotoEntity?
-    
+
+    /**
+     * Get a weighted random "memory" photo for Memory Lane widget.
+     * Uses weighted random algorithm that favors older photos:
+     * - 5+ years: x3.0
+     * - 3-5 years: x2.5
+     * - 2-3 years: x2.0
+     * - 1-2 years: x1.5
+     * - <1 year: x1.0
+     *
+     * Also gives bonus weight (x5.0) to "this day in history" photos.
+     *
+     * @param preferThisDayInHistory If true, prioritize photos from the same month/day in previous years
+     * @param widgetId Optional widget ID to apply per-widget photo source filtering
+     * @return A weighted random photo, or null if no unsorted photos exist
+     */
+    suspend fun getRandomMemoryPhoto(preferThisDayInHistory: Boolean = true, widgetId: Int? = null): PhotoEntity?
+
+    /**
+     * Get all photos matching the widget's configured photo source.
+     * Used for the widget photo preview screen to show all photos the widget can display.
+     *
+     * @param photoSource The photo source mode (ALL, ONLY_ALBUMS, EXCLUDE_ALBUMS)
+     * @param selectedAlbums Album IDs to include (when photoSource is ONLY_ALBUMS)
+     * @param excludedAlbums Album IDs to exclude (when photoSource is EXCLUDE_ALBUMS)
+     * @return List of photos sorted by date taken (newest first)
+     */
+    suspend fun getWidgetPhotos(
+        photoSource: MemoryLanePhotoSource,
+        selectedAlbums: List<String>,
+        excludedAlbums: List<String>
+    ): List<PhotoEntity>
+
     /**
      * Increment daily stats count for today.
      */

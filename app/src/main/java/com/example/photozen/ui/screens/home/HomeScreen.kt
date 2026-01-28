@@ -464,6 +464,25 @@ private fun NewHomeLayout(
                 )
             }
 
+            // 提示4：时光拾遗小部件
+            val memoryLaneTip = rememberGuideState(
+                guideKey = GuideKey.HOME_TIP_MEMORY_LANE,
+                guideRepository = guideRepository
+            )
+            AnimatedVisibility(
+                visible = memoryLaneTip.shouldShow,
+                enter = fadeIn() + slideInHorizontally(initialOffsetX = { it }),
+                exit = fadeOut() + slideOutHorizontally(targetOffsetX = { it })
+            ) {
+                HomeTipStrip(
+                    icon = HomeTipData.memoryLaneTip.icon,
+                    title = HomeTipData.memoryLaneTip.title,
+                    description = HomeTipData.memoryLaneTip.description,
+                    accentColor = HomeTipData.memoryLaneTip.accentColor(),
+                    onDismiss = { memoryLaneTip.dismiss() }
+                )
+            }
+
             // 6. 成就预览
             val achievements = generateAchievements(uiState.achievementData)
             AchievementSummaryCard(

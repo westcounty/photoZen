@@ -29,6 +29,7 @@ import com.example.photozen.ui.screens.albums.AlbumBubbleScreen
 import com.example.photozen.ui.screens.albums.AlbumPhotoListScreen
 import com.example.photozen.ui.screens.stats.StatsScreen
 import com.example.photozen.ui.screens.trash.TrashScreen
+import com.example.photozen.ui.screens.widgetpreview.WidgetPhotoPreviewScreen
 import com.example.photozen.ui.screens.workflow.WorkflowScreen
 
 /**
@@ -416,6 +417,19 @@ private fun PicZenNavHostInternal(
             ShareCompareScreen(
                 urisJson = route.urisJson,
                 onFinish = onFinish
+            )
+        }
+
+        // ==================== Widget Preview Screens ====================
+        // Fullscreen preview from Memory Lane widget
+
+        composable<Screen.WidgetPhotoPreview> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.WidgetPhotoPreview>()
+            WidgetPhotoPreviewScreen(
+                photoId = route.photoId,
+                widgetId = route.widgetId,
+                onNavigateBack = onFinish,
+                onNavigateToEditor = { photoId -> navController.navigate(Screen.PhotoEditor(photoId)) }
             )
         }
     }

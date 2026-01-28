@@ -68,6 +68,7 @@ import com.example.photozen.data.local.entity.PhotoEntity
  * @param initialIndex 初始索引
  * @param onExit 退出回调
  * @param onAction 操作回调 (复制、分享等)
+ * @param onCurrentIndexChange 当前索引变化回调，参数为 (index, photoId)，用于滚动位置恢复
  * @param overlayContent 可选的覆盖层内容，如删除确认面板等
  * @param showPhotoInfo 是否显示照片信息（左上角），默认 true
  * @param showBottomBar 是否显示底部操作栏，默认 true
@@ -79,6 +80,7 @@ fun UnifiedFullscreenViewer(
     initialIndex: Int,
     onExit: () -> Unit,
     onAction: (FullscreenActionType, PhotoEntity) -> Unit,
+    onCurrentIndexChange: ((Int, String?) -> Unit)? = null,
     overlayContent: @Composable (() -> Unit)? = null,
     showPhotoInfo: Boolean = true,
     showBottomBar: Boolean = true,
@@ -118,6 +120,12 @@ fun UnifiedFullscreenViewer(
     // 启动进入动画
     LaunchedEffect(Unit) {
         isEntering = false
+    }
+
+    // 通知父组件当前索引变化，用于滚动位置恢复
+    LaunchedEffect(currentIndex) {
+        val currentPhotoId = photos.getOrNull(currentIndex)?.id
+        onCurrentIndexChange?.invoke(currentIndex, currentPhotoId)
     }
 
     // 系统UI控制 - 隐藏状态栏和导航栏 (REQ-012)

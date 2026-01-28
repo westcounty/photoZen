@@ -140,6 +140,23 @@ fun openImageWithChooser(context: Context, imageUri: Uri) {
 }
 
 /**
+ * Edit image with system editor chooser.
+ */
+fun editImageWithChooser(context: Context, imageUri: Uri) {
+    val intent = Intent(Intent.ACTION_EDIT).apply {
+        setDataAndType(imageUri, "image/*")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+    }
+    val chooser = Intent.createChooser(intent, "选择编辑应用")
+    try {
+        context.startActivity(chooser)
+    } catch (e: Exception) {
+        // No editor available, fall back to open
+        openImageWithChooser(context, imageUri)
+    }
+}
+
+/**
  * Share image using system share sheet.
  * Properly queries MIME type from MediaStore for correct sharing.
  */

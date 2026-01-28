@@ -358,7 +358,11 @@ class FlowSorterViewModel @Inject constructor(
     private val _initialTotalCount = MutableStateFlow(-1) // -1 means not yet initialized
     
     // Random seed for consistent random sorting until changed
-    private var randomSeed = System.currentTimeMillis()
+    // Use currentTimeMillis % Int.MAX_VALUE to prevent SQL integer overflow
+    private var randomSeed = (System.currentTimeMillis() % Int.MAX_VALUE)
+
+    // Counter to guarantee unique seeds even if nanoTime somehow returns same value
+    private var randomSeedCounter = 0L
 
     // Job for auto-hiding combo after timeout
     private var comboTimeoutJob: Job? = null
@@ -794,7 +798,95 @@ class FlowSorterViewModel @Inject constructor(
         // Check if we need to load more photos
         loadMorePhotosIfNeeded()
     }
-    
+
+    /**
+     * Public method to trigger loading more photos.
+     * Called by UI when user scrolls near the end of the list in LIST view mode.
+     * This allows pagination to work even when no photos are being sorted.
+     *
+     * Unlike loadMorePhotosIfNeeded(), this method does not check the unsorted threshold
+     * because in LIST mode users may not be sorting photos - they just browse.
+     */
+    fun checkAndLoadMorePhotos() {
+        if (_isLoadingMore.value || !hasMorePages || _isReloading.value) return
+
+        // Cancel any pending load to avoid duplicate requests
+        loadMoreDebounceJob?.cancel()
+        loadMoreDebounceJob = viewModelScope.launch {
+            // Small delay to debounce rapid calls
+            delay(50)
+
+            if (_isLoadingMore.value || !hasMorePages) return@launch
+
+            _isLoadingMore.value = true
+            try {
+                currentPage++
+
+                val morePhotos = if (useDatabasePagination) {
+                    // Database pagination mode: Use LIMIT/OFFSET with offset adjustment
+                    val params = dbPaginationParams ?: return@launch
+                    // Adjust offset for photos that have been sorted (they're no longer in UNSORTED status)
+                    val offsetAdjustment = -_sortedPhotoIds.value.size
+
+                    // Use appropriate method based on include/exclude mode
+                    if (!params.excludeBucketIds.isNullOrEmpty()) {
+                        getUnsortedPhotosUseCase.getPageExcludingBucketsFiltered(
+                            excludeBucketIds = params.excludeBucketIds,
+                            startDateMs = params.startDateMs,
+                            endDateMs = params.endDateMs,
+                            page = currentPage,
+                            sortOrder = params.sortOrder,
+                            randomSeed = params.randomSeed,
+                            offsetAdjustment = offsetAdjustment
+                        )
+                    } else {
+                        getUnsortedPhotosUseCase.getPageFiltered(
+                            bucketIds = params.bucketIds,
+                            startDateMs = params.startDateMs,
+                            endDateMs = params.endDateMs,
+                            page = currentPage,
+                            sortOrder = params.sortOrder,
+                            randomSeed = params.randomSeed,
+                            offsetAdjustment = offsetAdjustment
+                        )
+                    }
+                } else {
+                    // Snapshot pagination mode: Use pre-loaded ID list
+                    val filterMode = preferencesRepository.getPhotoFilterMode().first()
+                    val sessionFilter = preferencesRepository.getSessionCustomFilterFlow().first()
+                    val sortOrder = _sortOrder.value
+
+                    loadPhotosPage(
+                        page = currentPage,
+                        filterMode = filterMode,
+                        sessionFilter = sessionFilter,
+                        sortOrder = sortOrder
+                    )
+                }
+
+                if (morePhotos.isNotEmpty()) {
+                    // Filter out any photos we already have (duplicates due to offset shift)
+                    val existingIds = _pagedPhotos.value.map { it.id }.toSet()
+                    val newPhotos = morePhotos.filter { it.id !in existingIds }
+                    if (newPhotos.isNotEmpty()) {
+                        _pagedPhotos.value = _pagedPhotos.value + newPhotos
+                    }
+                }
+                hasMorePages = morePhotos.size >= GetUnsortedPhotosUseCase.PAGE_SIZE
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Coroutine was cancelled, don't treat as error
+                currentPage-- // Revert page increment
+                throw e
+            } catch (e: Exception) {
+                // Silent error handling for background loading
+                // Don't show error to user for pagination failures
+                currentPage-- // Revert page increment on error
+            } finally {
+                _isLoadingMore.value = false
+            }
+        }
+    }
+
     /**
      * Helper data class for filter parameters.
      */
@@ -1108,8 +1200,22 @@ class FlowSorterViewModel @Inject constructor(
             syncPhotos()
             // Check if sessionFilter has a default sort order (e.g., from timeline group)
             val sessionFilter = preferencesRepository.getSessionCustomFilter()
-            sessionFilter?.defaultSortOrder?.let { defaultOrder ->
-                _sortOrder.value = defaultOrder
+            if (sessionFilter?.defaultSortOrder != null) {
+                _sortOrder.value = sessionFilter.defaultSortOrder
+            } else {
+                // Restore saved sort order from preferences (B4 fix)
+                val savedSortId = preferencesRepository.getSortOrderSync(PreferencesRepository.SortScreen.FILTER)
+                val restoredOrder = when (savedSortId) {
+                    "photo_time_asc" -> PhotoSortOrder.DATE_ASC
+                    "random" -> {
+                        // Generate new seed for random sort on each session
+                        randomSeedCounter++
+                        randomSeed = ((System.currentTimeMillis() xor randomSeedCounter) % Int.MAX_VALUE).coerceAtLeast(1)
+                        PhotoSortOrder.RANDOM
+                    }
+                    else -> PhotoSortOrder.DATE_DESC // "photo_time_desc" or default
+                }
+                _sortOrder.value = restoredOrder
             }
             // Load initial batch of photos after sync
             loadInitialPhotos()
@@ -1871,10 +1977,25 @@ class FlowSorterViewModel @Inject constructor(
      */
     fun setSortOrder(order: PhotoSortOrder) {
         // If switching to random, generate new seed
+        // ALWAYS generate new seed when RANDOM is selected (even if already in RANDOM mode)
+        // This ensures clicking "random" again will re-shuffle
         if (order == PhotoSortOrder.RANDOM) {
-            randomSeed = System.currentTimeMillis()
+            randomSeedCounter++
+            // Use currentTimeMillis % Int.MAX_VALUE to prevent SQL integer overflow
+            randomSeed = ((System.currentTimeMillis() xor randomSeedCounter) % Int.MAX_VALUE).coerceAtLeast(1)
         }
         _sortOrder.value = order
+
+        // Persist sort order to preferences (B4 fix)
+        viewModelScope.launch {
+            val sortId = when (order) {
+                PhotoSortOrder.DATE_DESC -> "photo_time_desc"
+                PhotoSortOrder.DATE_ASC -> "photo_time_asc"
+                PhotoSortOrder.RANDOM -> "random"
+            }
+            preferencesRepository.setSortOrder(PreferencesRepository.SortScreen.FILTER, sortId)
+        }
+
         // Reload photos with new sort order
         loadInitialPhotos()
     }
@@ -1908,7 +2029,7 @@ class FlowSorterViewModel @Inject constructor(
      */
     fun setGridColumns(columns: Int) {
         viewModelScope.launch {
-            val validColumns = columns.coerceIn(1, 4)
+            val validColumns = columns.coerceIn(1, 5)
             preferencesRepository.setGridColumns(PreferencesRepository.GridScreen.FLOW, validColumns)
             _gridColumns.value = validColumns
         }

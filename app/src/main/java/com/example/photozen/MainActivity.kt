@@ -25,6 +25,7 @@ import com.example.photozen.ui.theme.PicZenTheme
 import com.example.photozen.util.ShareData
 import com.example.photozen.util.ShareHandler
 import com.example.photozen.util.ShareMode
+import com.example.photozen.widget.memory.MemoryLaneWidget
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -49,10 +50,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
+
         // Parse share intent if present
         val shareData: ShareData? = ShareHandler.parseShareIntent(intent)
-        
+
+        // Parse widget intent if present
+        val fromWidget = intent?.getBooleanExtra(MemoryLaneWidget.EXTRA_FROM_MEMORY_WIDGET, false) ?: false
+        val widgetPhotoId = intent?.getStringExtra(MemoryLaneWidget.EXTRA_OPEN_PHOTO_ID)
+        val widgetId = intent?.getIntExtra(MemoryLaneWidget.EXTRA_WIDGET_ID, -1) ?: -1
+
         setContent {
             // Observe theme mode from preferences
             val themeMode by preferencesRepository.getThemeMode().collectAsState(initial = ThemeMode.DARK)
@@ -75,6 +81,17 @@ class MainActivity : ComponentActivity() {
                         PicZenNavHost(
                             navController = navController,
                             startDestination = startDestination,
+                            onFinish = { finish() },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else if (fromWidget && widgetPhotoId != null && widgetId != -1) {
+                        // Widget 场景：直接进入小部件照片预览界面
+                        PicZenNavHost(
+                            navController = navController,
+                            startDestination = Screen.WidgetPhotoPreview(
+                                photoId = widgetPhotoId,
+                                widgetId = widgetId
+                            ),
                             onFinish = { finish() },
                             modifier = Modifier.fillMaxSize()
                         )

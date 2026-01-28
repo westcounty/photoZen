@@ -30,7 +30,8 @@ class PhotoRepositoryImpl @Inject constructor(
     private val photoDao: PhotoDao,
     private val dailyStatsDao: DailyStatsDao,
     private val mediaStoreDataSource: MediaStoreDataSource,
-    private val dataStore: DataStore<Preferences>
+    private val dataStore: DataStore<Preferences>,
+    private val preferencesRepository: PreferencesRepository
 ) : PhotoRepository {
     
     companion object {
@@ -320,11 +321,11 @@ class PhotoRepositoryImpl @Inject constructor(
                 val startDate = preferences[PreferencesRepository.KEY_WIDGET_START_DATE]
                 val endDate = preferences[PreferencesRepository.KEY_WIDGET_END_DATE]
                 val albumIds = preferences[PreferencesRepository.KEY_WIDGET_CUSTOM_ALBUM_IDS] ?: emptySet()
-                
+
                 // Convert date millis to seconds (Room stores dateAdded in seconds)
                 val startSeconds = startDate?.let { it / 1000 }
                 val endSeconds = endDate?.let { it / 1000 + 86400 } // Add one day to include end date
-                
+
                 if (albumIds.isNotEmpty() && startSeconds != null && endSeconds != null) {
                     // Filter by both albums and date range
                     photoDao.getRandomUnsortedPhotoByBucketsAndDateRange(albumIds.toList(), startSeconds, endSeconds)
@@ -341,6 +342,161 @@ class PhotoRepositoryImpl @Inject constructor(
             }
         }
     }
+
+    override suspend fun getRandomMemoryPhoto(preferThisDayInHistory: Boolean, widgetId: Int?): PhotoEntity? {
+        val now = java.util.Calendar.getInstance()
+        val currentMonth = now.get(java.util.Calendar.MONTH) + 1 // Calendar.MONTH is 0-indexed
+        val currentDay = now.get(java.util.Calendar.DAY_OF_MONTH)
+        val currentYear = now.get(java.util.Calendar.YEAR)
+
+        // Get widget photo source configuration if widgetId is provided
+        val photoSource = widgetId?.let { preferencesRepository.getWidgetPhotoSource(it) }
+            ?: MemoryLanePhotoSource.ALL
+        val selectedAlbums = if (photoSource == MemoryLanePhotoSource.ONLY_ALBUMS && widgetId != null) {
+            preferencesRepository.getWidgetSelectedAlbums(widgetId).toList()
+        } else emptyList()
+        val excludedAlbums = if (photoSource == MemoryLanePhotoSource.EXCLUDE_ALBUMS && widgetId != null) {
+            preferencesRepository.getWidgetExcludedAlbums(widgetId).toList()
+        } else emptyList()
+
+        // First, try to get "this day in history" photos if enabled
+        if (preferThisDayInHistory) {
+            val thisDayPhotos = when (photoSource) {
+                MemoryLanePhotoSource.ONLY_ALBUMS -> {
+                    if (selectedAlbums.isNotEmpty()) {
+                        photoDao.getThisDayInHistoryPhotosByAlbums(currentMonth, currentDay, selectedAlbums, 10)
+                    } else {
+                        emptyList()
+                    }
+                }
+                MemoryLanePhotoSource.EXCLUDE_ALBUMS -> {
+                    if (excludedAlbums.isNotEmpty()) {
+                        photoDao.getThisDayInHistoryPhotosExcludingAlbums(currentMonth, currentDay, excludedAlbums, 10)
+                    } else {
+                        photoDao.getThisDayInHistoryPhotos(currentMonth, currentDay, 10)
+                    }
+                }
+                MemoryLanePhotoSource.ALL -> {
+                    photoDao.getThisDayInHistoryPhotos(currentMonth, currentDay, 10)
+                }
+            }
+            if (thisDayPhotos.isNotEmpty()) {
+                // 50% chance to return a "this day in history" photo
+                if (kotlin.random.Random.nextFloat() < 0.5f) {
+                    return thisDayPhotos.random()
+                }
+            }
+        }
+
+        // Get a batch of random unsorted photos for weighted selection
+        val photoBatch = when (photoSource) {
+            MemoryLanePhotoSource.ONLY_ALBUMS -> {
+                if (selectedAlbums.isNotEmpty()) {
+                    photoDao.getRandomUnsortedPhotoBatchByAlbums(selectedAlbums, 200)
+                } else {
+                    emptyList()
+                }
+            }
+            MemoryLanePhotoSource.EXCLUDE_ALBUMS -> {
+                if (excludedAlbums.isNotEmpty()) {
+                    photoDao.getRandomUnsortedPhotoBatchExcludingAlbums(excludedAlbums, 200)
+                } else {
+                    photoDao.getRandomUnsortedPhotoBatch(200)
+                }
+            }
+            MemoryLanePhotoSource.ALL -> {
+                photoDao.getRandomUnsortedPhotoBatch(200)
+            }
+        }
+        if (photoBatch.isEmpty()) {
+            return null
+        }
+
+        // Calculate weights based on age
+        val weightedPhotos = photoBatch.map { photo ->
+            val weight = calculateMemoryWeight(photo.dateTaken, currentYear)
+            WeightedPhoto(photo, weight)
+        }
+
+        // Weighted random selection
+        return selectWeightedRandom(weightedPhotos)
+    }
+
+    override suspend fun getWidgetPhotos(
+        photoSource: MemoryLanePhotoSource,
+        selectedAlbums: List<String>,
+        excludedAlbums: List<String>
+    ): List<PhotoEntity> {
+        return when (photoSource) {
+            MemoryLanePhotoSource.ONLY_ALBUMS -> {
+                if (selectedAlbums.isNotEmpty()) {
+                    photoDao.getUnsortedPhotosByAlbumsSortedByDate(selectedAlbums)
+                } else {
+                    emptyList()
+                }
+            }
+            MemoryLanePhotoSource.EXCLUDE_ALBUMS -> {
+                if (excludedAlbums.isNotEmpty()) {
+                    photoDao.getUnsortedPhotosExcludingAlbumsSortedByDate(excludedAlbums)
+                } else {
+                    photoDao.getAllUnsortedPhotosSortedByDate()
+                }
+            }
+            MemoryLanePhotoSource.ALL -> {
+                photoDao.getAllUnsortedPhotosSortedByDate()
+            }
+        }
+    }
+
+    /**
+     * Calculate memory weight based on photo age.
+     * Older photos get higher weights to surface "dusty memories".
+     */
+    private fun calculateMemoryWeight(dateTaken: Long, currentYear: Int): Float {
+        if (dateTaken <= 0) {
+            return 1.0f // Default weight for photos without date
+        }
+
+        val photoCalendar = java.util.Calendar.getInstance().apply {
+            timeInMillis = dateTaken
+        }
+        val photoYear = photoCalendar.get(java.util.Calendar.YEAR)
+        val yearDiff = currentYear - photoYear
+
+        return when {
+            yearDiff >= 5 -> 3.0f  // 5+ years: x3.0
+            yearDiff >= 3 -> 2.5f  // 3-5 years: x2.5
+            yearDiff >= 2 -> 2.0f  // 2-3 years: x2.0
+            yearDiff >= 1 -> 1.5f  // 1-2 years: x1.5
+            else -> 1.0f          // <1 year: x1.0
+        }
+    }
+
+    /**
+     * Select a random photo using weighted probability.
+     */
+    private fun selectWeightedRandom(weightedPhotos: List<WeightedPhoto>): PhotoEntity? {
+        if (weightedPhotos.isEmpty()) return null
+
+        val totalWeight = weightedPhotos.sumOf { it.weight.toDouble() }.toFloat()
+        val randomValue = kotlin.random.Random.nextFloat() * totalWeight
+
+        var accumulator = 0f
+        for (wp in weightedPhotos) {
+            accumulator += wp.weight
+            if (randomValue <= accumulator) {
+                return wp.photo
+            }
+        }
+
+        // Fallback to last item
+        return weightedPhotos.last().photo
+    }
+
+    private data class WeightedPhoto(
+        val photo: PhotoEntity,
+        val weight: Float
+    )
     
     override suspend fun updateDailyStatsTarget(target: Int) {
         val today = getTodayDateString()

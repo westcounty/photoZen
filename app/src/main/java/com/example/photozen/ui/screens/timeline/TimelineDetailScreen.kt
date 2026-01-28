@@ -14,7 +14,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -61,6 +64,15 @@ fun TimelineDetailScreen(
     var fullscreenStartIndex by remember { mutableIntStateOf(0) }
     var showFullscreen by remember { mutableStateOf(false) }
 
+    // 提升 grid state 用于滚动位置保持
+    val staggeredGridState = rememberLazyStaggeredGridState()
+    val squareGridState = rememberLazyGridState()
+
+    // 跟踪全屏预览位置
+    var lastFullscreenIndex by remember { mutableIntStateOf(0) }
+    var lastFullscreenPhotoId by remember { mutableStateOf<String?>(null) }
+    var hasViewedFullscreen by remember { mutableStateOf(false) }
+
     // Album picker state
     var showAlbumPicker by remember { mutableStateOf(false) }
 
@@ -91,6 +103,30 @@ fun TimelineDetailScreen(
         uiState.message?.let { message ->
             snackbarHostState.showSnackbar(message)
             viewModel.clearMessage()
+        }
+    }
+
+    // 退出全屏时恢复滚动位置（居中显示目标项）
+    LaunchedEffect(showFullscreen) {
+        if (!showFullscreen && hasViewedFullscreen) {
+            hasViewedFullscreen = false  // 重置标志
+            delay(50)  // 等待 grid 组合完成
+
+            // 优先通过 photoId 查找位置（处理删除后索引变化）
+            val targetIndex = lastFullscreenPhotoId?.let { id ->
+                uiState.photos.indexOfFirst { it.id == id }.takeIf { it >= 0 }
+            } ?: lastFullscreenIndex.coerceIn(0, uiState.photos.lastIndex.coerceAtLeast(0))
+
+            // 计算居中滚动位置：向前偏移约半屏的项目数
+            val columns = uiState.columnCount
+            val estimatedVisibleRows = 2
+            val offsetItems = (columns * estimatedVisibleRows / 2).coerceAtLeast(0)
+            val scrollToIndex = (targetIndex - offsetItems).coerceAtLeast(0)
+
+            when (uiState.gridMode) {
+                PhotoGridMode.WATERFALL -> staggeredGridState.scrollToItem(scrollToIndex)
+                PhotoGridMode.SQUARE -> squareGridState.scrollToItem(scrollToIndex)
+            }
         }
     }
 
@@ -266,6 +302,8 @@ fun TimelineDetailScreen(
                     },
                     columns = uiState.columnCount,
                     gridMode = uiState.gridMode,
+                    staggeredGridState = staggeredGridState,
+                    squareGridState = squareGridState,
                     showStatusBadge = true,
                     modifier = Modifier.fillMaxSize(),
                     onSelectionToggle = { photoId ->
@@ -283,6 +321,11 @@ fun TimelineDetailScreen(
             photos = uiState.photos,
             initialIndex = fullscreenStartIndex.coerceIn(0, uiState.photos.lastIndex),
             onExit = { showFullscreen = false },
+            onCurrentIndexChange = { index, photoId ->
+                lastFullscreenIndex = index
+                lastFullscreenPhotoId = photoId
+                hasViewedFullscreen = true
+            },
             onAction = { actionType, photo ->
                 when (actionType) {
                     FullscreenActionType.COPY -> viewModel.copyPhoto(photo.id)

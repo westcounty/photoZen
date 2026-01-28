@@ -1,5 +1,6 @@
 package com.example.photozen.ui.screens.settings
 
+import android.content.Intent
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -55,6 +56,7 @@ import com.example.photozen.ui.components.EnhancedSettingsItem
 import com.example.photozen.ui.components.SwitchSettingsItem
 import com.example.photozen.ui.components.ValueSettingsItem
 import com.example.photozen.domain.model.GuideKey
+import com.example.photozen.widget.memory.MemoryLaneWidgetConfigActivity
 import kotlinx.coroutines.delay
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -217,8 +219,21 @@ fun SettingsScreen(
                     sensitivity = uiState.swipeSensitivity,
                     onSensitivityChange = { viewModel.setSwipeSensitivity(it) }
                 )
+
+                // 时光拾遗小组件设置
+                EnhancedSettingsItem(
+                    icon = Icons.Default.Widgets,
+                    title = "时光拾遗小组件",
+                    subtitle = "配置桌面小组件的默认设置",
+                    onClick = {
+                        val intent = Intent(context, MemoryLaneWidgetConfigActivity::class.java).apply {
+                            putExtra(MemoryLaneWidgetConfigActivity.EXTRA_GLOBAL_SETTINGS_MODE, true)
+                        }
+                        context.startActivity(intent)
+                    }
+                )
             }
-            
+
             // ==================== 外观与显示分组（默认展开）====================
             CollapsibleSettingsGroup(
                 title = "外观与显示",

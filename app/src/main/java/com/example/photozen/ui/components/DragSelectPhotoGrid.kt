@@ -80,7 +80,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -101,7 +103,6 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.data.model.PhotoStatus
-import androidx.compose.runtime.rememberUpdatedState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -232,7 +233,9 @@ fun DragSelectPhotoGrid(
     clickAlwaysTogglesSelection: Boolean = false,
     onSelectionToggle: ((String) -> Unit)? = null,
     /** 长按时是否自动添加到选择 (默认 true，待定列表设为 false 以仅显示操作菜单) */
-    longPressAddsToSelection: Boolean = true
+    longPressAddsToSelection: Boolean = true,
+    /** 滚动到接近列表末尾时的回调，用于分页加载 */
+    onReachEnd: (() -> Unit)? = null
 ) {
     // Note: Drag select functionality has been removed (Phase 3-10)
     // Long press is now handled by individual items only
@@ -242,6 +245,48 @@ fun DragSelectPhotoGrid(
     val currentOnPhotoClick by rememberUpdatedState(onPhotoClick)
     val currentOnPhotoLongPress by rememberUpdatedState(onPhotoLongPress)
     val currentOnSelectionToggle by rememberUpdatedState(onSelectionToggle)
+    val currentOnReachEnd by rememberUpdatedState(onReachEnd)
+
+    // 监听滚动位置，当接近末尾时触发加载更多
+    val reachEndThreshold = 50 // 距离末尾多少项时触发
+
+    // 监听 SQUARE 模式的滚动
+    LaunchedEffect(squareGridState, gridMode, photos.size) {
+        if (gridMode == PhotoGridMode.SQUARE) {
+            snapshotFlow {
+                val layoutInfo = squareGridState.layoutInfo
+                val totalItems = layoutInfo.totalItemsCount
+                val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                Triple(totalItems, lastVisibleItem, photos.size)
+            }.collect { (totalItems, lastVisible, photoCount) ->
+                if (photoCount > 0 && totalItems > 0) {
+                    val remaining = totalItems - lastVisible - 1
+                    if (remaining < reachEndThreshold) {
+                        currentOnReachEnd?.invoke()
+                    }
+                }
+            }
+        }
+    }
+
+    // 监听 WATERFALL 模式的滚动
+    LaunchedEffect(staggeredGridState, gridMode, photos.size) {
+        if (gridMode == PhotoGridMode.WATERFALL) {
+            snapshotFlow {
+                val layoutInfo = staggeredGridState.layoutInfo
+                val totalItems = layoutInfo.totalItemsCount
+                val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                Triple(totalItems, lastVisibleItem, photos.size)
+            }.collect { (totalItems, lastVisible, photoCount) ->
+                if (photoCount > 0 && totalItems > 0) {
+                    val remaining = totalItems - lastVisible - 1
+                    if (remaining < reachEndThreshold) {
+                        currentOnReachEnd?.invoke()
+                    }
+                }
+            }
+        }
+    }
 
     Box(
         modifier = modifier.fillMaxSize()

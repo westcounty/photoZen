@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 /**
@@ -45,7 +46,12 @@ class PicZenApplication : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
-        
+
+        // Initialize Timber logging (Debug builds only)
+        if (BuildConfig.DEBUG) {
+            Timber.plant(Timber.DebugTree())
+        }
+
         // CrashLogger already initialized by CrashLoggerInitProvider (ContentProvider)
         // This is the full initialization which clears old logs and starts fresh session
         CrashLogger.init(this)

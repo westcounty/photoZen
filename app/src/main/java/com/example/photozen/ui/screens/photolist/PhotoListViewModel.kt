@@ -237,7 +237,9 @@ class PhotoListViewModel @Inject constructor(
     private val _internalState = MutableStateFlow(InternalState())
     
     // Random seed for consistent random sorting
-    private var randomSeed = System.currentTimeMillis()
+    // Use currentTimeMillis % Int.MAX_VALUE to prevent SQL integer overflow
+    private var randomSeed = (System.currentTimeMillis() % Int.MAX_VALUE)
+    private var randomSeedCounter = 0L
     
     // Album mode state
     private val _albumState = MutableStateFlow(AlbumState())
@@ -319,9 +321,35 @@ class PhotoListViewModel @Inject constructor(
     init {
         // Phase 4: 进入页面时清空选择状态，避免与其他页面冲突
         selectionStateHolder.clear()
-        
+
         viewModelScope.launch {
             _internalState.update { it.copy(isLoading = false) }
+        }
+        // Restore saved sort order from preferences (B4 fix)
+        viewModelScope.launch {
+            val screen = when (status) {
+                PhotoStatus.KEEP -> PreferencesRepository.SortScreen.KEEP
+                PhotoStatus.MAYBE -> PreferencesRepository.SortScreen.MAYBE
+                PhotoStatus.TRASH -> PreferencesRepository.SortScreen.TRASH
+                else -> PreferencesRepository.SortScreen.FILTER
+            }
+            val savedSortId = preferencesRepository.getSortOrderSync(screen)
+            val availableOptions = ListSortConfigs.forStatus(status)
+            val restoredOrder = when (savedSortId) {
+                "photo_time_asc" -> PhotoListSortOrder.DATE_ASC
+                "added_time_desc" -> PhotoListSortOrder.ADDED_DESC
+                "added_time_asc" -> PhotoListSortOrder.ADDED_ASC
+                "random" -> {
+                    randomSeedCounter++
+                    randomSeed = ((System.currentTimeMillis() xor randomSeedCounter) % Int.MAX_VALUE).coerceAtLeast(1)
+                    PhotoListSortOrder.RANDOM
+                }
+                else -> PhotoListSortOrder.DATE_DESC // "photo_time_desc" or default
+            }
+            // Only apply if it's a valid option for this list
+            if (restoredOrder in availableOptions) {
+                _internalState.update { it.copy(sortOrder = restoredOrder) }
+            }
         }
         viewModelScope.launch {
             preferencesRepository.getDefaultExternalApp().collect { app ->
@@ -396,9 +424,28 @@ class PhotoListViewModel @Inject constructor(
      */
     fun setSortOrder(order: PhotoListSortOrder) {
         if (order == PhotoListSortOrder.RANDOM) {
-            randomSeed = System.currentTimeMillis()
+            randomSeedCounter++
+            randomSeed = ((System.currentTimeMillis() xor randomSeedCounter) % Int.MAX_VALUE).coerceAtLeast(1)
         }
         _internalState.update { it.copy(sortOrder = order) }
+
+        // Persist sort order to preferences (B4 fix)
+        viewModelScope.launch {
+            val sortId = when (order) {
+                PhotoListSortOrder.DATE_DESC -> "photo_time_desc"
+                PhotoListSortOrder.DATE_ASC -> "photo_time_asc"
+                PhotoListSortOrder.ADDED_DESC -> "added_time_desc"
+                PhotoListSortOrder.ADDED_ASC -> "added_time_asc"
+                PhotoListSortOrder.RANDOM -> "random"
+            }
+            val screen = when (status) {
+                PhotoStatus.KEEP -> PreferencesRepository.SortScreen.KEEP
+                PhotoStatus.MAYBE -> PreferencesRepository.SortScreen.MAYBE
+                PhotoStatus.TRASH -> PreferencesRepository.SortScreen.TRASH
+                else -> PreferencesRepository.SortScreen.FILTER
+            }
+            preferencesRepository.setSortOrder(screen, sortId)
+        }
     }
     
     /**

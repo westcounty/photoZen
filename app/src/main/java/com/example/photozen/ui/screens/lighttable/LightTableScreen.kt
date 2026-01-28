@@ -100,6 +100,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import coil3.size.Size
 import com.example.photozen.data.local.entity.PhotoEntity
 import com.example.photozen.ui.components.DragSelectPhotoGrid
 import com.example.photozen.ui.components.PhotoGridMode
@@ -911,10 +912,12 @@ private fun ZoomableImage(
             },
         contentAlignment = Alignment.Center
     ) {
+        // Use ORIGINAL size for full resolution when zooming
         AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
                 .data(Uri.parse(photo.systemUri))
                 .crossfade(true)
+                .size(Size.ORIGINAL)  // Load full resolution for zoom clarity
                 .build(),
             contentDescription = photo.displayName,
             contentScale = ContentScale.Fit,
