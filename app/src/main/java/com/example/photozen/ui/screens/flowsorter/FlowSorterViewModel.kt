@@ -1207,6 +1207,8 @@ class FlowSorterViewModel @Inject constructor(
                 val savedSortId = preferencesRepository.getSortOrderSync(PreferencesRepository.SortScreen.FILTER)
                 val restoredOrder = when (savedSortId) {
                     "photo_time_asc" -> PhotoSortOrder.DATE_ASC
+                    "size_desc" -> PhotoSortOrder.SIZE_DESC
+                    "size_asc" -> PhotoSortOrder.SIZE_ASC
                     "random" -> {
                         // Generate new seed for random sort on each session
                         randomSeedCounter++
@@ -1991,6 +1993,8 @@ class FlowSorterViewModel @Inject constructor(
             val sortId = when (order) {
                 PhotoSortOrder.DATE_DESC -> "photo_time_desc"
                 PhotoSortOrder.DATE_ASC -> "photo_time_asc"
+                PhotoSortOrder.SIZE_DESC -> "size_desc"
+                PhotoSortOrder.SIZE_ASC -> "size_asc"
                 PhotoSortOrder.RANDOM -> "random"
             }
             preferencesRepository.setSortOrder(PreferencesRepository.SortScreen.FILTER, sortId)
@@ -2001,12 +2005,14 @@ class FlowSorterViewModel @Inject constructor(
     }
     
     /**
-     * Cycle through sort orders: DATE_DESC -> DATE_ASC -> RANDOM -> DATE_DESC
+     * Cycle through sort orders: DATE_DESC -> DATE_ASC -> SIZE_DESC -> SIZE_ASC -> RANDOM -> DATE_DESC
      */
     fun cycleSortOrder() {
         val nextOrder = when (_sortOrder.value) {
             PhotoSortOrder.DATE_DESC -> PhotoSortOrder.DATE_ASC
-            PhotoSortOrder.DATE_ASC -> PhotoSortOrder.RANDOM
+            PhotoSortOrder.DATE_ASC -> PhotoSortOrder.SIZE_DESC
+            PhotoSortOrder.SIZE_DESC -> PhotoSortOrder.SIZE_ASC
+            PhotoSortOrder.SIZE_ASC -> PhotoSortOrder.RANDOM
             PhotoSortOrder.RANDOM -> PhotoSortOrder.DATE_DESC
         }
         setSortOrder(nextOrder)

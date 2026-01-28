@@ -147,34 +147,65 @@ class GetUnsortedPhotosUseCase @Inject constructor(
             val bucketIds = sessionFilter.albumIds
 
             // 修复 Room bug：避免使用 (:bucketIds IS NULL OR bucket_id IN (:bucketIds)) 模式
-            val ids = if (bucketIds.isNullOrEmpty()) {
-                photoDao.getUnsortedPhotoIdsAll(startDateMs, endDateMs)
+            return if (bucketIds.isNullOrEmpty()) {
+                when (sortOrder) {
+                    PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotoIdsAll(startDateMs, endDateMs)
+                    PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotoIdsAll(startDateMs, endDateMs).asReversed()
+                    PhotoSortOrder.SIZE_DESC -> photoDao.getUnsortedPhotoIdsAllSizeDesc(startDateMs, endDateMs)
+                    PhotoSortOrder.SIZE_ASC -> photoDao.getUnsortedPhotoIdsAllSizeAsc(startDateMs, endDateMs)
+                    PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotoIdsAll(startDateMs, endDateMs) // Will be shuffled later
+                }
             } else {
-                photoDao.getUnsortedPhotoIdsByBuckets(bucketIds, startDateMs, endDateMs)
-            }
-            return if (sortOrder == PhotoSortOrder.DATE_ASC) {
-                ids.asReversed()
-            } else {
-                ids
+                when (sortOrder) {
+                    PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotoIdsByBuckets(bucketIds, startDateMs, endDateMs)
+                    PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotoIdsByBuckets(bucketIds, startDateMs, endDateMs).asReversed()
+                    PhotoSortOrder.SIZE_DESC -> photoDao.getUnsortedPhotoIdsByBucketsSizeDesc(bucketIds, startDateMs, endDateMs)
+                    PhotoSortOrder.SIZE_ASC -> photoDao.getUnsortedPhotoIdsByBucketsSizeAsc(bucketIds, startDateMs, endDateMs)
+                    PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotoIdsByBuckets(bucketIds, startDateMs, endDateMs) // Will be shuffled later
+                }
             }
         }
-        
-        val ids = when (filterMode) {
+
+        return when (filterMode) {
             com.example.photozen.data.repository.PhotoFilterMode.ALL -> {
-                photoDao.getUnsortedPhotoIds()
+                when (sortOrder) {
+                    PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotoIds()
+                    PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotoIds().asReversed()
+                    PhotoSortOrder.SIZE_DESC -> photoDao.getUnsortedPhotoIdsBySizeDesc()
+                    PhotoSortOrder.SIZE_ASC -> photoDao.getUnsortedPhotoIdsBySizeAsc()
+                    PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotoIds() // Will be shuffled later
+                }
             }
             com.example.photozen.data.repository.PhotoFilterMode.CAMERA_ONLY -> {
                 if (cameraIds.isNotEmpty()) {
-                    photoDao.getUnsortedPhotoIdsByBuckets(cameraIds)
+                    when (sortOrder) {
+                        PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotoIdsByBuckets(cameraIds)
+                        PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotoIdsByBuckets(cameraIds).asReversed()
+                        PhotoSortOrder.SIZE_DESC -> photoDao.getUnsortedPhotoIdsByBucketsSizeDesc(cameraIds)
+                        PhotoSortOrder.SIZE_ASC -> photoDao.getUnsortedPhotoIdsByBucketsSizeAsc(cameraIds)
+                        PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotoIdsByBuckets(cameraIds) // Will be shuffled later
+                    }
                 } else {
                     emptyList()
                 }
             }
             com.example.photozen.data.repository.PhotoFilterMode.EXCLUDE_CAMERA -> {
                 if (cameraIds.isNotEmpty()) {
-                    photoDao.getUnsortedPhotoIdsExcludingBuckets(cameraIds)
+                    when (sortOrder) {
+                        PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotoIdsExcludingBuckets(cameraIds)
+                        PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotoIdsExcludingBuckets(cameraIds).asReversed()
+                        PhotoSortOrder.SIZE_DESC -> photoDao.getUnsortedPhotoIdsExcludingBucketsSizeDesc(cameraIds)
+                        PhotoSortOrder.SIZE_ASC -> photoDao.getUnsortedPhotoIdsExcludingBucketsSizeAsc(cameraIds)
+                        PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotoIdsExcludingBuckets(cameraIds) // Will be shuffled later
+                    }
                 } else {
-                    photoDao.getUnsortedPhotoIds()
+                    when (sortOrder) {
+                        PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotoIds()
+                        PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotoIds().asReversed()
+                        PhotoSortOrder.SIZE_DESC -> photoDao.getUnsortedPhotoIdsBySizeDesc()
+                        PhotoSortOrder.SIZE_ASC -> photoDao.getUnsortedPhotoIdsBySizeAsc()
+                        PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotoIds() // Will be shuffled later
+                    }
                 }
             }
             com.example.photozen.data.repository.PhotoFilterMode.CUSTOM -> {
@@ -183,9 +214,16 @@ class GetUnsortedPhotosUseCase @Inject constructor(
                 if (!photoIds.isNullOrEmpty()) {
                     // Filter to only include UNSORTED photos from the provided list
                     val allPhotos = photoDao.getPhotosByIds(photoIds)
-                    return allPhotos
-                        .filter { it.status == com.example.photozen.data.model.PhotoStatus.UNSORTED }
-                        .map { it.id }
+                    val unsortedPhotos = allPhotos.filter { it.status == com.example.photozen.data.model.PhotoStatus.UNSORTED }
+                    // Sort by the requested order
+                    // effectiveDate = if (dateTaken > 0) dateTaken else dateAdded * 1000
+                    return when (sortOrder) {
+                        PhotoSortOrder.DATE_DESC -> unsortedPhotos.sortedByDescending { if (it.dateTaken > 0) it.dateTaken else it.dateAdded * 1000 }.map { it.id }
+                        PhotoSortOrder.DATE_ASC -> unsortedPhotos.sortedBy { if (it.dateTaken > 0) it.dateTaken else it.dateAdded * 1000 }.map { it.id }
+                        PhotoSortOrder.SIZE_DESC -> unsortedPhotos.sortedByDescending { it.size }.map { it.id }
+                        PhotoSortOrder.SIZE_ASC -> unsortedPhotos.sortedBy { it.size }.map { it.id }
+                        PhotoSortOrder.RANDOM -> unsortedPhotos.map { it.id } // Will be shuffled later
+                    }
                 }
 
                 // Calculate effective date range in milliseconds
@@ -197,25 +235,36 @@ class GetUnsortedPhotosUseCase @Inject constructor(
                 val excludeBucketIds = sessionFilter?.excludeAlbumIds
                 if (!excludeBucketIds.isNullOrEmpty()) {
                     // Exclude mode: use NOT IN
-                    photoDao.getUnsortedPhotoIdsExcludingBucketsFiltered(excludeBucketIds, startDateMs, endDateMs)
+                    when (sortOrder) {
+                        PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotoIdsExcludingBucketsFiltered(excludeBucketIds, startDateMs, endDateMs)
+                        PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotoIdsExcludingBucketsFiltered(excludeBucketIds, startDateMs, endDateMs).asReversed()
+                        PhotoSortOrder.SIZE_DESC -> photoDao.getUnsortedPhotoIdsExcludingBucketsFilteredSizeDesc(excludeBucketIds, startDateMs, endDateMs)
+                        PhotoSortOrder.SIZE_ASC -> photoDao.getUnsortedPhotoIdsExcludingBucketsFilteredSizeAsc(excludeBucketIds, startDateMs, endDateMs)
+                        PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotoIdsExcludingBucketsFiltered(excludeBucketIds, startDateMs, endDateMs) // Will be shuffled later
+                    }
                 } else {
                     // Include mode: use IN (or null for all)
                     // 修复 Room bug：避免使用 (:bucketIds IS NULL OR bucket_id IN (:bucketIds)) 模式
                     val bucketIds = sessionFilter?.albumIds
                     if (bucketIds.isNullOrEmpty()) {
-                        photoDao.getUnsortedPhotoIdsAll(startDateMs, endDateMs)
+                        when (sortOrder) {
+                            PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotoIdsAll(startDateMs, endDateMs)
+                            PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotoIdsAll(startDateMs, endDateMs).asReversed()
+                            PhotoSortOrder.SIZE_DESC -> photoDao.getUnsortedPhotoIdsAllSizeDesc(startDateMs, endDateMs)
+                            PhotoSortOrder.SIZE_ASC -> photoDao.getUnsortedPhotoIdsAllSizeAsc(startDateMs, endDateMs)
+                            PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotoIdsAll(startDateMs, endDateMs) // Will be shuffled later
+                        }
                     } else {
-                        photoDao.getUnsortedPhotoIdsByBuckets(bucketIds, startDateMs, endDateMs)
+                        when (sortOrder) {
+                            PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotoIdsByBuckets(bucketIds, startDateMs, endDateMs)
+                            PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotoIdsByBuckets(bucketIds, startDateMs, endDateMs).asReversed()
+                            PhotoSortOrder.SIZE_DESC -> photoDao.getUnsortedPhotoIdsByBucketsSizeDesc(bucketIds, startDateMs, endDateMs)
+                            PhotoSortOrder.SIZE_ASC -> photoDao.getUnsortedPhotoIdsByBucketsSizeAsc(bucketIds, startDateMs, endDateMs)
+                            PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotoIdsByBuckets(bucketIds, startDateMs, endDateMs) // Will be shuffled later
+                        }
                     }
                 }
             }
-        }
-        
-        // Handle sorting: DB always returns DESC
-        return if (sortOrder == PhotoSortOrder.DATE_ASC) {
-            ids.asReversed() // Efficient view if ArrayList, or create new list
-        } else {
-            ids
         }
     }
     
@@ -260,10 +309,12 @@ class GetUnsortedPhotosUseCase @Inject constructor(
         return when (sortOrder) {
             PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosPagedDesc(PAGE_SIZE, offset)
             PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosPagedAsc(PAGE_SIZE, offset)
+            PhotoSortOrder.SIZE_DESC -> photoDao.getUnsortedPhotosPagedSizeDesc(PAGE_SIZE, offset)
+            PhotoSortOrder.SIZE_ASC -> photoDao.getUnsortedPhotosPagedSizeAsc(PAGE_SIZE, offset)
             PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosPagedRandom(randomSeed, PAGE_SIZE, offset)
         }
     }
-    
+
     /**
      * Get a page of unsorted photos filtered by bucket IDs.
      */
@@ -278,10 +329,12 @@ class GetUnsortedPhotosUseCase @Inject constructor(
         return when (sortOrder) {
             PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosByBucketsPagedDesc(bucketIds, PAGE_SIZE, offset)
             PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosByBucketsPagedAsc(bucketIds, PAGE_SIZE, offset)
+            PhotoSortOrder.SIZE_DESC -> photoDao.getUnsortedPhotosByBucketsPagedSizeDesc(bucketIds, PAGE_SIZE, offset)
+            PhotoSortOrder.SIZE_ASC -> photoDao.getUnsortedPhotosByBucketsPagedSizeAsc(bucketIds, PAGE_SIZE, offset)
             PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosByBucketsPagedRandom(bucketIds, randomSeed, PAGE_SIZE, offset)
         }
     }
-    
+
     /**
      * Get a page of unsorted photos excluding specific bucket IDs.
      */
@@ -296,10 +349,12 @@ class GetUnsortedPhotosUseCase @Inject constructor(
         return when (sortOrder) {
             PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosExcludingBucketsPagedDesc(bucketIds, PAGE_SIZE, offset)
             PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosExcludingBucketsPagedAsc(bucketIds, PAGE_SIZE, offset)
+            PhotoSortOrder.SIZE_DESC -> photoDao.getUnsortedPhotosExcludingBucketsPagedSizeDesc(bucketIds, PAGE_SIZE, offset)
+            PhotoSortOrder.SIZE_ASC -> photoDao.getUnsortedPhotosExcludingBucketsPagedSizeAsc(bucketIds, PAGE_SIZE, offset)
             PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosExcludingBucketsPagedRandom(bucketIds, randomSeed, PAGE_SIZE, offset)
         }
     }
-    
+
     /**
      * Get a page of unsorted photos filtered by bucket IDs (optional) and date range (optional).
      * 
@@ -324,6 +379,8 @@ class GetUnsortedPhotosUseCase @Inject constructor(
             when (sortOrder) {
                 PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosAllDateFilteredPagedDesc(startDateMs, endDateMs, PAGE_SIZE, offset)
                 PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosAllDateFilteredPagedAsc(startDateMs, endDateMs, PAGE_SIZE, offset)
+                PhotoSortOrder.SIZE_DESC -> photoDao.getUnsortedPhotosAllDateFilteredPagedSizeDesc(startDateMs, endDateMs, PAGE_SIZE, offset)
+                PhotoSortOrder.SIZE_ASC -> photoDao.getUnsortedPhotosAllDateFilteredPagedSizeAsc(startDateMs, endDateMs, PAGE_SIZE, offset)
                 PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosAllDateFilteredPagedRandom(startDateMs, endDateMs, randomSeed, PAGE_SIZE, offset)
             }
         } else {
@@ -331,6 +388,8 @@ class GetUnsortedPhotosUseCase @Inject constructor(
             when (sortOrder) {
                 PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosByBucketsDateFilteredPagedDesc(bucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
                 PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosByBucketsDateFilteredPagedAsc(bucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
+                PhotoSortOrder.SIZE_DESC -> photoDao.getUnsortedPhotosByBucketsDateFilteredPagedSizeDesc(bucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
+                PhotoSortOrder.SIZE_ASC -> photoDao.getUnsortedPhotosByBucketsDateFilteredPagedSizeAsc(bucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
                 PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosByBucketsDateFilteredPagedRandom(bucketIds, startDateMs, endDateMs, randomSeed, PAGE_SIZE, offset)
             }
         }
@@ -434,6 +493,8 @@ class GetUnsortedPhotosUseCase @Inject constructor(
         return when (sortOrder) {
             PhotoSortOrder.DATE_DESC -> photoDao.getUnsortedPhotosExcludingBucketsFilteredPagedDesc(excludeBucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
             PhotoSortOrder.DATE_ASC -> photoDao.getUnsortedPhotosExcludingBucketsFilteredPagedAsc(excludeBucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
+            PhotoSortOrder.SIZE_DESC -> photoDao.getUnsortedPhotosExcludingBucketsFilteredPagedSizeDesc(excludeBucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
+            PhotoSortOrder.SIZE_ASC -> photoDao.getUnsortedPhotosExcludingBucketsFilteredPagedSizeAsc(excludeBucketIds, startDateMs, endDateMs, PAGE_SIZE, offset)
             PhotoSortOrder.RANDOM -> photoDao.getUnsortedPhotosExcludingBucketsFilteredPagedRandom(excludeBucketIds, startDateMs, endDateMs, randomSeed, PAGE_SIZE, offset)
         }
     }

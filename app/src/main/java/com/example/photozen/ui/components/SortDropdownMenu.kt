@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -96,6 +97,18 @@ object SortOptions {
         icon = Icons.Default.Shuffle
     )
 
+    // 文件大小排序选项
+    val sizeDesc = SortOption(
+        id = "size_desc",
+        displayName = "大小倒序",
+        icon = Icons.Default.Storage
+    )
+    val sizeAsc = SortOption(
+        id = "size_asc",
+        displayName = "大小正序",
+        icon = Icons.Default.Storage
+    )
+
     // 回收站专用排序选项（显示"移至回收站时间"）
     val trashAddedTimeDesc = SortOption(
         id = "added_time_desc",
@@ -126,7 +139,7 @@ object SortOptions {
     val keepListOptions = listOf(photoTimeDesc, photoTimeAsc, keepAddedTimeDesc, keepAddedTimeAsc, random)
     val albumListOptions = listOf(photoTimeDesc, photoTimeAsc, random)
     val timelineListOptions = listOf(photoTimeDesc, photoTimeAsc, random)
-    val filterListOptions = listOf(photoTimeDesc, photoTimeAsc, random)
+    val filterListOptions = listOf(photoTimeDesc, photoTimeAsc, sizeDesc, sizeAsc, random)
 }
 
 /**

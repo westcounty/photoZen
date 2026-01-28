@@ -273,6 +273,8 @@ fun FlowSorterScreen(
                             val currentSortOption = when (uiState.sortOrder) {
                                 PhotoSortOrder.DATE_ASC -> SortOptions.photoTimeAsc
                                 PhotoSortOrder.DATE_DESC -> SortOptions.photoTimeDesc
+                                PhotoSortOrder.SIZE_DESC -> SortOptions.sizeDesc
+                                PhotoSortOrder.SIZE_ASC -> SortOptions.sizeAsc
                                 PhotoSortOrder.RANDOM -> SortOptions.random
                             }
                             SortDropdownButton(
@@ -282,6 +284,8 @@ fun FlowSorterScreen(
                                     val newSortOrder = when (option.id) {
                                         SortOptions.photoTimeAsc.id -> PhotoSortOrder.DATE_ASC
                                         SortOptions.photoTimeDesc.id -> PhotoSortOrder.DATE_DESC
+                                        SortOptions.sizeDesc.id -> PhotoSortOrder.SIZE_DESC
+                                        SortOptions.sizeAsc.id -> PhotoSortOrder.SIZE_ASC
                                         SortOptions.random.id -> PhotoSortOrder.RANDOM
                                         else -> PhotoSortOrder.DATE_DESC
                                     }
@@ -769,6 +773,8 @@ fun FlowSorterContent(
                             val workflowSortOption = when (uiState.sortOrder) {
                                 PhotoSortOrder.DATE_ASC -> SortOptions.photoTimeAsc
                                 PhotoSortOrder.DATE_DESC -> SortOptions.photoTimeDesc
+                                PhotoSortOrder.SIZE_DESC -> SortOptions.sizeDesc
+                                PhotoSortOrder.SIZE_ASC -> SortOptions.sizeAsc
                                 PhotoSortOrder.RANDOM -> SortOptions.random
                             }
                             SortDropdownButton(
@@ -778,6 +784,8 @@ fun FlowSorterContent(
                                     val newSortOrder = when (option.id) {
                                         SortOptions.photoTimeAsc.id -> PhotoSortOrder.DATE_ASC
                                         SortOptions.photoTimeDesc.id -> PhotoSortOrder.DATE_DESC
+                                        SortOptions.sizeDesc.id -> PhotoSortOrder.SIZE_DESC
+                                        SortOptions.sizeAsc.id -> PhotoSortOrder.SIZE_ASC
                                         SortOptions.random.id -> PhotoSortOrder.RANDOM
                                         else -> PhotoSortOrder.DATE_DESC
                                     }

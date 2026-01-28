@@ -166,6 +166,8 @@ data class SorterConfigState(
         get() = when (sortOrder) {
             PhotoSortOrder.DATE_DESC -> "arrow_downward"
             PhotoSortOrder.DATE_ASC -> "arrow_upward"
+            PhotoSortOrder.SIZE_DESC -> "storage"
+            PhotoSortOrder.SIZE_ASC -> "storage"
             PhotoSortOrder.RANDOM -> "shuffle"
         }
     

@@ -224,24 +224,60 @@ interface PhotoDao {
     
     /**
      * Get all unsorted photo IDs.
-     * Ordered by date_added DESC for consistent snapshot pagination.
+     * Ordered by date DESC for consistent snapshot pagination.
      */
     @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     suspend fun getUnsortedPhotoIds(): List<String>
-    
+
+    /**
+     * Get all unsorted photo IDs sorted by size DESC.
+     */
+    @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY size DESC")
+    suspend fun getUnsortedPhotoIdsBySizeDesc(): List<String>
+
+    /**
+     * Get all unsorted photo IDs sorted by size ASC.
+     */
+    @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 ORDER BY size ASC")
+    suspend fun getUnsortedPhotoIdsBySizeAsc(): List<String>
+
     /**
      * Get unsorted photo IDs filtered by buckets.
-     * Ordered by date_added DESC.
+     * Ordered by date DESC.
      */
     @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     suspend fun getUnsortedPhotoIdsByBuckets(bucketIds: List<String>): List<String>
-    
+
+    /**
+     * Get unsorted photo IDs filtered by buckets sorted by size DESC.
+     */
+    @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) ORDER BY size DESC")
+    suspend fun getUnsortedPhotoIdsByBucketsSizeDesc(bucketIds: List<String>): List<String>
+
+    /**
+     * Get unsorted photo IDs filtered by buckets sorted by size ASC.
+     */
+    @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND bucket_id IN (:bucketIds) ORDER BY size ASC")
+    suspend fun getUnsortedPhotoIdsByBucketsSizeAsc(bucketIds: List<String>): List<String>
+
     /**
      * Get unsorted photo IDs excluding buckets.
-     * Ordered by date_added DESC.
+     * Ordered by date DESC.
      */
     @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL) ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC")
     suspend fun getUnsortedPhotoIdsExcludingBuckets(bucketIds: List<String>): List<String>
+
+    /**
+     * Get unsorted photo IDs excluding buckets sorted by size DESC.
+     */
+    @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL) ORDER BY size DESC")
+    suspend fun getUnsortedPhotoIdsExcludingBucketsSizeDesc(bucketIds: List<String>): List<String>
+
+    /**
+     * Get unsorted photo IDs excluding buckets sorted by size ASC.
+     */
+    @Query("SELECT id FROM photos WHERE status = 'UNSORTED' AND is_virtual_copy = 0 AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL) ORDER BY size ASC")
+    suspend fun getUnsortedPhotoIdsExcludingBucketsSizeAsc(bucketIds: List<String>): List<String>
     
     /**
      * Get unsorted photo IDs filtered by buckets and date range.
@@ -286,6 +322,42 @@ interface PhotoDao {
     ): List<String>
 
     /**
+     * Get unsorted photo IDs filtered by specific buckets and date range sorted by size DESC.
+     */
+    @Query("""
+        SELECT id FROM photos
+        WHERE status = 'UNSORTED'
+        AND is_virtual_copy = 0
+        AND bucket_id IN (:bucketIds)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY size DESC
+    """)
+    suspend fun getUnsortedPhotoIdsByBucketsSizeDesc(
+        bucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): List<String>
+
+    /**
+     * Get unsorted photo IDs filtered by specific buckets and date range sorted by size ASC.
+     */
+    @Query("""
+        SELECT id FROM photos
+        WHERE status = 'UNSORTED'
+        AND is_virtual_copy = 0
+        AND bucket_id IN (:bucketIds)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY size ASC
+    """)
+    suspend fun getUnsortedPhotoIdsByBucketsSizeAsc(
+        bucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): List<String>
+
+    /**
      * Get all unsorted photo IDs with date range filter (no bucket filter).
      */
     @Query("""
@@ -297,6 +369,38 @@ interface PhotoDao {
         ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
     """)
     suspend fun getUnsortedPhotoIdsAll(
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): List<String>
+
+    /**
+     * Get all unsorted photo IDs with date range filter sorted by size DESC.
+     */
+    @Query("""
+        SELECT id FROM photos
+        WHERE status = 'UNSORTED'
+        AND is_virtual_copy = 0
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY size DESC
+    """)
+    suspend fun getUnsortedPhotoIdsAllSizeDesc(
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): List<String>
+
+    /**
+     * Get all unsorted photo IDs with date range filter sorted by size ASC.
+     */
+    @Query("""
+        SELECT id FROM photos
+        WHERE status = 'UNSORTED'
+        AND is_virtual_copy = 0
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY size ASC
+    """)
+    suspend fun getUnsortedPhotoIdsAllSizeAsc(
         startDateMs: Long?,
         endDateMs: Long?
     ): List<String>
@@ -316,6 +420,42 @@ interface PhotoDao {
         ORDER BY COALESCE(NULLIF(date_taken, 0), date_added * 1000) DESC
     """)
     suspend fun getUnsortedPhotoIdsExcludingBucketsFiltered(
+        excludeBucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): List<String>
+
+    /**
+     * Get unsorted photo IDs EXCLUDING specific buckets, with date range filter sorted by size DESC.
+     */
+    @Query("""
+        SELECT id FROM photos
+        WHERE status = 'UNSORTED'
+        AND is_virtual_copy = 0
+        AND (bucket_id NOT IN (:excludeBucketIds) OR bucket_id IS NULL)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY size DESC
+    """)
+    suspend fun getUnsortedPhotoIdsExcludingBucketsFilteredSizeDesc(
+        excludeBucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?
+    ): List<String>
+
+    /**
+     * Get unsorted photo IDs EXCLUDING specific buckets, with date range filter sorted by size ASC.
+     */
+    @Query("""
+        SELECT id FROM photos
+        WHERE status = 'UNSORTED'
+        AND is_virtual_copy = 0
+        AND (bucket_id NOT IN (:excludeBucketIds) OR bucket_id IS NULL)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY size ASC
+    """)
+    suspend fun getUnsortedPhotoIdsExcludingBucketsFilteredSizeAsc(
         excludeBucketIds: List<String>,
         startDateMs: Long?,
         endDateMs: Long?
@@ -393,7 +533,29 @@ interface PhotoDao {
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosPagedRandom(seed: Long, limit: Int, offset: Int): List<PhotoEntity>
-    
+
+    /**
+     * Get unsorted photos with pagination - Size Descending (largest first).
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        ORDER BY size DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosPagedSizeDesc(limit: Int, offset: Int): List<PhotoEntity>
+
+    /**
+     * Get unsorted photos with pagination - Size Ascending (smallest first).
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        ORDER BY size ASC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosPagedSizeAsc(limit: Int, offset: Int): List<PhotoEntity>
+
     /**
      * Get unsorted photos filtered by bucket IDs with pagination - Date Descending.
      */
@@ -429,7 +591,31 @@ interface PhotoDao {
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosByBucketsPagedRandom(bucketIds: List<String>, seed: Long, limit: Int, offset: Int): List<PhotoEntity>
-    
+
+    /**
+     * Get unsorted photos filtered by bucket IDs with pagination - Size Descending.
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND bucket_id IN (:bucketIds)
+        ORDER BY size DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosByBucketsPagedSizeDesc(bucketIds: List<String>, limit: Int, offset: Int): List<PhotoEntity>
+
+    /**
+     * Get unsorted photos filtered by bucket IDs with pagination - Size Ascending.
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND bucket_id IN (:bucketIds)
+        ORDER BY size ASC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosByBucketsPagedSizeAsc(bucketIds: List<String>, limit: Int, offset: Int): List<PhotoEntity>
+
     /**
      * Get unsorted photos excluding bucket IDs with pagination - Date Descending.
      */
@@ -465,7 +651,31 @@ interface PhotoDao {
         LIMIT :limit OFFSET :offset
     """)
     suspend fun getUnsortedPhotosExcludingBucketsPagedRandom(bucketIds: List<String>, seed: Long, limit: Int, offset: Int): List<PhotoEntity>
-    
+
+    /**
+     * Get unsorted photos excluding bucket IDs with pagination - Size Descending.
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL)
+        ORDER BY size DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosExcludingBucketsPagedSizeDesc(bucketIds: List<String>, limit: Int, offset: Int): List<PhotoEntity>
+
+    /**
+     * Get unsorted photos excluding bucket IDs with pagination - Size Ascending.
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (bucket_id NOT IN (:bucketIds) OR bucket_id IS NULL)
+        ORDER BY size ASC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosExcludingBucketsPagedSizeAsc(bucketIds: List<String>, limit: Int, offset: Int): List<PhotoEntity>
+
     /**
      * @deprecated Room 无法正确处理 (:bucketIds IS NULL OR bucket_id IN (:bucketIds)) 模式
      */
@@ -593,6 +803,46 @@ interface PhotoDao {
         offset: Int
     ): List<PhotoEntity>
 
+    /**
+     * 按指定相册和日期范围筛选 - Size Descending
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND bucket_id IN (:bucketIds)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY size DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosByBucketsDateFilteredPagedSizeDesc(
+        bucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?,
+        limit: Int,
+        offset: Int
+    ): List<PhotoEntity>
+
+    /**
+     * 按指定相册和日期范围筛选 - Size Ascending
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND bucket_id IN (:bucketIds)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY size ASC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosByBucketsDateFilteredPagedSizeAsc(
+        bucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?,
+        limit: Int,
+        offset: Int
+    ): List<PhotoEntity>
+
     // ==================== 修复版分页查询：无 bucketIds 筛选（仅日期） ====================
 
     /**
@@ -646,6 +896,42 @@ interface PhotoDao {
         startDateMs: Long?,
         endDateMs: Long?,
         seed: Long,
+        limit: Int,
+        offset: Int
+    ): List<PhotoEntity>
+
+    /**
+     * 仅按日期范围筛选（全部相册）- Size Descending
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY size DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosAllDateFilteredPagedSizeDesc(
+        startDateMs: Long?,
+        endDateMs: Long?,
+        limit: Int,
+        offset: Int
+    ): List<PhotoEntity>
+
+    /**
+     * 仅按日期范围筛选（全部相册）- Size Ascending
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY size ASC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosAllDateFilteredPagedSizeAsc(
+        startDateMs: Long?,
+        endDateMs: Long?,
         limit: Int,
         offset: Int
     ): List<PhotoEntity>
@@ -713,6 +999,46 @@ interface PhotoDao {
         startDateMs: Long?,
         endDateMs: Long?,
         seed: Long,
+        limit: Int,
+        offset: Int
+    ): List<PhotoEntity>
+
+    /**
+     * Get unsorted photos EXCLUDING specific bucket IDs with date range filter - Size Descending.
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (bucket_id NOT IN (:excludeBucketIds) OR bucket_id IS NULL)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY size DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosExcludingBucketsFilteredPagedSizeDesc(
+        excludeBucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?,
+        limit: Int,
+        offset: Int
+    ): List<PhotoEntity>
+
+    /**
+     * Get unsorted photos EXCLUDING specific bucket IDs with date range filter - Size Ascending.
+     */
+    @Query("""
+        SELECT * FROM photos
+        WHERE status = 'UNSORTED' AND is_virtual_copy = 0
+        AND (bucket_id NOT IN (:excludeBucketIds) OR bucket_id IS NULL)
+        AND (:startDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) >= :startDateMs)
+        AND (:endDateMs IS NULL OR COALESCE(NULLIF(date_taken, 0), date_added * 1000) <= :endDateMs)
+        ORDER BY size ASC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getUnsortedPhotosExcludingBucketsFilteredPagedSizeAsc(
+        excludeBucketIds: List<String>,
+        startDateMs: Long?,
+        endDateMs: Long?,
         limit: Int,
         offset: Int
     ): List<PhotoEntity>
