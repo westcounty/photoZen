@@ -106,10 +106,12 @@ fun PhotoCard(
             contentAlignment = Alignment.Center
         ) {
             // Photo container with aspect ratio
+            // For wide images (aspect ratio > 1.8), remove horizontal padding to avoid black bars
+            val isWideImage = aspectRatio > 1.8f
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp)
+                    .then(if (!isWideImage) Modifier.padding(horizontal = 8.dp) else Modifier)
                     .then(
                         if (onPhotoClick != null) {
                             Modifier.clickable(

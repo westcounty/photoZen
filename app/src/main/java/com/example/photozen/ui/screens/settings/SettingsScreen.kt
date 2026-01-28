@@ -298,10 +298,10 @@ fun SettingsScreen(
                     onClick = { showAboutDialog = true }
                 )
                 
-                // 开源致谢
+                // 开发者致谢
                 EnhancedSettingsItem(
                     icon = Icons.Default.Favorite,
-                    title = "开源致谢",
+                    title = "开发者致谢",
                     subtitle = "感谢早期体验者",
                     onClick = { showAcknowledgementDialog = true },
                     iconTint = Color(0xFFE91E63)
@@ -1680,7 +1680,7 @@ private fun AcknowledgementDialog(onDismiss: () -> Unit) {
                     Spacer(modifier = Modifier.height(8.dp))
                     
                     Text(
-                        text = "土土酱 · 涵涵酱 · hi\n霁光 · momo · 晚菀第三声\nAdobe PS",
+                        text = "土土酱 · 涵涵酱 · hi · 霁光\nmomo · 晚菀第三声 · Adobe PS\n白茶国风 · 上善若水 · 刘通\n今天的风儿有些喧嚣V",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
