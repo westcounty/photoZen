@@ -106,12 +106,12 @@ fun PhotoCard(
             contentAlignment = Alignment.Center
         ) {
             // Photo container with aspect ratio
-            // For wide images (aspect ratio > 1.8), remove horizontal padding to avoid black bars
-            val isWideImage = aspectRatio > 1.8f
+            // For extreme aspect ratios, use Crop to avoid black bars from floating-point precision issues
+            val isExtremeAspectRatio = aspectRatio > 1.8f || aspectRatio < 0.55f
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(if (!isWideImage) Modifier.padding(horizontal = 8.dp) else Modifier)
+                    .then(if (!isExtremeAspectRatio) Modifier.padding(horizontal = 8.dp) else Modifier)
                     .then(
                         if (onPhotoClick != null) {
                             Modifier.clickable(
@@ -138,7 +138,9 @@ fun PhotoCard(
                         .withThumbnailPolicy(ThumbnailSizePolicy.Context.CARD_PREVIEW) // Phase 4: 优化缩略图大小
                         .build(),
                     contentDescription = photo.displayName,
-                    contentScale = ContentScale.Fit,
+                    // Use Crop for extreme aspect ratios to avoid black bars from precision issues
+                    // Use Fit for normal photos to show the complete image
+                    contentScale = if (isExtremeAspectRatio) ContentScale.Crop else ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(aspectRatio.coerceIn(0.3f, 3f))
